@@ -381,3 +381,125 @@ fn formatter_is_shareable_between_threads() {
         }
     });
 }
+
+// ----- settings the goldens cannot reach ----------------------------------
+
+/// An auto-detecting extension that always wins, so it is visible whenever the
+/// registry consults it.
+#[derive(Debug)]
+struct ShoutFormatter;
+
+impl smartformat::formatter::Formatter for ShoutFormatter {
+    fn name(&self) -> &str {
+        "shout"
+    }
+
+    fn try_evaluate_format(
+        &self,
+        info: &mut smartformat::formatter::FormattingInfo<'_>,
+    ) -> Result<bool, Error> {
+        info.write("SHOUT");
+        Ok(true)
+    }
+}
+
+#[test]
+fn string_format_compatibility_runs_only_the_default_formatter() {
+    let compat = SmartSettings {
+        string_format_compatibility: true,
+        ..SmartSettings::default()
+    };
+
+    let mut shouty = SmartFormatter::new(compat.clone());
+    shouty.formatters_mut().insert(0, Box::new(ShoutFormatter));
+    assert_eq!(shouty.format("{0}", &args([Value::Int(7)])).unwrap(), "7");
+
+    // Without the setting the auto-detecting extension is consulted first.
+    let mut normal = SmartFormatter::default();
+    normal.formatters_mut().insert(0, Box::new(ShoutFormatter));
+    assert_eq!(
+        normal.format("{0}", &args([Value::Int(7)])).unwrap(),
+        "SHOUT"
+    );
+
+    // A named formatter is bypassed in compatibility mode as well, because the
+    // parser does not even look for a name there.
+    assert_eq!(
+        shouty
+            .format("{0:shout:}", &args([Value::from("x")]))
+            .unwrap(),
+        "x"
+    );
+}
+
+#[test]
+fn alignment_pads_with_the_configured_fill_character() {
+    let settings = SmartSettings {
+        alignment_fill_character: '.',
+        ..SmartSettings::default()
+    };
+    let smart = SmartFormatter::new(settings);
+    let values = args([Value::from("ab")]);
+
+    assert_eq!(smart.format("[{0,6}]", &values).unwrap(), "[....ab]");
+    assert_eq!(smart.format("[{0,-6}]", &values).unwrap(), "[ab....]");
+}
+
+#[test]
+fn case_insensitive_matching_folds_non_ascii() {
+    let settings = SmartSettings {
+        case_sensitive: CaseSensitivity::CaseInsensitive,
+        ..SmartSettings::default()
+    };
+    let mut parser_settings = smartformat::parsing::ParserSettings::default();
+    parser_settings
+        .add_custom_selector_chars(['Ä', 'ä'])
+        .unwrap();
+    let smart = SmartFormatter::with_parser_settings(settings, parser_settings);
+
+    let data = map([("ä", Value::from("v"))]);
+    assert_eq!(smart.format("{Ä}", &data).unwrap(), "v");
+}
+
+#[test]
+fn unsigned_values_above_i64_max_format_exactly() {
+    let values = args([Value::from(u64::MAX)]);
+    assert_eq!(format("{0}", &values), "18446744073709551615");
+    assert_eq!(format("{0:N0}", &values), "18,446,744,073,709,551,615");
+    assert_eq!(format("{0:X}", &values), "FFFFFFFFFFFFFFFF");
+}
+
+#[test]
+fn output_error_in_result_writes_the_dotnet_exception_message() {
+    let smart = with_format_error_action(ErrorAction::OutputErrorInResult);
+    let data = map([("Other", Value::Int(1))]);
+
+    assert_eq!(
+        smart.format("[{Missing}]", &data).unwrap(),
+        "[Error parsing format string: No source extension could handle the selector named \
+         \"Missing\" at 2\n[{Missing}]\n--^]"
+    );
+    assert_eq!(
+        smart
+            .format("[{0:nosuchformatter:x}]", &args([Value::Int(42)]))
+            .unwrap(),
+        "[Error parsing format string: No suitable Formatter could be found at 0\n\
+         [{0:nosuchformatter:x}]\n^]"
+    );
+}
+
+#[test]
+fn maintain_tokens_writes_the_reconstructed_placeholder() {
+    let smart = with_format_error_action(ErrorAction::MaintainTokens);
+    let data = map([("Other", Value::Int(1))]);
+
+    assert_eq!(smart.format("[{Missing}]", &data).unwrap(), "[{Missing}]");
+    assert_eq!(
+        smart.format("[{Missing,05}]", &data).unwrap(),
+        "[{Missing,5}]"
+    );
+    assert_eq!(
+        smart.format(r"[{Missing:d(a\:b)}]", &data).unwrap(),
+        "[{Missing:d(a:b):}]"
+    );
+}

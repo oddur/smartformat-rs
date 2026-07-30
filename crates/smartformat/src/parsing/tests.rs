@@ -661,6 +661,51 @@ fn parse_unicode() {
 }
 
 #[test]
+fn parse_unicode_surrogate_pair() {
+    // .NET spells an astral character as two UTF-16 code units, which end up
+    // in two adjacent literals and concatenate in the output string; here the
+    // pair goes into one literal instead, which is the only way a Rust
+    // `String` can hold it.
+    let parsed = parse(r"a\ud83d\ude00b");
+    assert_eq!(parsed.literal_text(), "a\u{1f600}b");
+    assert_eq!(parsed.items.len(), 3);
+    assert_eq!(parsed.items[1].raw(), r"\ud83d\ude00");
+
+    assert_eq!(parse(r"\ud83d\ude00").literal_text(), "\u{1f600}");
+
+    // An unpaired surrogate has no `char`. .NET keeps it as a code unit; the
+    // closest a `String` gets is the replacement character.
+    assert_eq!(parse(r"a\ud800b").literal_text(), "a\u{fffd}b");
+    assert_eq!(parse(r"a\ude00b").literal_text(), "a\u{fffd}b");
+    assert_eq!(parse(r"a\ud800Ab").literal_text(), "a\u{fffd}\u{41}b");
+}
+
+#[test]
+fn placeholder_display_rebuilds_the_placeholder() {
+    // .NET `Placeholder.ToString()` normalizes the alignment, unescapes the
+    // formatter options, and always ends a non-null format with a colon —
+    // but writes the format itself as the raw source text.
+    for (template, expected) in [
+        ("{0}", "{0}"),
+        ("{0:D3}", "{0:D3}"),
+        ("{Missing,05}", "{Missing,5}"),
+        ("{Missing,-05}", "{Missing,-5}"),
+        (r"{Missing:d(a\:b)}", "{Missing:d(a:b):}"),
+        (r"{Missing,05:d(a\:b)}", "{Missing,5:d(a:b):}"),
+        ("{Missing:d()}", "{Missing:d:}"),
+        (r"{Missing:\n}", r"{Missing:\n}"),
+        ("{A.B?.C}", "{A.B?.C}"),
+    ] {
+        let parsed = parse(template);
+        assert_eq!(
+            first_placeholder(&parsed).to_string(),
+            expected,
+            "template {template:?}"
+        );
+    }
+}
+
+#[test]
 fn escape_sequence_at_the_end_of_the_input_fails() {
     assert!(parser().parse(r"abc\").is_err());
 }

@@ -26,6 +26,10 @@ use std::fmt;
 pub struct Format {
     /// Literal text and placeholders, in the order they appear.
     pub items: Vec<FormatItem>,
+    /// The input text this format spans, unchanged (.NET `Format.AsSpan()`).
+    /// For the format returned by [`Parser::parse`] that is the whole
+    /// template, which is what error messages quote.
+    pub raw: String,
     /// Byte offset of the first character of this format in the input.
     pub start: usize,
     /// Byte offset one past the last character of this format in the input.
@@ -175,7 +179,9 @@ impl fmt::Display for Placeholder {
             }
         }
         if let Some(format) = &self.format {
-            write!(f, ":{format}")?;
+            // .NET writes `Format.AsSpan()` here, which is the untouched
+            // source text, not the escape-resolved `Format.ToString()`.
+            write!(f, ":{}", format.raw)?;
         }
         f.write_str("}")
     }

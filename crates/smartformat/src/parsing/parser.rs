@@ -12,7 +12,7 @@ use super::chars::{
     FORMATTER_OPTIONS_BEGIN_CHAR, FORMATTER_OPTIONS_END_CHAR, FORMAT_OPTIONS_TERMINATOR_CHARS,
     LIST_INDEX_END_CHAR, NULLABLE_OPERATOR, PLACEHOLDER_BEGIN_CHAR, PLACEHOLDER_END_CHAR,
 };
-use super::escaped_literal::{try_get_char, unescape};
+use super::escaped_literal::{self, try_get_char, unescape};
 use super::settings::{CharSet, ParserSettings};
 use super::{Format, FormatItem, LiteralText, Placeholder, Selector};
 use crate::error::{Error, ParseError};
@@ -132,6 +132,7 @@ impl<'a> State<'a> {
             named_formatter_options_end: None,
             result: Format {
                 items: Vec::new(),
+                raw: String::new(),
                 start: 0,
                 end: input.len(),
             },
@@ -155,6 +156,7 @@ impl<'a> State<'a> {
         }
 
         self.finalize()?;
+        set_raw(&mut self.result, self.input);
 
         if self.issues.is_empty() {
             return Ok(self.result);
@@ -339,17 +341,35 @@ impl<'a> State<'a> {
             }
 
             self.last_end = if self.chars[index_next_char] == 'u' {
-                // The escape character, the 'u' and 4 hex digits.
-                self.safe_add(self.current, 6)
+                // The escape character, the 'u' and 4 hex digits — twice when
+                // the sequence is the high half of a surrogate pair, so both
+                // halves land in one literal and can be joined.
+                self.safe_add(self.current, self.unicode_escape_len())
             } else {
                 self.safe_add(self.current, 2)
             };
 
             self.push_literal(self.current, self.last_end)?;
-            self.current = self.safe_add(self.current, 1);
+            // Resume at the end of the sequence: a surrogate pair contains a
+            // second escape character, which must not start another sequence.
+            self.current = self.last_end - 1;
         }
 
         Ok(())
+    }
+
+    /// How many characters the `\uXXXX` sequence at [`current`](Self::current)
+    /// spans: 12 for a surrogate pair, 6 otherwise.
+    fn unicode_escape_len(&self) -> usize {
+        let is_pair = escaped_literal::unicode(&self.chars, self.current + 2)
+            .is_ok_and(escaped_literal::is_high_surrogate)
+            && self.chars.get(self.current + 6) == Some(&CHAR_LITERAL_ESCAPE_CHAR)
+            && self.chars.get(self.current + 7) == Some(&'u');
+        if is_pair {
+            12
+        } else {
+            6
+        }
     }
 
     // ----- placeholders --------------------------------------------------
@@ -423,6 +443,7 @@ impl<'a> State<'a> {
                 .expect("SelectorHeader context implies a current placeholder");
             let new_format = Format {
                 items: Vec::new(),
+                raw: String::new(),
                 start: self.byte(self.current + 1),
                 end: self.byte(self.len),
             };
@@ -752,10 +773,11 @@ impl<'a> State<'a> {
                 Ok(Format {
                     items: vec![FormatItem::Literal(LiteralText {
                         text: message.clone(),
-                        raw: message,
+                        raw: message.clone(),
                         start: 0,
                         end,
                     })],
+                    raw: message,
                     start: 0,
                     end,
                 })
@@ -768,6 +790,22 @@ impl<'a> State<'a> {
             .iter()
             .map(|issue| self.byte(issue.index))
             .collect()
+    }
+}
+
+/// Fills in [`Format::raw`] for a format and every format nested in it. The
+/// .NET types keep a reference to the input string instead and slice it on
+/// demand (`FormatItem.AsSpan`).
+fn set_raw(format: &mut Format, input: &str) {
+    let start = format.start.min(input.len());
+    let end = format.end.clamp(start, input.len());
+    format.raw = input[start..end].to_owned();
+    for item in &mut format.items {
+        if let FormatItem::Placeholder(placeholder) = item {
+            if let Some(nested) = &mut placeholder.format {
+                set_raw(nested, input);
+            }
+        }
     }
 }
 

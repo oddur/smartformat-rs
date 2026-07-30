@@ -47,6 +47,13 @@ pub trait Formatter: Send + Sync {
     /// cannot handle the value, which lets the next one try
     /// (.NET `IFormatter.TryEvaluateFormat`).
     fn try_evaluate_format(&self, info: &mut FormattingInfo<'_>) -> Result<bool, Error>;
+
+    /// Whether this is the formatter of last resort. In `string.Format`
+    /// compatibility mode it is the only one that runs, which is .NET's
+    /// `_formatterExtensions.First(fe => fe is DefaultFormatter)`.
+    fn is_default_formatter(&self) -> bool {
+        false
+    }
 }
 
 /// The ordered list of [`Formatter`] extensions a [`SmartFormatter`] consults.
@@ -91,10 +98,16 @@ impl FormatterRegistry {
         self.formatters
             .iter()
             .map(AsRef::as_ref)
-            .find(|formatter| match case_sensitivity {
-                CaseSensitivity::CaseSensitive => formatter.name() == name,
-                CaseSensitivity::CaseInsensitive => formatter.name().eq_ignore_ascii_case(name),
-            })
+            .find(|formatter| case_sensitivity.eq(formatter.name(), name))
+    }
+
+    /// The .NET compatibility-mode formatter: the first
+    /// [`DefaultFormatter`] in the registry.
+    fn default_formatter(&self) -> Option<&dyn Formatter> {
+        self.formatters
+            .iter()
+            .map(AsRef::as_ref)
+            .find(|formatter| formatter.is_default_formatter())
     }
 }
 
@@ -138,6 +151,7 @@ impl SmartFormatter {
     pub fn new(settings: SmartSettings) -> Self {
         let parser_settings = ParserSettings {
             error_action: settings.parse_error_action,
+            string_format_compatibility: settings.string_format_compatibility,
             ..ParserSettings::default()
         };
         Self::with_parser_settings(settings, parser_settings)
@@ -146,8 +160,10 @@ impl SmartFormatter {
     /// Like [`new`](Self::new), but with parser settings that are not derived
     /// from [`SmartSettings`], such as `string.Format` compatibility mode.
     ///
-    /// [`ParserSettings::error_action`] is taken from the passed parser
-    /// settings, not from [`SmartSettings::parse_error_action`].
+    /// [`ParserSettings::error_action`] and
+    /// [`ParserSettings::string_format_compatibility`] are taken from the
+    /// passed parser settings, not from the corresponding
+    /// [`SmartSettings`] fields.
     pub fn with_parser_settings(settings: SmartSettings, parser_settings: ParserSettings) -> Self {
         Self {
             settings,
@@ -233,6 +249,7 @@ impl SmartFormatter {
             smart: self,
             args: arg_list,
             culture,
+            base: &format.raw,
         };
         let mut output = String::new();
         engine.write_format(format, &[current], 0, &mut output)?;
@@ -255,6 +272,9 @@ struct Engine<'a> {
     smart: &'a SmartFormatter,
     args: &'a [Value],
     culture: &'a CultureData,
+    /// The whole template, quoted by error messages (.NET
+    /// `FormatItem.BaseString`).
+    base: &'a str,
 }
 
 impl<'e> Engine<'e> {
@@ -274,7 +294,12 @@ impl<'e> Engine<'e> {
             match item {
                 // Literals respect the alignment of the format they are in,
                 // as in .NET.
-                FormatItem::Literal(literal) => write_aligned(output, &literal.text, alignment),
+                FormatItem::Literal(literal) => write_aligned(
+                    output,
+                    &literal.text,
+                    alignment,
+                    self.smart.settings.alignment_fill_character,
+                ),
                 FormatItem::Placeholder(placeholder) => {
                     self.write_placeholder(placeholder, scopes, output)?
                 }
@@ -336,10 +361,10 @@ impl<'e> Engine<'e> {
                     first_selector = false;
                     match self.resolve_in_scopes(selector, placeholder, scopes) {
                         Some(value) => value,
-                        None => return Err(self.selector_error(placeholder, selector)),
+                        None => return Err(self.selector_error(selector)),
                     }
                 }
-                None => return Err(self.selector_error(placeholder, selector)),
+                None => return Err(self.selector_error(selector)),
             };
 
             current = resolved;
@@ -405,26 +430,36 @@ impl<'e> Engine<'e> {
             output,
         };
 
+        // Compatibility mode bypasses every extension but DefaultFormatter,
+        // including the auto-detecting ones.
+        if self.smart.parser.settings().string_format_compatibility {
+            let handled = match self.smart.formatters.default_formatter() {
+                Some(formatter) => formatter.try_evaluate_format(&mut info)?,
+                None => false,
+            };
+            return if handled {
+                Ok(())
+            } else {
+                Err(self.no_formatter_error(placeholder))
+            };
+        }
+
         let name = &placeholder.formatter_name;
         if !name.is_empty() {
-            let formatter = self
+            // .NET reports a missing formatter and a formatter that declined
+            // the value the same way.
+            let handled = match self
                 .smart
                 .formatters
                 .find(name, self.smart.settings.case_sensitive)
-                .ok_or_else(|| {
-                    self.format_error(
-                        placeholder,
-                        format!("No formatter with name \"{name}\" is registered"),
-                    )
-                })?;
-
-            return if formatter.try_evaluate_format(&mut info)? {
+            {
+                Some(formatter) => formatter.try_evaluate_format(&mut info)?,
+                None => false,
+            };
+            return if handled {
                 Ok(())
             } else {
-                Err(self.format_error(
-                    placeholder,
-                    format!("The formatter named \"{name}\" could not format the value"),
-                ))
+                Err(self.no_formatter_error(placeholder))
             };
         }
 
@@ -437,10 +472,7 @@ impl<'e> Engine<'e> {
             }
         }
 
-        Err(self.format_error(
-            placeholder,
-            "No suitable formatter could be found".to_owned(),
-        ))
+        Err(self.no_formatter_error(placeholder))
     }
 
     /// .NET `Evaluator.FormatError`: the settings decide whether an error
@@ -451,34 +483,64 @@ impl<'e> Engine<'e> {
         error: Error,
         output: &mut String,
     ) -> Result<(), Error> {
+        let fill = self.smart.settings.alignment_fill_character;
         match self.smart.settings.format_error_action {
             ErrorAction::Error => Err(error),
             ErrorAction::Ignore => Ok(()),
             ErrorAction::OutputErrorInResult => {
-                write_aligned(output, &error_message(&error), placeholder.alignment);
+                write_aligned(output, &error_message(&error), placeholder.alignment, fill);
                 Ok(())
             }
             ErrorAction::MaintainTokens => {
-                write_aligned(output, &placeholder.raw, placeholder.alignment);
+                // .NET writes `Placeholder.RawText`, which `Placeholder`
+                // overrides to rebuild the placeholder from its parsed parts,
+                // rather than the text it was parsed from.
+                write_aligned(
+                    output,
+                    &placeholder.to_string(),
+                    placeholder.alignment,
+                    fill,
+                );
                 Ok(())
             }
         }
     }
 
-    fn selector_error(&self, placeholder: &Placeholder, selector: &Selector) -> Error {
-        self.format_error(
-            placeholder,
-            format!(
-                "No source could evaluate the selector named \"{}\"",
+    /// .NET `Evaluator.EvaluateSelectors`, whose `FormattingException` is
+    /// positioned at the selector that could not be evaluated.
+    fn selector_error(&self, selector: &Selector) -> Error {
+        self.formatting_error(
+            &format!(
+                "No source extension could handle the selector named \"{}\"",
                 selector.text
             ),
+            selector.start,
         )
     }
 
-    fn format_error(&self, placeholder: &Placeholder, message: String) -> Error {
+    /// .NET `Evaluator.InvokeFormatters`, which reports a missing formatter,
+    /// a formatter that declined the value, and no auto-detecting formatter
+    /// at all with one message — and positions it at the *ordinal* index of
+    /// the last evaluated selector, not at an offset into the template.
+    fn no_formatter_error(&self, placeholder: &Placeholder) -> Error {
+        let index = placeholder
+            .selectors
+            .iter()
+            .rfind(|selector| !skip_selector(selector))
+            .map_or(0, |selector| selector.index);
+        self.formatting_error("No suitable Formatter could be found", index)
+    }
+
+    /// A .NET `FormattingException`, whose `Message` quotes the template and
+    /// points at `index` (`FormattingException.Message`).
+    fn formatting_error(&self, issue: &str, index: usize) -> Error {
         Error::Format {
-            message,
-            position: error_position(placeholder),
+            message: format!(
+                "Error parsing format string: {issue} at {index}\n{}\n{}^",
+                self.base,
+                "-".repeat(index)
+            ),
+            position: index,
         }
     }
 }
@@ -509,9 +571,9 @@ fn error_message(error: &Error) -> String {
     }
 }
 
-/// Pads `text` to `alignment` columns with spaces: a positive alignment
+/// Pads `text` to `alignment` columns with `fill`: a positive alignment
 /// right-aligns, a negative one left-aligns, exactly like `string.Format`.
-fn write_aligned(output: &mut String, text: &str, alignment: i32) {
+fn write_aligned(output: &mut String, text: &str, alignment: i32, fill: char) {
     if alignment == 0 {
         output.push_str(text);
         return;
@@ -524,13 +586,13 @@ fn write_aligned(output: &mut String, text: &str, alignment: i32) {
 
     if alignment > 0 {
         for _ in 0..padding {
-            output.push(' ');
+            output.push(fill);
         }
         output.push_str(text);
     } else {
         output.push_str(text);
         for _ in 0..padding {
-            output.push(' ');
+            output.push(fill);
         }
     }
 }
@@ -587,7 +649,8 @@ impl<'a> FormattingInfo<'a> {
 
     /// Writes text to the output, applying the placeholder's alignment.
     pub fn write(&mut self, text: &str) {
-        write_aligned(self.output, text, self.alignment);
+        let fill = self.engine.smart.settings.alignment_fill_character;
+        write_aligned(self.output, text, self.alignment, fill);
     }
 
     /// Renders `format` with `value` as the current scope, appending to the
@@ -618,6 +681,10 @@ impl Formatter for DefaultFormatter {
         "d"
     }
 
+    fn is_default_formatter(&self) -> bool {
+        true
+    }
+
     fn try_evaluate_format(&self, info: &mut FormattingInfo<'_>) -> Result<bool, Error> {
         let format = info.format();
         let current = info.current();
@@ -629,7 +696,9 @@ impl Formatter for DefaultFormatter {
             }
         }
 
-        let spec = format.map(Format::to_string).unwrap_or_default();
+        // .NET hands `ISpanFormattable` values the *raw* source text of the
+        // format as the specifier, not the escape-resolved `Format.ToString()`.
+        let spec = format.map(|format| format.raw.as_str()).unwrap_or_default();
         let position = error_position(info.placeholder());
         let text = match current {
             Value::Null => String::new(),
@@ -637,20 +706,28 @@ impl Formatter for DefaultFormatter {
             Value::Bool(true) => "True".to_owned(),
             Value::Bool(false) => "False".to_owned(),
             Value::Int(v) => spec_result(
-                number::format_number(Number::Int(*v), &spec, info.culture()),
+                number::format_number(Number::Int(*v), spec, info.culture()),
                 position,
+                number::INVALID_SPEC_MESSAGE,
+            )?,
+            Value::UInt(v) => spec_result(
+                number::format_number(Number::UInt(*v), spec, info.culture()),
+                position,
+                number::INVALID_SPEC_MESSAGE,
             )?,
             Value::Float(v) => spec_result(
-                number::format_number(Number::Float(*v), &spec, info.culture()),
+                number::format_number(Number::Float(*v), spec, info.culture()),
                 position,
+                number::INVALID_SPEC_MESSAGE,
             )?,
             // .NET string is not IFormattable either: `{0:D5}` on a string
             // writes the string unchanged.
             Value::String(v) => v.clone(),
             #[cfg(feature = "time")]
             Value::DateTime(v) => spec_result(
-                date::format_datetime(v, &spec, info.culture()),
+                date::format_datetime(v, spec, info.culture()),
                 position,
+                date::INVALID_SPEC_MESSAGE,
             )?,
             Value::List(_) => {
                 return Err(Error::Format {
@@ -672,16 +749,24 @@ impl Formatter for DefaultFormatter {
     }
 }
 
-fn spec_result(result: Result<String, FormatSpecError>, position: usize) -> Result<String, Error> {
-    result.map_err(|error| {
-        let message = error.to_string();
-        match error {
-            FormatSpecError::Unsupported(spec) => Error::UnsupportedSpec {
-                spec,
-                message,
-                position,
-            },
-            FormatSpecError::Invalid(_) => Error::Format { message, position },
-        }
+/// Turns a spec failure into an [`Error`]. A spec that is not valid .NET at
+/// all carries .NET's own `FormatException` message, which is what
+/// [`ErrorAction::OutputErrorInResult`] writes; a spec that is valid .NET but
+/// outside our subset carries ours, since .NET has no error to mirror there.
+fn spec_result(
+    result: Result<String, FormatSpecError>,
+    position: usize,
+    invalid_message: &str,
+) -> Result<String, Error> {
+    result.map_err(|error| match error {
+        FormatSpecError::Unsupported(spec) => Error::UnsupportedSpec {
+            message: format!("unsupported format spec: {spec}"),
+            spec,
+            position,
+        },
+        FormatSpecError::Invalid(_) => Error::Format {
+            message: invalid_message.to_owned(),
+            position,
+        },
     })
 }
