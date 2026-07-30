@@ -11,6 +11,9 @@ pub enum Value {
     Null,
     Bool(bool),
     Int(i64),
+    /// An unsigned value that does not fit [`Value::Int`], mirroring a .NET
+    /// `ulong`: it formats exactly, including with `D` and `X`.
+    UInt(u64),
     Float(f64),
     String(String),
     List(Vec<Value>),
@@ -70,12 +73,13 @@ impl From<isize> for Value {
     }
 }
 
-/// Unsigned 64-bit values above [`i64::MAX`] do not fit [`Value::Int`], so they
-/// fall back to [`Value::Float`] and lose integer precision above 2^53.
+/// Unsigned 64-bit values above [`i64::MAX`] keep their exact value in
+/// [`Value::UInt`]; everything else is an ordinary [`Value::Int`], so the two
+/// variants never represent the same number two ways.
 fn u64_to_value(v: u64) -> Value {
     match i64::try_from(v) {
         Ok(i) => Value::Int(i),
-        Err(_) => Value::Float(v as f64),
+        Err(_) => Value::UInt(v),
     }
 }
 
@@ -297,14 +301,15 @@ mod tests {
     }
 
     #[test]
-    fn u64_above_i64_max_falls_back_to_float() {
+    fn u64_above_i64_max_stays_exact() {
         assert_eq!(
             (i64::MAX as u64).to_smart_value(),
             Value::Int(9_223_372_036_854_775_807)
         );
+        assert_eq!(u64::MAX.to_smart_value(), Value::UInt(u64::MAX));
         assert_eq!(
-            u64::MAX.to_smart_value(),
-            Value::Float(18_446_744_073_709_551_615f64)
+            (i64::MAX as u64 + 1).to_smart_value(),
+            Value::UInt(9_223_372_036_854_775_808)
         );
     }
 

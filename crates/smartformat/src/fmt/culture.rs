@@ -14,17 +14,26 @@ pub struct NumberFormat {
     /// Digits per group, least-significant first (.NET `NumberGroupSizes`).
     pub group_sizes: &'static [u8],
     pub negative_sign: &'static str,
+    /// .NET `PositiveSign`, used for a non-negative exponent in `E` notation.
+    /// Not always `"+"`: every `ar-*` culture prefixes it with a bidi mark.
+    pub positive_sign: &'static str,
     pub number_decimal_digits: u8,
     pub currency_symbol: &'static str,
     pub currency_decimal_digits: u8,
     pub currency_decimal_separator: &'static str,
     pub currency_group_separator: &'static str,
+    /// .NET `CurrencyGroupSizes`, which is not always `NumberGroupSizes`.
+    pub currency_group_sizes: &'static [u8],
     /// .NET `CurrencyPositivePattern` (0 = `$n`, 1 = `n$`, 2 = `$ n`, 3 = `n $`).
     pub currency_positive_pattern: u8,
     /// .NET `CurrencyNegativePattern` (0..=16).
     pub currency_negative_pattern: u8,
     pub percent_symbol: &'static str,
     pub percent_decimal_digits: u8,
+    pub percent_decimal_separator: &'static str,
+    pub percent_group_separator: &'static str,
+    /// .NET `PercentGroupSizes`.
+    pub percent_group_sizes: &'static [u8],
     /// .NET `PercentPositivePattern` / `PercentNegativePattern`.
     pub percent_positive_pattern: u8,
     pub percent_negative_pattern: u8,
@@ -42,6 +51,9 @@ pub struct DateTimeFormat {
     /// Sunday first, matching .NET `DayNames`.
     pub day_names: [&'static str; 7],
     pub abbreviated_day_names: [&'static str; 7],
+    /// .NET `Calendar.GetEraName`, which the `g` pattern token renders. The
+    /// invariant Gregorian calendar has the single era `"A.D."`.
+    pub era_name: &'static str,
     pub am_designator: &'static str,
     pub pm_designator: &'static str,
     pub date_separator: &'static str,
@@ -77,15 +89,20 @@ static INVARIANT: CultureData = CultureData {
         group_separator: ",",
         group_sizes: &[3],
         negative_sign: "-",
+        positive_sign: "+",
         number_decimal_digits: 2,
         currency_symbol: "\u{a4}",
         currency_decimal_digits: 2,
         currency_decimal_separator: ".",
         currency_group_separator: ",",
+        currency_group_sizes: &[3],
         currency_positive_pattern: 0,
         currency_negative_pattern: 0,
         percent_symbol: "%",
         percent_decimal_digits: 2,
+        percent_decimal_separator: ".",
+        percent_group_separator: ",",
+        percent_group_sizes: &[3],
         percent_positive_pattern: 0,
         percent_negative_pattern: 0,
         nan_symbol: "NaN",
@@ -120,6 +137,7 @@ static INVARIANT: CultureData = CultureData {
             "Saturday",
         ],
         abbreviated_day_names: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
+        era_name: "A.D.",
         am_designator: "AM",
         pm_designator: "PM",
         date_separator: "/",

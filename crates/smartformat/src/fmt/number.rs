@@ -1,5 +1,6 @@
-//! .NET standard numeric format specifiers: `C`, `D`, `E`, `F`, `G`, `N`,
-//! `P`, `X` (upper/lower, optional precision), plus the empty spec (general).
+//! .NET standard numeric format specifiers: `B`, `C`, `D`, `E`, `F`, `G`,
+//! `N`, `P`, `R`, `X` (upper/lower, optional precision), plus the empty spec
+//! (general).
 //!
 //! Reference: .NET "Standard numeric format strings" documentation and
 //! `System.Number` (`Number.Formatting.cs`, .NET Core 3.0+ IEEE-compliant
@@ -9,21 +10,39 @@
 //! (`Number.RoundNumber`), floats round half to even (the correctly rounded
 //! digits `Dragon4` hands to the formatter).
 //!
-//! Known divergence: for a handful of exact powers of two (`2^-25`, `2^-959`)
-//! .NET's shortest-round-trip digits are one digit short and do not parse back
-//! to the original value; `G` without a precision emits the correct shortest
-//! form for those instead.
+//! Known divergence: .NET normalizes the significand before it derives the
+//! rounding boundaries in `Grisu3`, which loses the "power of two" test that
+//! widens the lower boundary, so for `2^-25` and `2^-958` .NET emits digits
+//! that do not parse back to the original value. Reproducing that needs a
+//! port of `Grisu3` including the cases where it gives up; `DESIGN.md` lists
+//! it as a non-goal and the goldens pin it.
 
 use super::culture::{CultureData, NumberFormat};
 use super::FormatSpecError;
 
-/// The numeric types a template value can hold (from `Value::Int` /
-/// `Value::Float`).
+/// The numeric types a template value can hold (from `Value::Int`,
+/// `Value::UInt` and `Value::Float`).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Number {
     Int(i64),
+    UInt(u64),
     Float(f64),
 }
+
+impl Number {
+    /// The magnitude and sign of an integral value.
+    fn integer(self) -> Option<(u64, bool)> {
+        match self {
+            Number::Int(v) => Some((v.unsigned_abs(), v < 0)),
+            Number::UInt(v) => Some((v, false)),
+            Number::Float(_) => None,
+        }
+    }
+}
+
+/// The message .NET's `FormatException` carries for a specifier that is not
+/// valid at all (`System.SR.Argument_BadFormatSpecifier`).
+pub const INVALID_SPEC_MESSAGE: &str = "Format specifier was invalid.";
 
 /// Formats `n` with a .NET *standard* numeric format spec (`""`, `"N2"`,
 /// `"x8"`, …), producing byte-identical output to .NET's
@@ -38,11 +57,10 @@ pub fn format_number(
     spec: &str,
     culture: &CultureData,
 ) -> Result<String, FormatSpecError> {
-    let (fmt, precision) = parse_spec(spec)?;
     let info = &culture.number;
 
-    // .NET tests for non-finite values before it looks at the specifier, so
-    // every standard specifier renders the culture symbol.
+    // .NET returns these symbols from `Number.FormatDouble` before it even
+    // parses the specifier, so the specifier cannot make them fail.
     if let Number::Float(v) = n {
         if v.is_nan() {
             return Ok(info.nan_symbol.to_owned());
@@ -57,58 +75,78 @@ pub fn format_number(
         }
     }
 
-    match (fmt.to_ascii_uppercase(), n) {
-        ('D', Number::Int(v)) => Ok(int_to_dec_str(
-            v,
+    let (fmt, precision) = parse_spec(spec)?;
+
+    match (fmt.to_ascii_uppercase(), n.integer()) {
+        ('D', Some((magnitude, negative))) => Ok(int_to_dec_str(
+            magnitude,
+            negative,
             precision.unwrap_or(0),
             info.negative_sign,
         )),
-        ('X', Number::Int(v)) => Ok(int_to_hex_str(v, precision.unwrap_or(0), fmt == 'X')),
-        ('D' | 'X', Number::Float(_)) => Err(FormatSpecError::Invalid(spec.to_owned())),
+        ('X', Some((magnitude, negative))) => Ok(int_to_radix_str(
+            magnitude,
+            negative,
+            16,
+            precision.unwrap_or(0),
+            fmt == 'X',
+        )),
+        ('B', Some((magnitude, negative))) => Ok(int_to_radix_str(
+            magnitude,
+            negative,
+            2,
+            precision.unwrap_or(0),
+            false,
+        )),
+        // `D`, `X` and `B` are integer-only in .NET.
+        ('B' | 'D' | 'X', None) => Err(FormatSpecError::Invalid(spec.to_owned())),
+        // `R` asks for the shortest round-trippable form and ignores any
+        // precision, which is what `G` without one produces.
+        ('R', _) => Ok(format_buffered(n, 'G', 'G', None, info)),
         (upper, _) => Ok(format_buffered(n, fmt, upper, precision, info)),
     }
 }
 
 /// Splits a standard spec into its letter and optional precision, mirroring
 /// `Number.ParseFormatSpecifier`.
+///
+/// A spec that is not shaped like a standard specifier — one ASCII letter
+/// followed by nothing but ASCII digits — is a *custom* pattern, which .NET
+/// renders and this port rejects as [`FormatSpecError::Unsupported`]. A spec
+/// that has the shape but names no specifier, or asks for more than
+/// 999,999,999 digits, is what .NET itself rejects, so it comes back as
+/// [`FormatSpecError::Invalid`].
 fn parse_spec(spec: &str) -> Result<(char, Option<u32>), FormatSpecError> {
-    if spec.is_empty() {
+    let mut chars = spec.chars();
+    let Some(letter) = chars.next() else {
         return Ok(('G', None));
-    }
-
-    let bytes = spec.as_bytes();
-    let letter = char::from(bytes[0]);
-    if !matches!(
-        letter.to_ascii_uppercase(),
-        'C' | 'D' | 'E' | 'F' | 'G' | 'N' | 'P' | 'X'
-    ) {
+    };
+    let digits = spec.as_bytes()[1..].to_vec();
+    if !letter.is_ascii_alphabetic() || !digits.iter().all(u8::is_ascii_digit) {
         return Err(FormatSpecError::Unsupported(spec.to_owned()));
-    }
-    if bytes.len() == 1 {
-        return Ok((letter, None));
     }
 
     let mut precision: u32 = 0;
-    for &b in &bytes[1..] {
-        if !b.is_ascii_digit() {
-            return Err(FormatSpecError::Unsupported(spec.to_owned()));
-        }
+    for &b in &digits {
         if precision >= 100_000_000 {
             return Err(FormatSpecError::Invalid(spec.to_owned()));
         }
         precision = precision * 10 + u32::from(b - b'0');
     }
-    Ok((letter, Some(precision)))
+
+    if !matches!(
+        letter.to_ascii_uppercase(),
+        'B' | 'C' | 'D' | 'E' | 'F' | 'G' | 'N' | 'P' | 'R' | 'X'
+    ) {
+        return Err(FormatSpecError::Invalid(spec.to_owned()));
+    }
+    Ok((letter, (!digits.is_empty()).then_some(precision)))
 }
 
 const DEFAULT_EXPONENTIAL_PRECISION: u32 = 6;
 /// Digits needed to round-trip an `f64`; `G` without a precision stays in
 /// fixed-point notation up to this many integral digits.
 const MAX_ROUND_TRIP_DIGITS: usize = 17;
-/// .NET `PositiveSign`; `CultureData` doesn't carry it, and every culture we
-/// ship uses the invariant value.
-const POSITIVE_SIGN: char = '+';
-
 const POS_CURRENCY_PATTERNS: [&str; 4] = ["$#", "#$", "$ #", "# $"];
 const NEG_CURRENCY_PATTERNS: [&str; 17] = [
     "($#)", "-$#", "$-#", "$#-", "(#$)", "-#$", "#-$", "#$-", "-# $", "-$ #", "# $-", "$ #-",
@@ -132,33 +170,44 @@ fn pattern_at(patterns: &[&'static str], index: u8) -> &'static str {
 
 /// `value.ToString("D<n>")`: magnitude zero-padded to `min_digits`, sign in
 /// front.
-fn int_to_dec_str(v: i64, min_digits: u32, negative_sign: &str) -> String {
-    let magnitude = v.unsigned_abs().to_string();
+fn int_to_dec_str(magnitude: u64, negative: bool, min_digits: u32, negative_sign: &str) -> String {
+    let digits = magnitude.to_string();
     let mut out = String::new();
-    if v < 0 {
+    if negative {
         out.push_str(negative_sign);
     }
-    for _ in magnitude.len()..min_digits as usize {
+    for _ in digits.len()..min_digits as usize {
         out.push('0');
     }
-    out.push_str(&magnitude);
+    out.push_str(&digits);
     out
 }
 
-/// `value.ToString("X<n>")`: two's-complement hex, so a negative `i64` always
-/// spans all 16 nibbles.
-fn int_to_hex_str(v: i64, min_digits: u32, upper: bool) -> String {
-    let bits = v as u64;
-    let hex = if upper {
-        format!("{bits:X}")
+/// `value.ToString("X<n>")` / `("B<n>")`: the two's-complement bit pattern,
+/// so a negative value always spans the full 64 bits of its `Value::Int`.
+fn int_to_radix_str(
+    magnitude: u64,
+    negative: bool,
+    radix: u32,
+    min_digits: u32,
+    upper: bool,
+) -> String {
+    let bits = if negative {
+        (magnitude as i64).wrapping_neg() as u64
     } else {
-        format!("{bits:x}")
+        magnitude
+    };
+    let body = match (radix, upper) {
+        (16, true) => format!("{bits:X}"),
+        (16, false) => format!("{bits:x}"),
+        (2, _) => format!("{bits:b}"),
+        _ => unreachable!("only hex and binary have a radix specifier"),
     };
     let mut out = String::new();
-    for _ in hex.len()..min_digits as usize {
+    for _ in body.len()..min_digits as usize {
         out.push('0');
     }
-    out.push_str(&hex);
+    out.push_str(&body);
     out
 }
 
@@ -181,13 +230,16 @@ fn format_buffered(
 ) -> String {
     let shortest = upper == 'G' && precision.unwrap_or(0) == 0;
 
-    let mut buf = match n {
+    let mut buf = match (n, n.integer()) {
         // .NET's integer fast path: `G` and `G0` bypass the buffer entirely,
         // so an integer never switches to scientific notation there.
-        Number::Int(v) if shortest => return int_to_dec_str(v, 0, info.negative_sign),
-        Number::Int(v) => int_buffer(v),
-        Number::Float(v) if shortest => shortest_float_buffer(v),
-        Number::Float(v) => exact_float_buffer(v),
+        (_, Some((magnitude, negative))) if shortest => {
+            return int_to_dec_str(magnitude, negative, 0, info.negative_sign)
+        }
+        (_, Some((magnitude, negative))) => int_buffer(magnitude, negative),
+        (Number::Float(v), None) if shortest => shortest_float_buffer(v),
+        (Number::Float(v), None) => exact_float_buffer(v),
+        (_, None) => unreachable!("a non-float always has an integer form"),
     };
 
     let mut out = String::new();
@@ -245,8 +297,7 @@ fn format_buffered(
     out
 }
 
-fn int_buffer(v: i64) -> NumberBuffer {
-    let magnitude = v.unsigned_abs();
+fn int_buffer(magnitude: u64, negative: bool) -> NumberBuffer {
     let digits = if magnitude == 0 {
         Vec::new()
     } else {
@@ -255,7 +306,7 @@ fn int_buffer(v: i64) -> NumberBuffer {
     NumberBuffer {
         scale: digits.len() as i32,
         digits,
-        negative: v < 0,
+        negative,
         is_float: false,
     }
 }
@@ -564,7 +615,7 @@ fn format_currency(out: &mut String, buf: &NumberBuffer, n_max_digits: i32, info
                 out,
                 buf,
                 n_max_digits,
-                Some(info.group_sizes),
+                Some(info.currency_group_sizes),
                 info.currency_decimal_separator,
                 info.currency_group_separator,
             ),
@@ -587,9 +638,9 @@ fn format_percent(out: &mut String, buf: &NumberBuffer, n_max_digits: i32, info:
                 out,
                 buf,
                 n_max_digits,
-                Some(info.group_sizes),
-                info.decimal_separator,
-                info.group_separator,
+                Some(info.percent_group_sizes),
+                info.percent_decimal_separator,
+                info.percent_group_separator,
             ),
             '-' => out.push_str(info.negative_sign),
             '%' => out.push_str(info.percent_symbol),
@@ -700,7 +751,7 @@ fn format_exponent(
     if value < 0 {
         out.push_str(info.negative_sign);
     } else {
-        out.push(POSITIVE_SIGN);
+        out.push_str(info.positive_sign);
     }
     let digits = value.unsigned_abs().to_string();
     for _ in digits.len()..min_digits {
@@ -1201,6 +1252,12 @@ mod tests {
         assert_eq!(float(f64::NAN, "E2"), "NaN");
         assert_eq!(float(f64::NAN, "D"), "NaN");
         assert_eq!(float(f64::NAN, "X"), "NaN");
+        // The specifier is never even parsed, so one that would otherwise be
+        // a custom pattern, invalid, or absurdly precise still works.
+        assert_eq!(float(f64::NAN, "#,##0.00"), "NaN");
+        assert_eq!(float(f64::NAN, "Q"), "NaN");
+        assert_eq!(float(f64::NAN, "F1000000000"), "NaN");
+        assert_eq!(float(f64::NEG_INFINITY, "#,##0.00"), "-Infinity");
         assert_eq!(float(f64::INFINITY, ""), "Infinity");
         assert_eq!(float(f64::INFINITY, "G"), "Infinity");
         assert_eq!(float(f64::INFINITY, "F2"), "Infinity");
@@ -1323,14 +1380,60 @@ mod tests {
     }
 
     #[test]
-    fn standard_specifiers_outside_our_subset_are_unsupported() {
-        for spec in ["R", "B", "Q", "r", "b2"] {
+    fn specifiers_shaped_like_a_standard_one_but_unknown_are_invalid() {
+        for spec in ["Q", "q", "Z9", "W", "y3"] {
             assert_eq!(
                 format_number(Number::Float(1.0), spec, invariant()),
-                Err(FormatSpecError::Unsupported(spec.to_owned())),
+                Err(FormatSpecError::Invalid(spec.to_owned())),
                 "spec {spec:?}"
             );
         }
+    }
+
+    #[test]
+    fn round_trip_specifier_matches_the_general_one() {
+        for v in [0.1, 2.675, 1e17, 5e-324, -0.0, 1.0] {
+            let general = float(v, "");
+            assert_eq!(float(v, "R"), general, "value {v}");
+            assert_eq!(float(v, "r"), general, "value {v}");
+            // .NET ignores a precision on `R`.
+            assert_eq!(float(v, "R5"), general, "value {v}");
+        }
+        assert_eq!(int(42, "R"), "42");
+    }
+
+    #[test]
+    fn binary_specifier() {
+        assert_eq!(int(5, "B"), "101");
+        assert_eq!(int(5, "b"), "101");
+        assert_eq!(int(5, "B8"), "00000101");
+        assert_eq!(int(0, "B"), "0");
+        assert_eq!(int(-5, "B"), "1".repeat(61) + "011");
+        assert_eq!(
+            format_number(Number::Float(0.1), "B", invariant()),
+            Err(FormatSpecError::Invalid("B".to_owned()))
+        );
+    }
+
+    #[test]
+    fn unsigned_values_above_i64_max_format_exactly() {
+        let max = Number::UInt(u64::MAX);
+        assert_eq!(
+            format_number(max, "", invariant()).unwrap(),
+            "18446744073709551615"
+        );
+        assert_eq!(
+            format_number(max, "D", invariant()).unwrap(),
+            "18446744073709551615"
+        );
+        assert_eq!(
+            format_number(max, "N0", invariant()).unwrap(),
+            "18,446,744,073,709,551,615"
+        );
+        assert_eq!(
+            format_number(max, "X", invariant()).unwrap(),
+            "FFFFFFFFFFFFFFFF"
+        );
     }
 
     #[test]

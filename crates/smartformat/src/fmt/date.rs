@@ -8,9 +8,9 @@
 //! standard specifiers; user-supplied custom patterns are still rejected
 //! with [`FormatSpecError::Unsupported`] by [`format_datetime`].
 //!
-//! `U` (universal full) requires timezone conversion and is Unsupported in
-//! M1; `K`-related offsets render as empty, matching an unspecified-kind
-//! .NET `DateTime`.
+//! `U` (universal full) requires timezone conversion and is Unsupported here
+//! (see the non-goals in `DESIGN.md`); `K`-related offsets render as empty,
+//! matching an unspecified-kind .NET `DateTime`.
 
 use super::culture::{invariant, CultureData, DateTimeFormat};
 use super::FormatSpecError;
@@ -26,6 +26,10 @@ const UNIVERSAL_SORTABLE_PATTERN: &str = "yyyy'-'MM'-'dd HH':'mm':'ss'Z'";
 
 /// .NET `DateTimeFormat.MaxSecondsFractionDigits`.
 const MAX_FRACTION_DIGITS: usize = 7;
+
+/// The message .NET's `FormatException` carries for a date/time specifier it
+/// does not recognize (`System.SR.Format_InvalidString`).
+pub const INVALID_SPEC_MESSAGE: &str = "Input string was not in a correct format.";
 
 /// Formats `dt` with a .NET *standard* date/time format spec, producing
 /// byte-identical output to .NET's `dt.ToString(spec, culture)` for a
@@ -107,7 +111,7 @@ impl Renderer<'_> {
         while i < chars.len() {
             let ch = chars[i];
             match ch {
-                'd' | 'M' | 'y' | 'h' | 'H' | 'm' | 's' | 'f' | 'F' | 't' => {
+                'd' | 'M' | 'y' | 'h' | 'H' | 'm' | 's' | 'f' | 'F' | 't' | 'g' => {
                     let len = repeat_count(chars, i);
                     self.token(ch, len)?;
                     i += len;
@@ -137,9 +141,9 @@ impl Renderer<'_> {
                     }
                     _ => return Err(self.invalid()),
                 },
-                // Era names and timezone offsets: real .NET specifiers we can't
-                // reproduce from our culture data plus a naive DateTime.
-                'g' | 'z' => return Err(self.unsupported()),
+                // A timezone offset: a real .NET specifier we can't reproduce
+                // from a naive DateTime.
+                'z' => return Err(self.unsupported()),
                 _ => {
                     self.out.push(ch);
                     i += 1;
@@ -217,6 +221,9 @@ impl Renderer<'_> {
                     }
                 }
             }
+            // Every repeat count of `g` renders the era name, which for the
+            // invariant Gregorian calendar is always "A.D.".
+            'g' => self.out.push_str(self.df.era_name),
             't' => {
                 let designator = if dt.hour() < 12 {
                     self.df.am_designator
@@ -615,13 +622,24 @@ mod tests {
                 "pattern {bad}"
             );
         }
-        for unsupported in ["yyyy g", "HH:mm zz"] {
-            assert_eq!(
-                render_pattern(&dt, unsupported, df),
-                Err(FormatSpecError::Unsupported(unsupported.to_owned())),
-                "pattern {unsupported}"
-            );
+        // A timezone offset cannot be rendered from a naive date/time.
+        assert_eq!(
+            render_pattern(&dt, "HH:mm zz", df),
+            Err(FormatSpecError::Unsupported("HH:mm zz".to_owned()))
+        );
+    }
+
+    #[test]
+    fn era_token_renders_the_calendar_era() {
+        let dt = morning();
+        let df = &invariant().datetime;
+        for pattern in ["g", "gg", "ggggg"] {
+            assert_eq!(render_pattern(&dt, pattern, df), Ok("A.D.".to_owned()));
         }
+        assert_eq!(
+            render_pattern(&dt, "yyyy g", df),
+            Ok("2024 A.D.".to_owned())
+        );
     }
 
     #[test]
