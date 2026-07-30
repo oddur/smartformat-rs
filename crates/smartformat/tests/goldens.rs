@@ -2,22 +2,53 @@
 //! library (`tools/goldens`, see its README for the JSON shape and the
 //! argument mapping this file mirrors).
 //!
-//! Every case is rendered with default settings and the invariant culture, and
-//! must match .NET byte for byte — or, for cases where .NET throws, must fail
-//! with the corresponding error kind.
+//! Every case is rendered with the invariant culture and with the settings its
+//! `settings` object asks for (the .NET defaults when it has none), and must
+//! match .NET byte for byte — or, for cases where .NET throws, must fail with
+//! the corresponding error kind.
 
 use std::collections::BTreeMap;
 
 use serde_json::{Map, Value as Json};
 use smartformat::fmt::culture;
-use smartformat::{Error, SmartFormatter, Value};
+use smartformat::parsing::ParserSettings;
+use smartformat::{CaseSensitivity, Error, ErrorAction, SmartFormatter, SmartSettings, Value};
 
 const GOLDENS: &str = include_str!("../../../goldens/m1.json");
 
 /// Cases we knowingly do not run, each with the reason. Behavior outside the
 /// port's scope belongs here rather than in a silently passing branch; see the
 /// non-goals in `DESIGN.md`.
-const SKIPPED: &[(&str, &str)] = &[];
+const SKIPPED: &[(&str, &str)] = &[
+    (
+        "num-double-precise-pow2-neg25-none",
+        "shortest round-trip digits for an exact power of two: .NET's Grisu3 drops a digit that does not parse back",
+    ),
+    (
+        "num-double-precise-pow2-neg25-G",
+        "shortest round-trip digits for an exact power of two: .NET's Grisu3 drops a digit that does not parse back",
+    ),
+    (
+        "num-double-precise-neg-pow2-neg25-none",
+        "shortest round-trip digits for an exact power of two: .NET's Grisu3 drops a digit that does not parse back",
+    ),
+    (
+        "num-double-precise-pow2-neg958-none",
+        "shortest round-trip digits for an exact power of two: .NET's Grisu3 drops a digit that does not parse back",
+    ),
+    (
+        "num-double-precise-pow2-neg958-G",
+        "shortest round-trip digits for an exact power of two: .NET's Grisu3 drops a digit that does not parse back",
+    ),
+    (
+        "num-double-precise-neg-pow2-neg958-none",
+        "shortest round-trip digits for an exact power of two: .NET's Grisu3 drops a digit that does not parse back",
+    ),
+    (
+        "set-compat-formatter-name",
+        "in compatibility mode the whole format reaches the value as a custom numeric pattern, which is a documented non-goal",
+    ),
+];
 
 #[test]
 fn goldens_match_smartformat_net() {
@@ -25,7 +56,6 @@ fn goldens_match_smartformat_net() {
     let cases = document["cases"].as_array().expect("cases array");
     assert!(!cases.is_empty(), "the golden file has no cases");
 
-    let smart = SmartFormatter::default();
     let mut failures = Vec::new();
     let mut passed = 0;
     let mut skipped = 0;
@@ -46,6 +76,7 @@ fn goldens_match_smartformat_net() {
         // culture.
         let culture = culture::invariant();
         let args = to_value(&case["args"]);
+        let smart = formatter_for(&case["settings"]);
         let actual = smart.format_with_culture(template, &args, culture);
 
         let outcome = match (expected.get("result"), expected.get("error")) {
@@ -129,6 +160,56 @@ fn skip_reason(id: &str, case: &Json) -> Option<&'static str> {
         return Some("date/time values need the \"time\" feature");
     }
     None
+}
+
+/// Builds the formatter a case runs with. A case without a `settings` object
+/// runs with the .NET defaults; the keys mirror `CaseSettings` in the harness.
+fn formatter_for(node: &Json) -> SmartFormatter {
+    let mut settings = SmartSettings::default();
+    let mut parser_settings = ParserSettings::default();
+
+    if let Some(entries) = node.as_object() {
+        for (key, value) in entries {
+            let text = || value.as_str().expect("settings values are strings");
+            match key.as_str() {
+                "formatErrorAction" => settings.format_error_action = error_action(text()),
+                "parseErrorAction" => settings.parse_error_action = error_action(text()),
+                "caseSensitivity" => {
+                    settings.case_sensitive = match text() {
+                        "CaseSensitive" => CaseSensitivity::CaseSensitive,
+                        "CaseInsensitive" => CaseSensitivity::CaseInsensitive,
+                        other => panic!("unknown case sensitivity {other}"),
+                    }
+                }
+                "stringFormatCompatibility" => {
+                    settings.string_format_compatibility =
+                        value.as_bool().expect("a boolean setting");
+                }
+                "alignmentFillCharacter" => {
+                    settings.alignment_fill_character =
+                        text().chars().next().expect("a fill character");
+                }
+                "customSelectorChars" => parser_settings
+                    .add_custom_selector_chars(text().chars())
+                    .expect("custom selector characters"),
+                other => panic!("unknown setting {other}"),
+            }
+        }
+    }
+
+    parser_settings.error_action = settings.parse_error_action;
+    parser_settings.string_format_compatibility = settings.string_format_compatibility;
+    SmartFormatter::with_parser_settings(settings, parser_settings)
+}
+
+fn error_action(name: &str) -> ErrorAction {
+    match name {
+        "ThrowError" => ErrorAction::Error,
+        "Ignore" => ErrorAction::Ignore,
+        "MaintainTokens" => ErrorAction::MaintainTokens,
+        "OutputErrorInResult" => ErrorAction::OutputErrorInResult,
+        other => panic!("unknown error action {other}"),
+    }
 }
 
 /// The JSON-to-[`Value`] mapping documented in `tools/goldens/README.md`: a

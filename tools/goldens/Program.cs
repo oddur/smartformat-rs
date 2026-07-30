@@ -8,6 +8,7 @@ using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using SmartFormat;
+using SmartFormat.Core.Settings;
 
 const string smartFormatVersion = "3.6.1";
 
@@ -20,16 +21,24 @@ Nesting(cases);
 Numbers(cases);
 Dates(cases);
 Errors(cases);
+StringMethods(cases);
+FormatterOptions(cases);
+ListIndex(cases);
+SettingsCases(cases);
 
 var duplicates = cases.GroupBy(c => c.Id).Where(g => g.Count() > 1).Select(g => g.Key).ToList();
 if (duplicates.Count > 0)
     throw new InvalidOperationException("duplicate case ids: " + string.Join(", ", duplicates));
 
-var smart = Smart.CreateDefaultSmartFormat();
+var formatters = new Dictionary<CaseSettings, SmartFormatter>();
 
 var caseArray = new JsonArray();
 foreach (var c in cases)
 {
+    var settings = c.Settings ?? CaseSettings.Default;
+    if (!formatters.TryGetValue(settings, out var smart))
+        formatters[settings] = smart = Smart.CreateDefaultSmartFormat(settings.ToSmartSettings());
+
     var expected = new JsonObject();
     try
     {
@@ -44,14 +53,16 @@ foreach (var c in cases)
         expected["error"] = ex.GetType().Name;
     }
 
-    caseArray.Add(new JsonObject
+    var node = new JsonObject
     {
         ["id"] = c.Id,
         ["template"] = c.Template,
         ["args"] = JsonNode.Parse(c.ArgsJson),
         ["culture"] = "",
-        ["expected"] = expected,
-    });
+    };
+    if (c.Settings is { } custom) node["settings"] = custom.ToJson();
+    node["expected"] = expected;
+    caseArray.Add(node);
 }
 
 var document = new JsonObject
@@ -103,6 +114,10 @@ static void Literals(List<GoldenCase> cases)
     Add("escape-vertical-tab", @"a\vb");
     Add("escape-unicode-bullet", @"a\u2022b");
     Add("escape-unicode-e-acute", @"a\u00e9b");
+    // \u takes a UTF-16 code unit, so an astral character is spelled as a
+    // surrogate pair and the two halves join in the output string.
+    Add("escape-unicode-surrogate-pair", @"a\ud83d\ude00b");
+    Add("escape-unicode-surrogate-pair-only", @"\ud83d\ude00");
     Add("escape-mixed", @"line1\nline2\ttabbed\\end");
     Add("escape-only-newline", @"\n");
     Add("trailing-backslash", @"abc\");
@@ -295,6 +310,26 @@ static void Numbers(List<GoldenCase> cases)
             Placeholder(spec),
             "[" + JsonDouble(value) + "]"));
 
+    // A non-finite value never reaches the specifier in .NET, so even a
+    // specifier that would be rejected or is a custom pattern renders the
+    // culture symbol.
+    var nonFinite = new (string Slug, double Value)[]
+    {
+        ("nan", double.NaN), ("pos-inf", double.PositiveInfinity),
+        ("neg-inf", double.NegativeInfinity),
+    };
+    var offSubsetSpecs = new (string Spec, string Slug)[]
+    {
+        ("#,##0.00", "custom-pattern"), ("Q", "unknown-letter"),
+        ("F1000000000", "precision-overflow"), ("00", "custom-zeroes"),
+    };
+    foreach (var (valueSlug, value) in nonFinite)
+    foreach (var (spec, specSlug) in offSubsetSpecs)
+        cases.Add(new GoldenCase(
+            $"num-double-nonfinite-{valueSlug}-{specSlug}",
+            Placeholder(spec),
+            "[" + JsonDouble(value) + "]"));
+
     // Deliberate error combos: integer-only specifiers applied to doubles.
     foreach (var (valueSlug, value) in doubles.Where(d => d.Slug is "0_1" or "2_5" or "nan"))
     foreach (var (spec, specSlug) in allSpecs.Where(s => integerOnly.Contains(s.Spec)))
@@ -302,6 +337,95 @@ static void Numbers(List<GoldenCase> cases)
             $"num-double-badspec-{valueSlug}-{specSlug}",
             Placeholder(spec),
             "[" + JsonDouble(value) + "]"));
+
+    // Integers round half away from zero and doubles round half to even, which
+    // only shows up where a value sits exactly on a midpoint of the requested
+    // precision. Without these the two rounding modes could be swapped.
+    var intMidpoints = new (string Slug, long Value, string Spec)[]
+    {
+        ("1050-G3", 1050L, "G3"),
+        ("1050-E1", 1050L, "E1"),
+        ("1150-G2", 1150L, "G2"),
+        ("2500-E0", 2500L, "E0"),
+        ("neg-2500-E0", -2500L, "E0"),
+        ("25-G1", 25L, "G1"),
+        ("35-G1", 35L, "G1"),
+    };
+    foreach (var (slug, value, spec) in intMidpoints)
+        cases.Add(new GoldenCase($"num-int-midpoint-{slug}", Placeholder(spec), "[" + JsonLong(value) + "]"));
+
+    // The exact binary expansion, past the 5 decimals the combinatorial cases
+    // reach.
+    var precise = new (string Slug, double Value, string Spec)[]
+    {
+        ("0_1-F20", 0.1, "F20"),
+        ("2_675-F30", 2.675, "F30"),
+        ("0_1-G17", 0.1, "G17"),
+        ("0_1-E20", 0.1, "E20"),
+        ("min-subnormal-G", 5e-324, "G"),
+        ("min-subnormal-G17", 5e-324, "G17"),
+        ("max-F2", double.MaxValue, "F2"),
+        ("1e100-N0", 1e100, "N0"),
+        ("1e16-G", 1e16, "G"),
+        ("1e17-G", 1e17, "G"),
+        ("1e16-none", 1e16, ""),
+        ("1e17-none", 1e17, ""),
+        // Exact powers of two: the shortest-round-trip digits .NET produces
+        // for these are one digit shorter than the correctly rounded form.
+        ("pow2-neg25-none", 2.9802322387695312e-8, ""),
+        ("pow2-neg25-G", 2.9802322387695312e-8, "G"),
+        ("neg-pow2-neg25-none", -2.9802322387695312e-8, ""),
+        ("pow2-neg958-none", 4.1045368012983762e-289, ""),
+        ("pow2-neg958-G", 4.1045368012983762e-289, "G"),
+        ("neg-pow2-neg958-none", -4.1045368012983762e-289, ""),
+        ("pow2-neg24-none", 5.960464477539063e-8, ""),
+        ("pow2-neg26-none", 1.4901161193847656e-8, ""),
+        ("pow2-zero-none", 1.0, ""),
+    };
+    foreach (var (slug, value, spec) in precise)
+        cases.Add(new GoldenCase($"num-double-precise-{slug}", Placeholder(spec), "[" + JsonDouble(value) + "]"));
+
+    // Negative non-integers, where rounding and the negative currency/percent
+    // patterns combine, plus the lowercase specifiers that must not change the
+    // case of the output.
+    var negatives = new (string Slug, double Value, string Spec)[]
+    {
+        ("C", -123.456, "C"),
+        ("c1-lc", -123.456, "c1"),
+        ("P1", -0.39678, "P1"),
+        ("p-lc", -0.39678, "p"),
+        ("N3", -1234.56, "N3"),
+        ("n-lc", -1234.56, "n"),
+        ("F0", -0.4, "F0"),
+        ("f1-lc", -0.4, "f1"),
+        ("G4", -1234.56, "G4"),
+        ("E2", -1234.56, "E2"),
+    };
+    foreach (var (slug, value, spec) in negatives)
+        cases.Add(new GoldenCase($"num-double-negative-{slug}", Placeholder(spec), "[" + JsonDouble(value) + "]"));
+
+    var intSpecs = new (string Slug, long Value, string Spec)[]
+    {
+        ("d5-lc", -1234L, "d5"),
+        ("X20", -255L, "X20"),
+        ("x20-lc", -255L, "x20"),
+        ("X-neg", -255L, "X"),
+        ("D0", -1234L, "D0"),
+        ("C0-neg", -1234L, "C0"),
+    };
+    foreach (var (slug, value, spec) in intSpecs)
+        cases.Add(new GoldenCase($"num-int-spec-{slug}", Placeholder(spec), "[" + JsonLong(value) + "]"));
+
+    // `R` (round-trip) and `B` (binary) are standard specifiers too.
+    cases.Add(new GoldenCase("num-double-R-0_1", "{0:R}", "[" + JsonDouble(0.1) + "]"));
+    cases.Add(new GoldenCase("num-double-r-lc-0_1", "{0:r}", "[" + JsonDouble(0.1) + "]"));
+    cases.Add(new GoldenCase("num-double-R-2_675", "{0:R}", "[" + JsonDouble(2.675) + "]"));
+    cases.Add(new GoldenCase("num-double-R-1e17", "{0:R}", "[" + JsonDouble(1e17) + "]"));
+    cases.Add(new GoldenCase("num-int-R", "{0:R}", "[42]"));
+    cases.Add(new GoldenCase("num-int-B", "{0:B}", "[5]"));
+    cases.Add(new GoldenCase("num-int-B8", "{0:B8}", "[5]"));
+    cases.Add(new GoldenCase("num-int-b-lc-neg", "{0:b}", "[-5]"));
+    cases.Add(new GoldenCase("num-double-B", "{0:B}", "[" + JsonDouble(0.1) + "]"));
 
     static string Placeholder(string spec) => spec.Length == 0 ? "{0}" : "{0:" + spec + "}";
 }
@@ -330,6 +454,27 @@ static void Dates(List<GoldenCase> cases)
             $"date-{dateSlug}-{specSlug}",
             spec.Length == 0 ? "{0}" : "{0:" + spec + "}",
             $$"""[{"$dt":"{{roundTrip}}"}]"""));
+
+    // The lowercase aliases and the specifiers the combinatorial table misses,
+    // plus years outside the four-digit-with-no-padding range.
+    var extra = new (string Slug, string Spec, string RoundTrip)[]
+    {
+        ("2009-m-lc", "m", "2009-06-15T13:45:30.6175425"),
+        ("2009-Y", "Y", "2009-06-15T13:45:30.6175425"),
+        ("2009-o-lc", "o", "2009-06-15T13:45:30.6175425"),
+        ("2009-r-lc", "r", "2009-06-15T13:45:30.6175425"),
+        ("year-987-D", "D", "0987-11-09T00:00:00.0000000"),
+        ("year-987-d-lc", "d", "0987-11-09T00:00:00.0000000"),
+        ("year-987-y-lc", "y", "0987-11-09T00:00:00.0000000"),
+        ("min-value-O", "O", "0001-01-01T00:00:00.0000000"),
+        ("min-value-F", "F", "0001-01-01T00:00:00.0000000"),
+        ("max-value-O", "O", "9999-12-31T23:59:59.9999999"),
+        ("max-value-F", "F", "9999-12-31T23:59:59.9999999"),
+        ("max-value-s-lc", "s", "9999-12-31T23:59:59.9999999"),
+    };
+    foreach (var (slug, spec, roundTrip) in extra)
+        cases.Add(new GoldenCase(
+            $"date-{slug}", "{0:" + spec + "}", $$"""[{"$dt":"{{roundTrip}}"}]"""));
 }
 
 static void Errors(List<GoldenCase> cases)
@@ -356,6 +501,166 @@ static void Errors(List<GoldenCase> cases)
     Add("invalid-numeric-spec", "{0:Q}", one);
     Add("selector-on-int", "{0.Nope}", one);
     Add("trailing-colon", "{0:", one);
+    Add("trailing-operator-dot", "{0.}", one);
+    Add("trailing-operator-after-member", "{0.Length.}", @"[""abc""]");
+}
+
+// ---------------------------------------------------------------------------
+// StringSource selector methods
+// ---------------------------------------------------------------------------
+
+static void StringMethods(List<GoldenCase> cases)
+{
+    void Add(string id, string method, string value) =>
+        cases.Add(new GoldenCase("str-" + id, "{0." + method + "}", JsonString(value)));
+
+    Add("capitalize-words-digit-start", "CapitalizeWords", "1st place");
+    Add("capitalize-words-punctuation-start", "CapitalizeWords", "(hello) world");
+    Add("capitalize-words-plain", "CapitalizeWords", "hello world");
+    Add("capitalize-words-already", "CapitalizeWords", "Hello World");
+    Add("capitalize-words-multi-space", "CapitalizeWords", "a  b\tc");
+    Add("capitalize-words-empty", "CapitalizeWords", "");
+    Add("capitalize-empty", "Capitalize", "");
+    Add("capitalize-single-char", "Capitalize", "a");
+    Add("capitalize-already", "Capitalize", "Already");
+    Add("capitalize-lowercase", "Capitalize", "abc");
+    Add("capitalize-digit", "Capitalize", "1abc");
+    Add("trim-start", "TrimStart", "  x  ");
+    Add("trim-end", "TrimEnd", "  x  ");
+    Add("to-upper-invariant", "ToUpperInvariant", "aBc");
+    Add("to-lower-invariant", "ToLowerInvariant", "aBc");
+}
+
+// ---------------------------------------------------------------------------
+// Formatter names and their options
+// ---------------------------------------------------------------------------
+
+static void FormatterOptions(List<GoldenCase> cases)
+{
+    void Add(string id, string template) => cases.Add(new GoldenCase("fopt-" + id, template, "[5]"));
+
+    Add("empty-options", "{0:d()}");
+    Add("escaped-colon", @"{0:d(a\:b)}");
+    Add("escaped-close-paren", @"{0:d(a\)b)}");
+    Add("options-then-format", "{0:d(x):v}");
+    Add("name-without-options", "{0:d:v}");
+
+    // A formatter name the parser abandons leaves its text in the format, so
+    // these end with a nameless placeholder to make that text observable
+    // instead of feeding it to the value as a custom numeric pattern.
+    Add("empty-name", "{0:(){}}");
+    Add("unescaped-colon-abandons", "{0:d(a:b){}}");
+    Add("close-paren-not-followed-by-terminator", "{0:d(a)b{}}");
+    Add("escaped-colon-with-nested", @"{0:d(a\:b):<{}>}");
+}
+
+// ---------------------------------------------------------------------------
+// The list-index operator
+// ---------------------------------------------------------------------------
+
+static void ListIndex(List<GoldenCase> cases)
+{
+    void Add(string id, string template, string argsJson) =>
+        cases.Add(new GoldenCase("list-" + id, template, argsJson));
+
+    const string nested = "[[1,2,3]]";
+    const string dict = """{"a":[1,2,3],"n":null,"one":1}""";
+
+    Add("positional-bracket", "{0[1]}", nested);
+    Add("positional-dotted", "{0.1}", nested);
+    Add("named-bracket", "{a[1]}", dict);
+    Add("named-dotted", "{a.2}", dict);
+    Add("named-bracket-out-of-range", "{a[9]}", dict);
+    Add("nullable-bracket-on-null", "{n?[1]}", dict);
+    Add("trailing-nullable-operator", "{one?}", dict);
+    Add("bracket-then-member", "{0[1].Length}", """[["x","yy"]]""");
+    Add("bracket-then-nested-format", "{0[1]:<{}>}", """[["x","yy"]]""");
+}
+
+// ---------------------------------------------------------------------------
+// Non-default SmartSettings
+// ---------------------------------------------------------------------------
+
+static void SettingsCases(List<GoldenCase> cases)
+{
+    const string other = """{"Other":1}""";
+    const string ab = """{"a":"A","b":"B"}""";
+    const string one = "[42]";
+
+    // FormatErrorAction against selector failures, a missing formatter and a
+    // bad numeric specifier.
+    var failing = new (string Slug, string Template, string Args)[]
+    {
+        ("missing-selector", "[{Missing}]", other),
+        ("missing-selector-aligned", "[{Missing,05}]", other),
+        ("missing-selector-neg-aligned", "[{Missing,-8}]", other),
+        ("missing-selector-formatter-options", @"[{Missing:d(a\:b)}]", other),
+        ("unknown-formatter", "[{0:nosuchformatter:x}]", one),
+        ("bad-numeric-spec", "[{0:Q}]", one),
+        ("member-on-int", "[{0.Nope}]", one),
+        ("index-out-of-range", "[{5}]", one),
+        ("no-error", "[{0:D3}]", one),
+    };
+    foreach (var action in new[]
+             {
+                 FormatErrorAction.Ignore, FormatErrorAction.MaintainTokens,
+                 FormatErrorAction.OutputErrorInResult,
+             })
+    foreach (var (slug, template, args) in failing)
+        cases.Add(new GoldenCase(
+            $"set-fmterr-{action.ToString().ToLowerInvariant()}-{slug}", template, args,
+            new CaseSettings(FormatErrorAction: action)));
+
+    // ParseErrorAction against the six syntax errors the parser reports.
+    var broken = new (string Slug, string Template)[]
+    {
+        ("invalid-selector-char", "a{b c}d"),
+        ("trailing-operator", "a{b.}d"),
+        ("too-many-closing-braces", "a}b"),
+        ("missing-closing-brace-nested", "x{a:{b}"),
+        ("too-many-closing-braces-after-format", "x{a:y}}z"),
+        ("missing-closing-brace-trailing", "{a}{b"),
+    };
+    foreach (var action in new[]
+             {
+                 ParseErrorAction.Ignore, ParseErrorAction.MaintainTokens,
+                 ParseErrorAction.OutputErrorInResult,
+             })
+    foreach (var (slug, template) in broken)
+        cases.Add(new GoldenCase(
+            $"set-parseerr-{action.ToString().ToLowerInvariant()}-{slug}", template, ab,
+            new CaseSettings(ParseErrorAction: action)));
+
+    // CaseSensitivity.
+    var insensitive = new CaseSettings(CaseSensitivity: CaseSensitivityType.CaseInsensitive);
+    const string person = """{"Name":"Alice","Text":"  hello world  "}""";
+    cases.Add(new GoldenCase("set-caseins-map-key", "{name}", person, insensitive));
+    cases.Add(new GoldenCase("set-caseins-map-key-upper", "{NAME}", person, insensitive));
+    cases.Add(new GoldenCase("set-caseins-string-method", "{Name.tolower}", person, insensitive));
+    cases.Add(new GoldenCase("set-caseins-formatter-name", "{Name:D():x}", person, insensitive));
+    cases.Add(new GoldenCase("set-sensitive-map-key", "{name}", person));
+
+    // OrdinalIgnoreCase folds non-ASCII, which needs the letters allowed in a
+    // selector first.
+    var umlaut = new CaseSettings(
+        CaseSensitivity: CaseSensitivityType.CaseInsensitive, CustomSelectorChars: "Ää");
+    cases.Add(new GoldenCase(
+        "set-caseins-non-ascii", "{Ä}", """{"ä":"v"}""", umlaut));
+
+    // StringFormatCompatibility: doubled braces escape, formatter names are
+    // not parsed, and only DefaultFormatter runs.
+    var compat = new CaseSettings(StringFormatCompatibility: true);
+    cases.Add(new GoldenCase("set-compat-doubled-braces", "{{0}} {0}", "[5]", compat));
+    cases.Add(new GoldenCase("set-compat-char-literal", @"a\nb", "[]", compat));
+    cases.Add(new GoldenCase("set-compat-numeric-spec", "{0:d}", "[5]", compat));
+    cases.Add(new GoldenCase("set-compat-formatter-name", "{0:d(x):v}", "[5]", compat));
+    cases.Add(new GoldenCase("set-compat-date-spec", "{0:d}", """[{"$dt":"2009-06-15T13:45:30.0000000"}]""", compat));
+
+    // AlignmentFillCharacter.
+    var dotFill = new CaseSettings(AlignmentFillCharacter: '.');
+    cases.Add(new GoldenCase("set-fill-right", "[{0,6}]", @"[""ab""]", dotFill));
+    cases.Add(new GoldenCase("set-fill-left", "[{0,-6}]", @"[""ab""]", dotFill));
+    cases.Add(new GoldenCase("set-fill-literal-in-nested", "[{0,6:<{}>}]", @"[""ab""]", dotFill));
 }
 
 // ---------------------------------------------------------------------------
@@ -415,6 +720,9 @@ static bool IsIntegerLiteral(string rawNumber) => rawNumber.AsSpan().IndexOfAny(
 
 static string JsonLong(long value) => value.ToString(CultureInfo.InvariantCulture);
 
+// A single string wrapped as the one positional argument of a case.
+static string JsonString(string value) => "[" + JsonSerializer.Serialize(value) + "]";
+
 // Doubles are written round-trippably, and always with a '.' or an exponent so
 // a JSON reader can tell them apart from integers. NaN and the infinities have
 // no JSON number form, so they use the "$f" marker object.
@@ -428,4 +736,57 @@ static string JsonDouble(double value)
     return IsIntegerLiteral(text) ? text + ".0" : text;
 }
 
-internal readonly record struct GoldenCase(string Id, string Template, string ArgsJson);
+internal readonly record struct GoldenCase(
+    string Id, string Template, string ArgsJson, CaseSettings? Settings = null);
+
+/// <summary>
+/// The non-default <see cref="SmartSettings"/> a case runs with. A case without
+/// one runs with <see cref="Default"/>, which is what SmartFormat.NET ships.
+/// </summary>
+internal sealed record CaseSettings(
+    FormatErrorAction FormatErrorAction = FormatErrorAction.ThrowError,
+    ParseErrorAction ParseErrorAction = ParseErrorAction.ThrowError,
+    CaseSensitivityType CaseSensitivity = CaseSensitivityType.CaseSensitive,
+    bool StringFormatCompatibility = false,
+    char AlignmentFillCharacter = ' ',
+    string CustomSelectorChars = "")
+{
+    public static readonly CaseSettings Default = new();
+
+    public SmartSettings ToSmartSettings()
+    {
+        var settings = new SmartSettings
+        {
+            CaseSensitivity = CaseSensitivity,
+            StringFormatCompatibility = StringFormatCompatibility,
+            Formatter =
+            {
+                ErrorAction = FormatErrorAction,
+                AlignmentFillCharacter = AlignmentFillCharacter,
+            },
+            Parser = { ErrorAction = ParseErrorAction },
+        };
+        if (CustomSelectorChars.Length > 0)
+            settings.Parser.AddCustomSelectorChars(CustomSelectorChars.ToCharArray());
+        return settings;
+    }
+
+    /// <summary>Only the properties that differ from the .NET defaults.</summary>
+    public JsonObject ToJson()
+    {
+        var json = new JsonObject();
+        if (FormatErrorAction != Default.FormatErrorAction)
+            json["formatErrorAction"] = FormatErrorAction.ToString();
+        if (ParseErrorAction != Default.ParseErrorAction)
+            json["parseErrorAction"] = ParseErrorAction.ToString();
+        if (CaseSensitivity != Default.CaseSensitivity)
+            json["caseSensitivity"] = CaseSensitivity.ToString();
+        if (StringFormatCompatibility != Default.StringFormatCompatibility)
+            json["stringFormatCompatibility"] = StringFormatCompatibility;
+        if (AlignmentFillCharacter != Default.AlignmentFillCharacter)
+            json["alignmentFillCharacter"] = AlignmentFillCharacter.ToString();
+        if (CustomSelectorChars != Default.CustomSelectorChars)
+            json["customSelectorChars"] = CustomSelectorChars;
+        return json;
+    }
+}

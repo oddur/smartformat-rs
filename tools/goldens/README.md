@@ -20,9 +20,10 @@ caused it.
 SmartFormat.NET **3.6.1**, from `tools/goldens/goldens.csproj`. Bump it there, rerun the
 command above, and review the diff: it shows exactly which behavior the upgrade changed.
 
-The harness uses `Smart.CreateDefaultSmartFormat()` with default settings, so both the
-parser and the formatter throw on errors, selectors are case-sensitive, and every case is
-rendered with `CultureInfo.InvariantCulture`.
+A case without a `settings` object uses `Smart.CreateDefaultSmartFormat()` with default
+settings, so both the parser and the formatter throw on errors, selectors are
+case-sensitive, and formatter extensions are enabled. Every case is rendered with
+`CultureInfo.InvariantCulture`.
 
 Build warnings would land on stdout and corrupt the JSON, so the project treats warnings
 as errors.
@@ -49,6 +50,20 @@ A case that throws carries `{"error": "<exception type name>"}` instead of `resu
 per-case `culture` field is always `""` (invariant) for now; it exists so culture-specific
 cases can be added without changing the schema.
 
+## Non-default settings
+
+A case that needs settings other than the .NET defaults carries a `settings` object
+holding only the properties that differ. The Rust runner mirrors the same keys.
+
+| Key | .NET property | Values |
+| --- | --- | --- |
+| `formatErrorAction` | `SmartSettings.Formatter.ErrorAction` | `Ignore`, `MaintainTokens`, `OutputErrorInResult` |
+| `parseErrorAction` | `SmartSettings.Parser.ErrorAction` | same three |
+| `caseSensitivity` | `SmartSettings.CaseSensitivity` | `CaseInsensitive` |
+| `stringFormatCompatibility` | `SmartSettings.StringFormatCompatibility` | `true` |
+| `alignmentFillCharacter` | `SmartSettings.Formatter.AlignmentFillCharacter` | a one-character string |
+| `customSelectorChars` | `ParserSettings.AddCustomSelectorChars` | the characters to allow |
+
 ## How `args` maps to .NET values
 
 The Rust runner mirrors this mapping, so keep the two in step.
@@ -73,9 +88,10 @@ which is why they need the `$f` marker.
 ## Coverage
 
 The case table in `Program.cs` is grouped by feature: literals and escaping, selectors,
-alignment, nesting, numeric specifiers, date specifiers, and errors. Numeric and date
-cases are generated combinatorially from a value list crossed with a specifier list, which
-is where most of the volume comes from.
+alignment, nesting, numeric specifiers, date specifiers, errors, `StringSource` selector
+methods, formatter names and options, the list-index operator, and non-default settings.
+Numeric and date cases are generated combinatorially from a value list crossed with a
+specifier list, which is where most of the volume comes from.
 
 Four areas are deliberately left out, because they belong to later milestones or fall
 outside the port's scope: custom numeric and date patterns, lists as values to format, the

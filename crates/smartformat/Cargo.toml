@@ -29,4 +29,7 @@ jiff = { version = "0.2", optional = true }
 
 [dev-dependencies]
 # Test-only: the golden file is JSON. Normal builds stay serde-free (DESIGN.md).
-serde_json = "1"
+# `arbitrary_precision` keeps each number's literal text, so a golden double is
+# parsed by the standard library rather than serde_json's own float parser,
+# which is off by an ulp for some inputs.
+serde_json = { version = "1", features = ["arbitrary_precision"] }

@@ -183,6 +183,24 @@
       }
     },
     {
+      "id": "lit-escape-unicode-surrogate-pair",
+      "template": "a\\ud83d\\ude00b",
+      "args": [],
+      "culture": "",
+      "expected": {
+        "result": "a\uD83D\uDE00b"
+      }
+    },
+    {
+      "id": "lit-escape-unicode-surrogate-pair-only",
+      "template": "\\ud83d\\ude00",
+      "args": [],
+      "culture": "",
+      "expected": {
+        "result": "\uD83D\uDE00"
+      }
+    },
+    {
       "id": "lit-escape-mixed",
       "template": "line1\\nline2\\ttabbed\\\\end",
       "args": [],
@@ -5541,6 +5559,162 @@
       }
     },
     {
+      "id": "num-double-nonfinite-nan-custom-pattern",
+      "template": "{0:#,##0.00}",
+      "args": [
+        {
+          "$f": "NaN"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "NaN"
+      }
+    },
+    {
+      "id": "num-double-nonfinite-nan-unknown-letter",
+      "template": "{0:Q}",
+      "args": [
+        {
+          "$f": "NaN"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "NaN"
+      }
+    },
+    {
+      "id": "num-double-nonfinite-nan-precision-overflow",
+      "template": "{0:F1000000000}",
+      "args": [
+        {
+          "$f": "NaN"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "NaN"
+      }
+    },
+    {
+      "id": "num-double-nonfinite-nan-custom-zeroes",
+      "template": "{0:00}",
+      "args": [
+        {
+          "$f": "NaN"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "NaN"
+      }
+    },
+    {
+      "id": "num-double-nonfinite-pos-inf-custom-pattern",
+      "template": "{0:#,##0.00}",
+      "args": [
+        {
+          "$f": "Infinity"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "Infinity"
+      }
+    },
+    {
+      "id": "num-double-nonfinite-pos-inf-unknown-letter",
+      "template": "{0:Q}",
+      "args": [
+        {
+          "$f": "Infinity"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "Infinity"
+      }
+    },
+    {
+      "id": "num-double-nonfinite-pos-inf-precision-overflow",
+      "template": "{0:F1000000000}",
+      "args": [
+        {
+          "$f": "Infinity"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "Infinity"
+      }
+    },
+    {
+      "id": "num-double-nonfinite-pos-inf-custom-zeroes",
+      "template": "{0:00}",
+      "args": [
+        {
+          "$f": "Infinity"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "Infinity"
+      }
+    },
+    {
+      "id": "num-double-nonfinite-neg-inf-custom-pattern",
+      "template": "{0:#,##0.00}",
+      "args": [
+        {
+          "$f": "-Infinity"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "-Infinity"
+      }
+    },
+    {
+      "id": "num-double-nonfinite-neg-inf-unknown-letter",
+      "template": "{0:Q}",
+      "args": [
+        {
+          "$f": "-Infinity"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "-Infinity"
+      }
+    },
+    {
+      "id": "num-double-nonfinite-neg-inf-precision-overflow",
+      "template": "{0:F1000000000}",
+      "args": [
+        {
+          "$f": "-Infinity"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "-Infinity"
+      }
+    },
+    {
+      "id": "num-double-nonfinite-neg-inf-custom-zeroes",
+      "template": "{0:00}",
+      "args": [
+        {
+          "$f": "-Infinity"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "-Infinity"
+      }
+    },
+    {
       "id": "num-double-badspec-0_1-D",
       "template": "{0:D}",
       "args": [
@@ -5678,6 +5852,589 @@
       "culture": "",
       "expected": {
         "result": "NaN"
+      }
+    },
+    {
+      "id": "num-int-midpoint-1050-G3",
+      "template": "{0:G3}",
+      "args": [
+        1050
+      ],
+      "culture": "",
+      "expected": {
+        "result": "1.05E+03"
+      }
+    },
+    {
+      "id": "num-int-midpoint-1050-E1",
+      "template": "{0:E1}",
+      "args": [
+        1050
+      ],
+      "culture": "",
+      "expected": {
+        "result": "1.1E+003"
+      }
+    },
+    {
+      "id": "num-int-midpoint-1150-G2",
+      "template": "{0:G2}",
+      "args": [
+        1150
+      ],
+      "culture": "",
+      "expected": {
+        "result": "1.2E+03"
+      }
+    },
+    {
+      "id": "num-int-midpoint-2500-E0",
+      "template": "{0:E0}",
+      "args": [
+        2500
+      ],
+      "culture": "",
+      "expected": {
+        "result": "3E+003"
+      }
+    },
+    {
+      "id": "num-int-midpoint-neg-2500-E0",
+      "template": "{0:E0}",
+      "args": [
+        -2500
+      ],
+      "culture": "",
+      "expected": {
+        "result": "-3E+003"
+      }
+    },
+    {
+      "id": "num-int-midpoint-25-G1",
+      "template": "{0:G1}",
+      "args": [
+        25
+      ],
+      "culture": "",
+      "expected": {
+        "result": "3E+01"
+      }
+    },
+    {
+      "id": "num-int-midpoint-35-G1",
+      "template": "{0:G1}",
+      "args": [
+        35
+      ],
+      "culture": "",
+      "expected": {
+        "result": "4E+01"
+      }
+    },
+    {
+      "id": "num-double-precise-0_1-F20",
+      "template": "{0:F20}",
+      "args": [
+        0.1
+      ],
+      "culture": "",
+      "expected": {
+        "result": "0.10000000000000000555"
+      }
+    },
+    {
+      "id": "num-double-precise-2_675-F30",
+      "template": "{0:F30}",
+      "args": [
+        2.675
+      ],
+      "culture": "",
+      "expected": {
+        "result": "2.674999999999999822364316059975"
+      }
+    },
+    {
+      "id": "num-double-precise-0_1-G17",
+      "template": "{0:G17}",
+      "args": [
+        0.1
+      ],
+      "culture": "",
+      "expected": {
+        "result": "0.10000000000000001"
+      }
+    },
+    {
+      "id": "num-double-precise-0_1-E20",
+      "template": "{0:E20}",
+      "args": [
+        0.1
+      ],
+      "culture": "",
+      "expected": {
+        "result": "1.00000000000000005551E-001"
+      }
+    },
+    {
+      "id": "num-double-precise-min-subnormal-G",
+      "template": "{0:G}",
+      "args": [
+        5E-324
+      ],
+      "culture": "",
+      "expected": {
+        "result": "5E-324"
+      }
+    },
+    {
+      "id": "num-double-precise-min-subnormal-G17",
+      "template": "{0:G17}",
+      "args": [
+        5E-324
+      ],
+      "culture": "",
+      "expected": {
+        "result": "4.9406564584124654E-324"
+      }
+    },
+    {
+      "id": "num-double-precise-max-F2",
+      "template": "{0:F2}",
+      "args": [
+        1.7976931348623157E+308
+      ],
+      "culture": "",
+      "expected": {
+        "result": "179769313486231570814527423731704356798070567525844996598917476803157260780028538760589558632766878171540458953514382464234321326889464182768467546703537516986049910576551282076245490090389328944075868508455133942304583236903222948165808559332123348274797826204144723168738177180919299881250404026184124858368.00"
+      }
+    },
+    {
+      "id": "num-double-precise-1e100-N0",
+      "template": "{0:N0}",
+      "args": [
+        1E+100
+      ],
+      "culture": "",
+      "expected": {
+        "result": "10,000,000,000,000,000,159,028,911,097,599,180,468,360,808,563,945,281,389,781,327,557,747,838,772,170,381,060,813,469,985,856,815,104"
+      }
+    },
+    {
+      "id": "num-double-precise-1e16-G",
+      "template": "{0:G}",
+      "args": [
+        10000000000000000.0
+      ],
+      "culture": "",
+      "expected": {
+        "result": "10000000000000000"
+      }
+    },
+    {
+      "id": "num-double-precise-1e17-G",
+      "template": "{0:G}",
+      "args": [
+        1E+17
+      ],
+      "culture": "",
+      "expected": {
+        "result": "1E+17"
+      }
+    },
+    {
+      "id": "num-double-precise-1e16-none",
+      "template": "{0}",
+      "args": [
+        10000000000000000.0
+      ],
+      "culture": "",
+      "expected": {
+        "result": "10000000000000000"
+      }
+    },
+    {
+      "id": "num-double-precise-1e17-none",
+      "template": "{0}",
+      "args": [
+        1E+17
+      ],
+      "culture": "",
+      "expected": {
+        "result": "1E+17"
+      }
+    },
+    {
+      "id": "num-double-precise-pow2-neg25-none",
+      "template": "{0}",
+      "args": [
+        2.980232238769531E-08
+      ],
+      "culture": "",
+      "expected": {
+        "result": "2.980232238769531E-08"
+      }
+    },
+    {
+      "id": "num-double-precise-pow2-neg25-G",
+      "template": "{0:G}",
+      "args": [
+        2.980232238769531E-08
+      ],
+      "culture": "",
+      "expected": {
+        "result": "2.980232238769531E-08"
+      }
+    },
+    {
+      "id": "num-double-precise-neg-pow2-neg25-none",
+      "template": "{0}",
+      "args": [
+        -2.980232238769531E-08
+      ],
+      "culture": "",
+      "expected": {
+        "result": "-2.980232238769531E-08"
+      }
+    },
+    {
+      "id": "num-double-precise-pow2-neg958-none",
+      "template": "{0}",
+      "args": [
+        4.104536801298376E-289
+      ],
+      "culture": "",
+      "expected": {
+        "result": "4.104536801298376E-289"
+      }
+    },
+    {
+      "id": "num-double-precise-pow2-neg958-G",
+      "template": "{0:G}",
+      "args": [
+        4.104536801298376E-289
+      ],
+      "culture": "",
+      "expected": {
+        "result": "4.104536801298376E-289"
+      }
+    },
+    {
+      "id": "num-double-precise-neg-pow2-neg958-none",
+      "template": "{0}",
+      "args": [
+        -4.104536801298376E-289
+      ],
+      "culture": "",
+      "expected": {
+        "result": "-4.104536801298376E-289"
+      }
+    },
+    {
+      "id": "num-double-precise-pow2-neg24-none",
+      "template": "{0}",
+      "args": [
+        5.960464477539063E-08
+      ],
+      "culture": "",
+      "expected": {
+        "result": "5.960464477539063E-08"
+      }
+    },
+    {
+      "id": "num-double-precise-pow2-neg26-none",
+      "template": "{0}",
+      "args": [
+        1.4901161193847656E-08
+      ],
+      "culture": "",
+      "expected": {
+        "result": "1.4901161193847656E-08"
+      }
+    },
+    {
+      "id": "num-double-precise-pow2-zero-none",
+      "template": "{0}",
+      "args": [
+        1.0
+      ],
+      "culture": "",
+      "expected": {
+        "result": "1"
+      }
+    },
+    {
+      "id": "num-double-negative-C",
+      "template": "{0:C}",
+      "args": [
+        -123.456
+      ],
+      "culture": "",
+      "expected": {
+        "result": "(¤123.46)"
+      }
+    },
+    {
+      "id": "num-double-negative-c1-lc",
+      "template": "{0:c1}",
+      "args": [
+        -123.456
+      ],
+      "culture": "",
+      "expected": {
+        "result": "(¤123.5)"
+      }
+    },
+    {
+      "id": "num-double-negative-P1",
+      "template": "{0:P1}",
+      "args": [
+        -0.39678
+      ],
+      "culture": "",
+      "expected": {
+        "result": "-39.7 %"
+      }
+    },
+    {
+      "id": "num-double-negative-p-lc",
+      "template": "{0:p}",
+      "args": [
+        -0.39678
+      ],
+      "culture": "",
+      "expected": {
+        "result": "-39.68 %"
+      }
+    },
+    {
+      "id": "num-double-negative-N3",
+      "template": "{0:N3}",
+      "args": [
+        -1234.56
+      ],
+      "culture": "",
+      "expected": {
+        "result": "-1,234.560"
+      }
+    },
+    {
+      "id": "num-double-negative-n-lc",
+      "template": "{0:n}",
+      "args": [
+        -1234.56
+      ],
+      "culture": "",
+      "expected": {
+        "result": "-1,234.56"
+      }
+    },
+    {
+      "id": "num-double-negative-F0",
+      "template": "{0:F0}",
+      "args": [
+        -0.4
+      ],
+      "culture": "",
+      "expected": {
+        "result": "-0"
+      }
+    },
+    {
+      "id": "num-double-negative-f1-lc",
+      "template": "{0:f1}",
+      "args": [
+        -0.4
+      ],
+      "culture": "",
+      "expected": {
+        "result": "-0.4"
+      }
+    },
+    {
+      "id": "num-double-negative-G4",
+      "template": "{0:G4}",
+      "args": [
+        -1234.56
+      ],
+      "culture": "",
+      "expected": {
+        "result": "-1235"
+      }
+    },
+    {
+      "id": "num-double-negative-E2",
+      "template": "{0:E2}",
+      "args": [
+        -1234.56
+      ],
+      "culture": "",
+      "expected": {
+        "result": "-1.23E+003"
+      }
+    },
+    {
+      "id": "num-int-spec-d5-lc",
+      "template": "{0:d5}",
+      "args": [
+        -1234
+      ],
+      "culture": "",
+      "expected": {
+        "result": "-01234"
+      }
+    },
+    {
+      "id": "num-int-spec-X20",
+      "template": "{0:X20}",
+      "args": [
+        -255
+      ],
+      "culture": "",
+      "expected": {
+        "result": "0000FFFFFFFFFFFFFF01"
+      }
+    },
+    {
+      "id": "num-int-spec-x20-lc",
+      "template": "{0:x20}",
+      "args": [
+        -255
+      ],
+      "culture": "",
+      "expected": {
+        "result": "0000ffffffffffffff01"
+      }
+    },
+    {
+      "id": "num-int-spec-X-neg",
+      "template": "{0:X}",
+      "args": [
+        -255
+      ],
+      "culture": "",
+      "expected": {
+        "result": "FFFFFFFFFFFFFF01"
+      }
+    },
+    {
+      "id": "num-int-spec-D0",
+      "template": "{0:D0}",
+      "args": [
+        -1234
+      ],
+      "culture": "",
+      "expected": {
+        "result": "-1234"
+      }
+    },
+    {
+      "id": "num-int-spec-C0-neg",
+      "template": "{0:C0}",
+      "args": [
+        -1234
+      ],
+      "culture": "",
+      "expected": {
+        "result": "(¤1,234)"
+      }
+    },
+    {
+      "id": "num-double-R-0_1",
+      "template": "{0:R}",
+      "args": [
+        0.1
+      ],
+      "culture": "",
+      "expected": {
+        "result": "0.1"
+      }
+    },
+    {
+      "id": "num-double-r-lc-0_1",
+      "template": "{0:r}",
+      "args": [
+        0.1
+      ],
+      "culture": "",
+      "expected": {
+        "result": "0.1"
+      }
+    },
+    {
+      "id": "num-double-R-2_675",
+      "template": "{0:R}",
+      "args": [
+        2.675
+      ],
+      "culture": "",
+      "expected": {
+        "result": "2.675"
+      }
+    },
+    {
+      "id": "num-double-R-1e17",
+      "template": "{0:R}",
+      "args": [
+        1E+17
+      ],
+      "culture": "",
+      "expected": {
+        "result": "1E+17"
+      }
+    },
+    {
+      "id": "num-int-R",
+      "template": "{0:R}",
+      "args": [
+        42
+      ],
+      "culture": "",
+      "expected": {
+        "result": "42"
+      }
+    },
+    {
+      "id": "num-int-B",
+      "template": "{0:B}",
+      "args": [
+        5
+      ],
+      "culture": "",
+      "expected": {
+        "result": "101"
+      }
+    },
+    {
+      "id": "num-int-B8",
+      "template": "{0:B8}",
+      "args": [
+        5
+      ],
+      "culture": "",
+      "expected": {
+        "result": "00000101"
+      }
+    },
+    {
+      "id": "num-int-b-lc-neg",
+      "template": "{0:b}",
+      "args": [
+        -5
+      ],
+      "culture": "",
+      "expected": {
+        "result": "1111111111111111111111111111111111111111111111111111111111111011"
+      }
+    },
+    {
+      "id": "num-double-B",
+      "template": "{0:B}",
+      "args": [
+        0.1
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
       }
     },
     {
@@ -6461,6 +7218,162 @@
       }
     },
     {
+      "id": "date-2009-m-lc",
+      "template": "{0:m}",
+      "args": [
+        {
+          "$dt": "2009-06-15T13:45:30.6175425"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "June 15"
+      }
+    },
+    {
+      "id": "date-2009-Y",
+      "template": "{0:Y}",
+      "args": [
+        {
+          "$dt": "2009-06-15T13:45:30.6175425"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "2009 June"
+      }
+    },
+    {
+      "id": "date-2009-o-lc",
+      "template": "{0:o}",
+      "args": [
+        {
+          "$dt": "2009-06-15T13:45:30.6175425"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "2009-06-15T13:45:30.6175425"
+      }
+    },
+    {
+      "id": "date-2009-r-lc",
+      "template": "{0:r}",
+      "args": [
+        {
+          "$dt": "2009-06-15T13:45:30.6175425"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "Mon, 15 Jun 2009 13:45:30 GMT"
+      }
+    },
+    {
+      "id": "date-year-987-D",
+      "template": "{0:D}",
+      "args": [
+        {
+          "$dt": "0987-11-09T00:00:00.0000000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "Friday, 09 November 0987"
+      }
+    },
+    {
+      "id": "date-year-987-d-lc",
+      "template": "{0:d}",
+      "args": [
+        {
+          "$dt": "0987-11-09T00:00:00.0000000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "11/09/0987"
+      }
+    },
+    {
+      "id": "date-year-987-y-lc",
+      "template": "{0:y}",
+      "args": [
+        {
+          "$dt": "0987-11-09T00:00:00.0000000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "0987 November"
+      }
+    },
+    {
+      "id": "date-min-value-O",
+      "template": "{0:O}",
+      "args": [
+        {
+          "$dt": "0001-01-01T00:00:00.0000000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "0001-01-01T00:00:00.0000000"
+      }
+    },
+    {
+      "id": "date-min-value-F",
+      "template": "{0:F}",
+      "args": [
+        {
+          "$dt": "0001-01-01T00:00:00.0000000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "Monday, 01 January 0001 00:00:00"
+      }
+    },
+    {
+      "id": "date-max-value-O",
+      "template": "{0:O}",
+      "args": [
+        {
+          "$dt": "9999-12-31T23:59:59.9999999"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "9999-12-31T23:59:59.9999999"
+      }
+    },
+    {
+      "id": "date-max-value-F",
+      "template": "{0:F}",
+      "args": [
+        {
+          "$dt": "9999-12-31T23:59:59.9999999"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "Friday, 31 December 9999 23:59:59"
+      }
+    },
+    {
+      "id": "date-max-value-s-lc",
+      "template": "{0:s}",
+      "args": [
+        {
+          "$dt": "9999-12-31T23:59:59.9999999"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "9999-12-31T23:59:59"
+      }
+    },
+    {
       "id": "err-unclosed-placeholder",
       "template": "{0",
       "args": [
@@ -6622,6 +7535,1282 @@
       "culture": "",
       "expected": {
         "error": "ParsingErrors"
+      }
+    },
+    {
+      "id": "err-trailing-operator-dot",
+      "template": "{0.}",
+      "args": [
+        42
+      ],
+      "culture": "",
+      "expected": {
+        "error": "ParsingErrors"
+      }
+    },
+    {
+      "id": "err-trailing-operator-after-member",
+      "template": "{0.Length.}",
+      "args": [
+        "abc"
+      ],
+      "culture": "",
+      "expected": {
+        "error": "ParsingErrors"
+      }
+    },
+    {
+      "id": "str-capitalize-words-digit-start",
+      "template": "{0.CapitalizeWords}",
+      "args": [
+        "1st place"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "1St Place"
+      }
+    },
+    {
+      "id": "str-capitalize-words-punctuation-start",
+      "template": "{0.CapitalizeWords}",
+      "args": [
+        "(hello) world"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "(Hello) World"
+      }
+    },
+    {
+      "id": "str-capitalize-words-plain",
+      "template": "{0.CapitalizeWords}",
+      "args": [
+        "hello world"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "Hello World"
+      }
+    },
+    {
+      "id": "str-capitalize-words-already",
+      "template": "{0.CapitalizeWords}",
+      "args": [
+        "Hello World"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "Hello World"
+      }
+    },
+    {
+      "id": "str-capitalize-words-multi-space",
+      "template": "{0.CapitalizeWords}",
+      "args": [
+        "a  b\tc"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "A  B\tC"
+      }
+    },
+    {
+      "id": "str-capitalize-words-empty",
+      "template": "{0.CapitalizeWords}",
+      "args": [
+        ""
+      ],
+      "culture": "",
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "str-capitalize-empty",
+      "template": "{0.Capitalize}",
+      "args": [
+        ""
+      ],
+      "culture": "",
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "str-capitalize-single-char",
+      "template": "{0.Capitalize}",
+      "args": [
+        "a"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "A"
+      }
+    },
+    {
+      "id": "str-capitalize-already",
+      "template": "{0.Capitalize}",
+      "args": [
+        "Already"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "Already"
+      }
+    },
+    {
+      "id": "str-capitalize-lowercase",
+      "template": "{0.Capitalize}",
+      "args": [
+        "abc"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "Abc"
+      }
+    },
+    {
+      "id": "str-capitalize-digit",
+      "template": "{0.Capitalize}",
+      "args": [
+        "1abc"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "1abc"
+      }
+    },
+    {
+      "id": "str-trim-start",
+      "template": "{0.TrimStart}",
+      "args": [
+        "  x  "
+      ],
+      "culture": "",
+      "expected": {
+        "result": "x  "
+      }
+    },
+    {
+      "id": "str-trim-end",
+      "template": "{0.TrimEnd}",
+      "args": [
+        "  x  "
+      ],
+      "culture": "",
+      "expected": {
+        "result": "  x"
+      }
+    },
+    {
+      "id": "str-to-upper-invariant",
+      "template": "{0.ToUpperInvariant}",
+      "args": [
+        "aBc"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "ABC"
+      }
+    },
+    {
+      "id": "str-to-lower-invariant",
+      "template": "{0.ToLowerInvariant}",
+      "args": [
+        "aBc"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "abc"
+      }
+    },
+    {
+      "id": "fopt-empty-options",
+      "template": "{0:d()}",
+      "args": [
+        5
+      ],
+      "culture": "",
+      "expected": {
+        "result": "5"
+      }
+    },
+    {
+      "id": "fopt-escaped-colon",
+      "template": "{0:d(a\\:b)}",
+      "args": [
+        5
+      ],
+      "culture": "",
+      "expected": {
+        "result": "5"
+      }
+    },
+    {
+      "id": "fopt-escaped-close-paren",
+      "template": "{0:d(a\\)b)}",
+      "args": [
+        5
+      ],
+      "culture": "",
+      "expected": {
+        "result": "5"
+      }
+    },
+    {
+      "id": "fopt-options-then-format",
+      "template": "{0:d(x):v}",
+      "args": [
+        5
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "fopt-name-without-options",
+      "template": "{0:d:v}",
+      "args": [
+        5
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "fopt-empty-name",
+      "template": "{0:(){}}",
+      "args": [
+        5
+      ],
+      "culture": "",
+      "expected": {
+        "result": "()5"
+      }
+    },
+    {
+      "id": "fopt-unescaped-colon-abandons",
+      "template": "{0:d(a:b){}}",
+      "args": [
+        5
+      ],
+      "culture": "",
+      "expected": {
+        "result": "d(a:b)5"
+      }
+    },
+    {
+      "id": "fopt-close-paren-not-followed-by-terminator",
+      "template": "{0:d(a)b{}}",
+      "args": [
+        5
+      ],
+      "culture": "",
+      "expected": {
+        "result": "d(a)b5"
+      }
+    },
+    {
+      "id": "fopt-escaped-colon-with-nested",
+      "template": "{0:d(a\\:b):<{}>}",
+      "args": [
+        5
+      ],
+      "culture": "",
+      "expected": {
+        "result": "<5>"
+      }
+    },
+    {
+      "id": "list-positional-bracket",
+      "template": "{0[1]}",
+      "args": [
+        [
+          1,
+          2,
+          3
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "result": "2"
+      }
+    },
+    {
+      "id": "list-positional-dotted",
+      "template": "{0.1}",
+      "args": [
+        [
+          1,
+          2,
+          3
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "result": "2"
+      }
+    },
+    {
+      "id": "list-named-bracket",
+      "template": "{a[1]}",
+      "args": {
+        "a": [
+          1,
+          2,
+          3
+        ],
+        "n": null,
+        "one": 1
+      },
+      "culture": "",
+      "expected": {
+        "result": "2"
+      }
+    },
+    {
+      "id": "list-named-dotted",
+      "template": "{a.2}",
+      "args": {
+        "a": [
+          1,
+          2,
+          3
+        ],
+        "n": null,
+        "one": 1
+      },
+      "culture": "",
+      "expected": {
+        "result": "3"
+      }
+    },
+    {
+      "id": "list-named-bracket-out-of-range",
+      "template": "{a[9]}",
+      "args": {
+        "a": [
+          1,
+          2,
+          3
+        ],
+        "n": null,
+        "one": 1
+      },
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "list-nullable-bracket-on-null",
+      "template": "{n?[1]}",
+      "args": {
+        "a": [
+          1,
+          2,
+          3
+        ],
+        "n": null,
+        "one": 1
+      },
+      "culture": "",
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "list-trailing-nullable-operator",
+      "template": "{one?}",
+      "args": {
+        "a": [
+          1,
+          2,
+          3
+        ],
+        "n": null,
+        "one": 1
+      },
+      "culture": "",
+      "expected": {
+        "result": "1"
+      }
+    },
+    {
+      "id": "list-bracket-then-member",
+      "template": "{0[1].Length}",
+      "args": [
+        [
+          "x",
+          "yy"
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "result": "2"
+      }
+    },
+    {
+      "id": "list-bracket-then-nested-format",
+      "template": "{0[1]:<{}>}",
+      "args": [
+        [
+          "x",
+          "yy"
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "result": "<yy>"
+      }
+    },
+    {
+      "id": "set-fmterr-ignore-missing-selector",
+      "template": "[{Missing}]",
+      "args": {
+        "Other": 1
+      },
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "Ignore"
+      },
+      "expected": {
+        "result": "[]"
+      }
+    },
+    {
+      "id": "set-fmterr-ignore-missing-selector-aligned",
+      "template": "[{Missing,05}]",
+      "args": {
+        "Other": 1
+      },
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "Ignore"
+      },
+      "expected": {
+        "result": "[]"
+      }
+    },
+    {
+      "id": "set-fmterr-ignore-missing-selector-neg-aligned",
+      "template": "[{Missing,-8}]",
+      "args": {
+        "Other": 1
+      },
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "Ignore"
+      },
+      "expected": {
+        "result": "[]"
+      }
+    },
+    {
+      "id": "set-fmterr-ignore-missing-selector-formatter-options",
+      "template": "[{Missing:d(a\\:b)}]",
+      "args": {
+        "Other": 1
+      },
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "Ignore"
+      },
+      "expected": {
+        "result": "[]"
+      }
+    },
+    {
+      "id": "set-fmterr-ignore-unknown-formatter",
+      "template": "[{0:nosuchformatter:x}]",
+      "args": [
+        42
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "Ignore"
+      },
+      "expected": {
+        "result": "[]"
+      }
+    },
+    {
+      "id": "set-fmterr-ignore-bad-numeric-spec",
+      "template": "[{0:Q}]",
+      "args": [
+        42
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "Ignore"
+      },
+      "expected": {
+        "result": "[]"
+      }
+    },
+    {
+      "id": "set-fmterr-ignore-member-on-int",
+      "template": "[{0.Nope}]",
+      "args": [
+        42
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "Ignore"
+      },
+      "expected": {
+        "result": "[]"
+      }
+    },
+    {
+      "id": "set-fmterr-ignore-index-out-of-range",
+      "template": "[{5}]",
+      "args": [
+        42
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "Ignore"
+      },
+      "expected": {
+        "result": "[]"
+      }
+    },
+    {
+      "id": "set-fmterr-ignore-no-error",
+      "template": "[{0:D3}]",
+      "args": [
+        42
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "Ignore"
+      },
+      "expected": {
+        "result": "[042]"
+      }
+    },
+    {
+      "id": "set-fmterr-maintaintokens-missing-selector",
+      "template": "[{Missing}]",
+      "args": {
+        "Other": 1
+      },
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "MaintainTokens"
+      },
+      "expected": {
+        "result": "[{Missing}]"
+      }
+    },
+    {
+      "id": "set-fmterr-maintaintokens-missing-selector-aligned",
+      "template": "[{Missing,05}]",
+      "args": {
+        "Other": 1
+      },
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "MaintainTokens"
+      },
+      "expected": {
+        "result": "[{Missing,5}]"
+      }
+    },
+    {
+      "id": "set-fmterr-maintaintokens-missing-selector-neg-aligned",
+      "template": "[{Missing,-8}]",
+      "args": {
+        "Other": 1
+      },
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "MaintainTokens"
+      },
+      "expected": {
+        "result": "[{Missing,-8}]"
+      }
+    },
+    {
+      "id": "set-fmterr-maintaintokens-missing-selector-formatter-options",
+      "template": "[{Missing:d(a\\:b)}]",
+      "args": {
+        "Other": 1
+      },
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "MaintainTokens"
+      },
+      "expected": {
+        "result": "[{Missing:d(a:b):}]"
+      }
+    },
+    {
+      "id": "set-fmterr-maintaintokens-unknown-formatter",
+      "template": "[{0:nosuchformatter:x}]",
+      "args": [
+        42
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "MaintainTokens"
+      },
+      "expected": {
+        "result": "[{0:nosuchformatter:x}]"
+      }
+    },
+    {
+      "id": "set-fmterr-maintaintokens-bad-numeric-spec",
+      "template": "[{0:Q}]",
+      "args": [
+        42
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "MaintainTokens"
+      },
+      "expected": {
+        "result": "[{0:Q}]"
+      }
+    },
+    {
+      "id": "set-fmterr-maintaintokens-member-on-int",
+      "template": "[{0.Nope}]",
+      "args": [
+        42
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "MaintainTokens"
+      },
+      "expected": {
+        "result": "[{0.Nope}]"
+      }
+    },
+    {
+      "id": "set-fmterr-maintaintokens-index-out-of-range",
+      "template": "[{5}]",
+      "args": [
+        42
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "MaintainTokens"
+      },
+      "expected": {
+        "result": "[{5}]"
+      }
+    },
+    {
+      "id": "set-fmterr-maintaintokens-no-error",
+      "template": "[{0:D3}]",
+      "args": [
+        42
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "MaintainTokens"
+      },
+      "expected": {
+        "result": "[042]"
+      }
+    },
+    {
+      "id": "set-fmterr-outputerrorinresult-missing-selector",
+      "template": "[{Missing}]",
+      "args": {
+        "Other": 1
+      },
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "[Error parsing format string: No source extension could handle the selector named \"Missing\" at 2\n[{Missing}]\n--^]"
+      }
+    },
+    {
+      "id": "set-fmterr-outputerrorinresult-missing-selector-aligned",
+      "template": "[{Missing,05}]",
+      "args": {
+        "Other": 1
+      },
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "[Error parsing format string: No source extension could handle the selector named \"Missing\" at 2\n[{Missing,05}]\n--^]"
+      }
+    },
+    {
+      "id": "set-fmterr-outputerrorinresult-missing-selector-neg-aligned",
+      "template": "[{Missing,-8}]",
+      "args": {
+        "Other": 1
+      },
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "[Error parsing format string: No source extension could handle the selector named \"Missing\" at 2\n[{Missing,-8}]\n--^]"
+      }
+    },
+    {
+      "id": "set-fmterr-outputerrorinresult-missing-selector-formatter-options",
+      "template": "[{Missing:d(a\\:b)}]",
+      "args": {
+        "Other": 1
+      },
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "[Error parsing format string: No source extension could handle the selector named \"Missing\" at 2\n[{Missing:d(a\\:b)}]\n--^]"
+      }
+    },
+    {
+      "id": "set-fmterr-outputerrorinresult-unknown-formatter",
+      "template": "[{0:nosuchformatter:x}]",
+      "args": [
+        42
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "[Error parsing format string: No suitable Formatter could be found at 0\n[{0:nosuchformatter:x}]\n^]"
+      }
+    },
+    {
+      "id": "set-fmterr-outputerrorinresult-bad-numeric-spec",
+      "template": "[{0:Q}]",
+      "args": [
+        42
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "[Format specifier was invalid.]"
+      }
+    },
+    {
+      "id": "set-fmterr-outputerrorinresult-member-on-int",
+      "template": "[{0.Nope}]",
+      "args": [
+        42
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "[Error parsing format string: No source extension could handle the selector named \"Nope\" at 4\n[{0.Nope}]\n----^]"
+      }
+    },
+    {
+      "id": "set-fmterr-outputerrorinresult-index-out-of-range",
+      "template": "[{5}]",
+      "args": [
+        42
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "[Error parsing format string: No source extension could handle the selector named \"5\" at 2\n[{5}]\n--^]"
+      }
+    },
+    {
+      "id": "set-fmterr-outputerrorinresult-no-error",
+      "template": "[{0:D3}]",
+      "args": [
+        42
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "[042]"
+      }
+    },
+    {
+      "id": "set-parseerr-ignore-invalid-selector-char",
+      "template": "a{b c}d",
+      "args": {
+        "a": "A",
+        "b": "B"
+      },
+      "culture": "",
+      "settings": {
+        "parseErrorAction": "Ignore"
+      },
+      "expected": {
+        "result": "ad"
+      }
+    },
+    {
+      "id": "set-parseerr-ignore-trailing-operator",
+      "template": "a{b.}d",
+      "args": {
+        "a": "A",
+        "b": "B"
+      },
+      "culture": "",
+      "settings": {
+        "parseErrorAction": "Ignore"
+      },
+      "expected": {
+        "result": "ad"
+      }
+    },
+    {
+      "id": "set-parseerr-ignore-too-many-closing-braces",
+      "template": "a}b",
+      "args": {
+        "a": "A",
+        "b": "B"
+      },
+      "culture": "",
+      "settings": {
+        "parseErrorAction": "Ignore"
+      },
+      "expected": {
+        "result": "a}b"
+      }
+    },
+    {
+      "id": "set-parseerr-ignore-missing-closing-brace-nested",
+      "template": "x{a:{b}",
+      "args": {
+        "a": "A",
+        "b": "B"
+      },
+      "culture": "",
+      "settings": {
+        "parseErrorAction": "Ignore"
+      },
+      "expected": {
+        "result": "x"
+      }
+    },
+    {
+      "id": "set-parseerr-ignore-too-many-closing-braces-after-format",
+      "template": "x{a:y}}z",
+      "args": {
+        "a": "A",
+        "b": "B"
+      },
+      "culture": "",
+      "settings": {
+        "parseErrorAction": "Ignore"
+      },
+      "expected": {
+        "result": "x}z"
+      }
+    },
+    {
+      "id": "set-parseerr-ignore-missing-closing-brace-trailing",
+      "template": "{a}{b",
+      "args": {
+        "a": "A",
+        "b": "B"
+      },
+      "culture": "",
+      "settings": {
+        "parseErrorAction": "Ignore"
+      },
+      "expected": {
+        "result": "A"
+      }
+    },
+    {
+      "id": "set-parseerr-maintaintokens-invalid-selector-char",
+      "template": "a{b c}d",
+      "args": {
+        "a": "A",
+        "b": "B"
+      },
+      "culture": "",
+      "settings": {
+        "parseErrorAction": "MaintainTokens"
+      },
+      "expected": {
+        "result": "a{b c}d"
+      }
+    },
+    {
+      "id": "set-parseerr-maintaintokens-trailing-operator",
+      "template": "a{b.}d",
+      "args": {
+        "a": "A",
+        "b": "B"
+      },
+      "culture": "",
+      "settings": {
+        "parseErrorAction": "MaintainTokens"
+      },
+      "expected": {
+        "result": "a{b.}d"
+      }
+    },
+    {
+      "id": "set-parseerr-maintaintokens-too-many-closing-braces",
+      "template": "a}b",
+      "args": {
+        "a": "A",
+        "b": "B"
+      },
+      "culture": "",
+      "settings": {
+        "parseErrorAction": "MaintainTokens"
+      },
+      "expected": {
+        "result": "a}b"
+      }
+    },
+    {
+      "id": "set-parseerr-maintaintokens-missing-closing-brace-nested",
+      "template": "x{a:{b}",
+      "args": {
+        "a": "A",
+        "b": "B"
+      },
+      "culture": "",
+      "settings": {
+        "parseErrorAction": "MaintainTokens"
+      },
+      "expected": {
+        "result": "x{a:{b}"
+      }
+    },
+    {
+      "id": "set-parseerr-maintaintokens-too-many-closing-braces-after-format",
+      "template": "x{a:y}}z",
+      "args": {
+        "a": "A",
+        "b": "B"
+      },
+      "culture": "",
+      "settings": {
+        "parseErrorAction": "MaintainTokens"
+      },
+      "expected": {
+        "result": "x{a:y}}z"
+      }
+    },
+    {
+      "id": "set-parseerr-maintaintokens-missing-closing-brace-trailing",
+      "template": "{a}{b",
+      "args": {
+        "a": "A",
+        "b": "B"
+      },
+      "culture": "",
+      "settings": {
+        "parseErrorAction": "MaintainTokens"
+      },
+      "expected": {
+        "result": "A{b"
+      }
+    },
+    {
+      "id": "set-parseerr-outputerrorinresult-invalid-selector-char",
+      "template": "a{b c}d",
+      "args": {
+        "a": "A",
+        "b": "B"
+      },
+      "culture": "",
+      "settings": {
+        "parseErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "The format string has 1 issue:\n'0x20': Invalid character in the selector\nIn: \"a{b c}d\"\nAt:  ---^ "
+      }
+    },
+    {
+      "id": "set-parseerr-outputerrorinresult-trailing-operator",
+      "template": "a{b.}d",
+      "args": {
+        "a": "A",
+        "b": "B"
+      },
+      "culture": "",
+      "settings": {
+        "parseErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "The format string has 1 issue:\n'0x2E': There are illegal trailing operators in the selector\nIn: \"a{b.}d\"\nAt:  ---^ "
+      }
+    },
+    {
+      "id": "set-parseerr-outputerrorinresult-too-many-closing-braces",
+      "template": "a}b",
+      "args": {
+        "a": "A",
+        "b": "B"
+      },
+      "culture": "",
+      "settings": {
+        "parseErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "The format string has 1 issue:\nFormat string has too many closing braces\nIn: \"a}b\"\nAt:  -^ "
+      }
+    },
+    {
+      "id": "set-parseerr-outputerrorinresult-missing-closing-brace-nested",
+      "template": "x{a:{b}",
+      "args": {
+        "a": "A",
+        "b": "B"
+      },
+      "culture": "",
+      "settings": {
+        "parseErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "The format string has 1 issue:\nFormat string is missing a closing brace\nIn: \"x{a:{b}\"\nAt:  -------^ "
+      }
+    },
+    {
+      "id": "set-parseerr-outputerrorinresult-too-many-closing-braces-after-format",
+      "template": "x{a:y}}z",
+      "args": {
+        "a": "A",
+        "b": "B"
+      },
+      "culture": "",
+      "settings": {
+        "parseErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "The format string has 1 issue:\nFormat string has too many closing braces\nIn: \"x{a:y}}z\"\nAt:  ------^ "
+      }
+    },
+    {
+      "id": "set-parseerr-outputerrorinresult-missing-closing-brace-trailing",
+      "template": "{a}{b",
+      "args": {
+        "a": "A",
+        "b": "B"
+      },
+      "culture": "",
+      "settings": {
+        "parseErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "The format string has 1 issue:\nFormat string is missing a closing brace\nIn: \"{a}{b\"\nAt:  -----^ "
+      }
+    },
+    {
+      "id": "set-caseins-map-key",
+      "template": "{name}",
+      "args": {
+        "Name": "Alice",
+        "Text": "  hello world  "
+      },
+      "culture": "",
+      "settings": {
+        "caseSensitivity": "CaseInsensitive"
+      },
+      "expected": {
+        "result": "Alice"
+      }
+    },
+    {
+      "id": "set-caseins-map-key-upper",
+      "template": "{NAME}",
+      "args": {
+        "Name": "Alice",
+        "Text": "  hello world  "
+      },
+      "culture": "",
+      "settings": {
+        "caseSensitivity": "CaseInsensitive"
+      },
+      "expected": {
+        "result": "Alice"
+      }
+    },
+    {
+      "id": "set-caseins-string-method",
+      "template": "{Name.tolower}",
+      "args": {
+        "Name": "Alice",
+        "Text": "  hello world  "
+      },
+      "culture": "",
+      "settings": {
+        "caseSensitivity": "CaseInsensitive"
+      },
+      "expected": {
+        "result": "alice"
+      }
+    },
+    {
+      "id": "set-caseins-formatter-name",
+      "template": "{Name:D():x}",
+      "args": {
+        "Name": "Alice",
+        "Text": "  hello world  "
+      },
+      "culture": "",
+      "settings": {
+        "caseSensitivity": "CaseInsensitive"
+      },
+      "expected": {
+        "result": "Alice"
+      }
+    },
+    {
+      "id": "set-sensitive-map-key",
+      "template": "{name}",
+      "args": {
+        "Name": "Alice",
+        "Text": "  hello world  "
+      },
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "set-caseins-non-ascii",
+      "template": "{Ä}",
+      "args": {
+        "ä": "v"
+      },
+      "culture": "",
+      "settings": {
+        "caseSensitivity": "CaseInsensitive",
+        "customSelectorChars": "Ää"
+      },
+      "expected": {
+        "result": "v"
+      }
+    },
+    {
+      "id": "set-compat-doubled-braces",
+      "template": "{{0}} {0}",
+      "args": [
+        5
+      ],
+      "culture": "",
+      "settings": {
+        "stringFormatCompatibility": true
+      },
+      "expected": {
+        "result": "{0} 5"
+      }
+    },
+    {
+      "id": "set-compat-char-literal",
+      "template": "a\\nb",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "stringFormatCompatibility": true
+      },
+      "expected": {
+        "result": "a\nb"
+      }
+    },
+    {
+      "id": "set-compat-numeric-spec",
+      "template": "{0:d}",
+      "args": [
+        5
+      ],
+      "culture": "",
+      "settings": {
+        "stringFormatCompatibility": true
+      },
+      "expected": {
+        "result": "5"
+      }
+    },
+    {
+      "id": "set-compat-formatter-name",
+      "template": "{0:d(x):v}",
+      "args": [
+        5
+      ],
+      "culture": "",
+      "settings": {
+        "stringFormatCompatibility": true
+      },
+      "expected": {
+        "result": "d(x):v"
+      }
+    },
+    {
+      "id": "set-compat-date-spec",
+      "template": "{0:d}",
+      "args": [
+        {
+          "$dt": "2009-06-15T13:45:30.0000000"
+        }
+      ],
+      "culture": "",
+      "settings": {
+        "stringFormatCompatibility": true
+      },
+      "expected": {
+        "result": "06/15/2009"
+      }
+    },
+    {
+      "id": "set-fill-right",
+      "template": "[{0,6}]",
+      "args": [
+        "ab"
+      ],
+      "culture": "",
+      "settings": {
+        "alignmentFillCharacter": "."
+      },
+      "expected": {
+        "result": "[....ab]"
+      }
+    },
+    {
+      "id": "set-fill-left",
+      "template": "[{0,-6}]",
+      "args": [
+        "ab"
+      ],
+      "culture": "",
+      "settings": {
+        "alignmentFillCharacter": "."
+      },
+      "expected": {
+        "result": "[ab....]"
+      }
+    },
+    {
+      "id": "set-fill-literal-in-nested",
+      "template": "[{0,6:<{}>}]",
+      "args": [
+        "ab"
+      ],
+      "culture": "",
+      "settings": {
+        "alignmentFillCharacter": "."
+      },
+      "expected": {
+        "result": "[.....<....ab.....>]"
       }
     }
   ]
