@@ -11,10 +11,13 @@ pub mod error;
 pub mod fmt;
 pub mod parsing;
 pub mod settings;
+pub mod sources;
 pub mod value;
 
 pub use error::Error;
-pub use settings::{ErrorAction, SmartSettings};
+pub use settings::{CaseSensitivity, ErrorAction, SmartSettings};
+// `ToSmartValue` is not re-exported at the crate root: the derive macro of the
+// same name lives there.
 pub use value::Value;
 
 #[cfg(feature = "derive")]
