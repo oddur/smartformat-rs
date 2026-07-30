@@ -3,3 +3,6 @@
 # dotnet golden harness
 bin/
 obj/
+
+# Claude Code session files
+.claude/
