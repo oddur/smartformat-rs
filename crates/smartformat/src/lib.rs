@@ -9,12 +9,14 @@
 
 pub mod error;
 pub mod fmt;
+pub mod formatter;
 pub mod parsing;
 pub mod settings;
 pub mod sources;
 pub mod value;
 
 pub use error::Error;
+pub use formatter::SmartFormatter;
 pub use settings::{CaseSensitivity, ErrorAction, SmartSettings};
 // `ToSmartValue` is not re-exported at the crate root: the derive macro of the
 // same name lives there.
