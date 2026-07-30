@@ -1,0 +1,28 @@
+[package]
+name = "smartformat"
+description = "Rust port of SmartFormat.NET — string templating with named placeholders, pluralization, and conditional formatting, compatible with SmartFormat template syntax."
+keywords = ["formatting", "templating", "localization", "pluralization", "smartformat"]
+categories = ["template-engine", "internationalization", "value-formatting"]
+readme = "../../README.md"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[features]
+default = ["derive", "plural", "time", "regex-formatters"]
+# Re-exports the ToSmartValue derive macro.
+derive = ["dep:smartformat-derive"]
+# PluralLocalizationFormatter and friends, backed by ICU4X CLDR data.
+# Dependencies land with milestone M2.
+plural = []
+# Value::DateTime and .NET date/time format patterns, backed by jiff.
+# Dependencies land with milestone M1.
+time = []
+# IsMatchFormatter. Dependencies land with milestone M3.
+regex-formatters = []
+
+[dependencies]
+smartformat-derive = { version = "0.1.0", path = "../smartformat-derive", optional = true }
