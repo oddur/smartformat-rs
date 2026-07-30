@@ -26,3 +26,7 @@ regex-formatters = []
 [dependencies]
 smartformat-derive = { version = "0.1.0", path = "../smartformat-derive", optional = true }
 jiff = { version = "0.2", optional = true }
+
+[dev-dependencies]
+# Test-only: the golden file is JSON. Normal builds stay serde-free (DESIGN.md).
+serde_json = "1"
