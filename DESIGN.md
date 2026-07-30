@@ -16,8 +16,9 @@ Everything in SmartFormat's core plus the built-in extensions, in this order:
 - **M1 — compat foundation:** parser (`Placeholder`, `Selector`, nesting, escaping,
   alignment), `Value` model + `#[derive(ToSmartValue)]`, default/dictionary/string
   sources, `DefaultFormatter` with **full .NET standard format specifiers**
-  (numeric `C D E F G N P X`, standard date/time specifiers) — but **not** custom
-  patterns like `#,##0.00`; those hard-error so gaps are loud, not silently wrong.
+  (numeric `B C D E F G N P R X`, standard date/time specifiers) — but **not**
+  custom patterns like `#,##0.00`; those hard-error so gaps are loud, not
+  silently wrong.
   Golden-test harness (below) lands here too.
 - **M2 — value-dense formatters:** `PluralLocalizationFormatter`, `ChooseFormatter`,
   `ConditionalFormatter` (pulls in ICU4X).
@@ -49,3 +50,43 @@ Everything in SmartFormat's core plus the built-in extensions, in this order:
 - XML/JSON source extensions (`SmartFormat.Extensions.Xml` / `*.Json`)
 - Byte-compat for locales where .NET diverges from CLDR — we follow ICU4X and
   document divergences as goldens expose them
+
+## Known divergences
+
+Places where we knowingly do not match .NET byte for byte. Each one has a
+golden case pinning .NET's answer, skipped with the reason in
+`crates/smartformat/tests/goldens.rs`, or a unit test pinning ours.
+
+- **Integer width.** `Value` collapses every signed integer to `i64` and every
+  unsigned one to `i64`/`u64`, where .NET formats the boxed value's own CLR
+  type. `X` and `B` therefore always render a 64-bit two's complement:
+  `{0:X}` on `(int)-255` is `FFFFFF01` in .NET and `FFFFFFFFFFFFFF01` here.
+  Positive values, `long` and `ulong` are unaffected.
+- **Shortest round-trip digits for exact powers of two.** .NET normalizes the
+  significand before deriving `Grisu3`'s rounding boundaries, which loses the
+  wider lower boundary a power of two has, so for `2^-25` and `2^-958` (and
+  their negatives) .NET emits digits that do not parse back to the value.
+  We emit the correctly rounded shortest form. These four values are the only
+  ones in the whole `f64` range that differ.
+- **The `U` date specifier.** .NET converts to UTC, treating an unspecified
+  `DateTime` as local time, so its output depends on the machine's timezone.
+  A `jiff::civil::DateTime` carries no zone, so `U` is `UnsupportedSpec`.
+- **Unterminated formatter options.** `{0:d(` makes .NET index past the end of
+  the format string and throw `IndexOutOfRangeException`; we report the
+  ordinary "missing a closing brace" parse error instead.
+- **Error text for specifiers outside our subset.** With
+  `ErrorAction::OutputErrorInResult`, a specifier .NET rejects too writes
+  .NET's own `FormatException` message, but a *custom pattern* — which .NET
+  renders and we do not — writes our `unsupported format spec: …` instead.
+- **Positions are byte offsets.** Every index in an `Error` and in the
+  `FormattingException` message it carries counts UTF-8 bytes, where .NET
+  counts UTF-16 code units. The two agree for ASCII templates.
+- **Unpaired `\uXXXX` surrogates.** .NET keeps a lone surrogate as a UTF-16
+  code unit in the result string; a Rust `String` cannot, so it becomes the
+  replacement character. A surrogate *pair* joins into its character, as it
+  does in .NET.
+- **Unicode case mapping.** `ToUpper`/`ToLower` and case-insensitive selector
+  matching use Rust's Unicode mappings. Case-insensitive matching restricts
+  itself to one-to-one mappings, like .NET's `OrdinalIgnoreCase`, but
+  `{0.ToUpper}` uses the full mapping, so `ß` uppercases to `SS` here and
+  stays `ß` in .NET.
