@@ -15,8 +15,10 @@ pub enum Value {
     String(String),
     List(Vec<Value>),
     Map(BTreeMap<String, Value>),
-    // Value::DateTime(jiff::civil::DateTime / jiff::Zoned) lands with the
-    // `time` feature in milestone M1.
+    /// A date/time without timezone, like a .NET `DateTime` of unspecified
+    /// kind. Zoned datetimes (`DateTimeOffset`) may come later.
+    #[cfg(feature = "time")]
+    DateTime(jiff::civil::DateTime),
 }
 
 /// Conversion into a [`Value`], implemented by hand or via

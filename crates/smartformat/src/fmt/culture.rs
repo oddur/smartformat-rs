@@ -1,0 +1,135 @@
+//! Culture data needed by the standard format specifiers, mirroring the
+//! parts of .NET `NumberFormatInfo` / `DateTimeFormatInfo` we consume.
+//!
+//! M1 ships the invariant culture only; ICU4X-backed locales land in M2
+//! behind the `plural` feature. Pattern integers (`currency_negative_pattern`
+//! etc.) use the exact .NET enumeration values so ported formatting code can
+//! follow the .NET reference directly.
+
+/// Number formatting symbols and patterns (.NET `NumberFormatInfo` subset).
+#[derive(Debug, Clone, PartialEq)]
+pub struct NumberFormat {
+    pub decimal_separator: &'static str,
+    pub group_separator: &'static str,
+    /// Digits per group, least-significant first (.NET `NumberGroupSizes`).
+    pub group_sizes: &'static [u8],
+    pub negative_sign: &'static str,
+    pub number_decimal_digits: u8,
+    pub currency_symbol: &'static str,
+    pub currency_decimal_digits: u8,
+    pub currency_decimal_separator: &'static str,
+    pub currency_group_separator: &'static str,
+    /// .NET `CurrencyPositivePattern` (0 = `$n`, 1 = `n$`, 2 = `$ n`, 3 = `n $`).
+    pub currency_positive_pattern: u8,
+    /// .NET `CurrencyNegativePattern` (0..=16).
+    pub currency_negative_pattern: u8,
+    pub percent_symbol: &'static str,
+    pub percent_decimal_digits: u8,
+    /// .NET `PercentPositivePattern` / `PercentNegativePattern`.
+    pub percent_positive_pattern: u8,
+    pub percent_negative_pattern: u8,
+    pub nan_symbol: &'static str,
+    pub positive_infinity_symbol: &'static str,
+    pub negative_infinity_symbol: &'static str,
+}
+
+/// Date/time symbols and standard patterns (.NET `DateTimeFormatInfo` subset).
+#[derive(Debug, Clone, PartialEq)]
+pub struct DateTimeFormat {
+    /// January first, 12 entries (.NET has a 13th empty slot; we don't).
+    pub month_names: [&'static str; 12],
+    pub abbreviated_month_names: [&'static str; 12],
+    /// Sunday first, matching .NET `DayNames`.
+    pub day_names: [&'static str; 7],
+    pub abbreviated_day_names: [&'static str; 7],
+    pub am_designator: &'static str,
+    pub pm_designator: &'static str,
+    pub date_separator: &'static str,
+    pub time_separator: &'static str,
+    /// Custom-pattern strings backing the standard specifiers
+    /// (`d` → `short_date_pattern`, `D` → `long_date_pattern`, …).
+    pub short_date_pattern: &'static str,
+    pub long_date_pattern: &'static str,
+    pub short_time_pattern: &'static str,
+    pub long_time_pattern: &'static str,
+    pub month_day_pattern: &'static str,
+    pub year_month_pattern: &'static str,
+    pub full_date_time_pattern: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CultureData {
+    /// BCP-47-ish name; `""` for the invariant culture, like .NET.
+    pub name: &'static str,
+    pub number: NumberFormat,
+    pub datetime: DateTimeFormat,
+}
+
+/// The .NET invariant culture (`CultureInfo.InvariantCulture`).
+pub fn invariant() -> &'static CultureData {
+    &INVARIANT
+}
+
+static INVARIANT: CultureData = CultureData {
+    name: "",
+    number: NumberFormat {
+        decimal_separator: ".",
+        group_separator: ",",
+        group_sizes: &[3],
+        negative_sign: "-",
+        number_decimal_digits: 2,
+        currency_symbol: "\u{a4}",
+        currency_decimal_digits: 2,
+        currency_decimal_separator: ".",
+        currency_group_separator: ",",
+        currency_positive_pattern: 0,
+        currency_negative_pattern: 0,
+        percent_symbol: "%",
+        percent_decimal_digits: 2,
+        percent_positive_pattern: 0,
+        percent_negative_pattern: 0,
+        nan_symbol: "NaN",
+        positive_infinity_symbol: "Infinity",
+        negative_infinity_symbol: "-Infinity",
+    },
+    datetime: DateTimeFormat {
+        month_names: [
+            "January",
+            "February",
+            "March",
+            "April",
+            "May",
+            "June",
+            "July",
+            "August",
+            "September",
+            "October",
+            "November",
+            "December",
+        ],
+        abbreviated_month_names: [
+            "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+        ],
+        day_names: [
+            "Sunday",
+            "Monday",
+            "Tuesday",
+            "Wednesday",
+            "Thursday",
+            "Friday",
+            "Saturday",
+        ],
+        abbreviated_day_names: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
+        am_designator: "AM",
+        pm_designator: "PM",
+        date_separator: "/",
+        time_separator: ":",
+        short_date_pattern: "MM/dd/yyyy",
+        long_date_pattern: "dddd, dd MMMM yyyy",
+        short_time_pattern: "HH:mm",
+        long_time_pattern: "HH:mm:ss",
+        month_day_pattern: "MMMM dd",
+        year_month_pattern: "yyyy MMMM",
+        full_date_time_pattern: "dddd, dd MMMM yyyy HH:mm:ss",
+    },
+};
