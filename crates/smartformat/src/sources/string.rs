@@ -71,6 +71,8 @@ fn capitalize_words(text: &str) -> String {
     let mut result = String::with_capacity(text.len());
     let mut previous_space = true;
     for c in text.chars() {
+        // Only whitespace and an uppercased letter move the flag; a digit or
+        // punctuation leaves it alone, so "1st" capitalizes as "1St".
         if c.is_whitespace() {
             previous_space = true;
             result.push(c);
@@ -78,7 +80,6 @@ fn capitalize_words(text: &str) -> String {
             previous_space = false;
             result.extend(c.to_uppercase());
         } else {
-            previous_space = false;
             result.push(c);
         }
     }

@@ -13,7 +13,7 @@
 use std::borrow::Cow;
 
 use crate::parsing::{Placeholder, Selector};
-use crate::settings::{CaseSensitivity, SmartSettings};
+use crate::settings::SmartSettings;
 use crate::value::Value;
 
 mod default_source;
@@ -64,10 +64,7 @@ impl<'a> SelectorInfo<'a> {
     /// Compares a name to the selector text, honoring
     /// [`SmartSettings::case_sensitive`].
     pub fn selector_is(&self, name: &str) -> bool {
-        match self.settings.case_sensitive {
-            CaseSensitivity::CaseSensitive => self.text() == name,
-            CaseSensitivity::CaseInsensitive => self.text().eq_ignore_ascii_case(name),
-        }
+        self.settings.case_sensitive.eq(self.text(), name)
     }
 
     /// Whether any selector up to and including this one carries the nullable

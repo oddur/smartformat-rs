@@ -23,9 +23,9 @@ impl Source for MapSource {
 
         let found = match info.settings.case_sensitive {
             CaseSensitivity::CaseSensitive => map.get(info.text()),
-            CaseSensitivity::CaseInsensitive => map
+            comparison => map
                 .iter()
-                .find(|(key, _)| key.eq_ignore_ascii_case(info.text()))
+                .find(|(key, _)| comparison.eq(key, info.text()))
                 .map(|(_, value)| value),
         };
 
