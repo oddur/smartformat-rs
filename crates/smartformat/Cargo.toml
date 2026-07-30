@@ -19,10 +19,10 @@ derive = ["dep:smartformat-derive"]
 # Dependencies land with milestone M2.
 plural = []
 # Value::DateTime and .NET date/time format patterns, backed by jiff.
-# Dependencies land with milestone M1.
-time = []
+time = ["dep:jiff"]
 # IsMatchFormatter. Dependencies land with milestone M3.
 regex-formatters = []
 
 [dependencies]
 smartformat-derive = { version = "0.1.0", path = "../smartformat-derive", optional = true }
+jiff = { version = "0.2", optional = true }
