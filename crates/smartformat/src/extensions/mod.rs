@@ -24,8 +24,14 @@ use crate::Error;
 
 pub use choose::ChooseFormatter;
 pub use conditional::ConditionalFormatter;
+#[cfg(feature = "regex-formatters")]
+pub use ismatch::{IsMatchFormatter, RegexOptions};
+pub use list::ListFormatter;
+pub use null::NullFormatter;
 #[cfg(feature = "plural")]
 pub use plural::PluralLocalizationFormatter;
+pub use substring::{SubStringFormatter, SubStringOutOfRangeBehavior};
+pub use template::{RegisterError, TemplateFormatter};
 
 /// The characters .NET accepts as the split character of a formatter that
 /// reads a list of parts (`Utilities.Validation.GetValidSplitCharOrThrow`).

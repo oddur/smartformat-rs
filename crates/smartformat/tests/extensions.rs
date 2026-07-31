@@ -7,7 +7,7 @@
 //! extension module, against a registry holding only that formatter; these
 //! tests are about what happens when they are all registered together.
 
-use smartformat::{Error, ErrorAction, SmartFormatter, SmartSettings, Value};
+use smartformat::{CaseSensitivity, Error, ErrorAction, SmartFormatter, SmartSettings, Value};
 
 fn args(values: impl IntoIterator<Item = Value>) -> Value {
     Value::List(values.into_iter().collect())
@@ -42,17 +42,104 @@ fn rendered(template: &str, value: Value, culture: &str) -> String {
 /// list, plural, cond, ismatch, isnull, choose, substr, d
 /// ```
 ///
-/// so the ones ported so far have to come out in that relative order. The
-/// missing four land in M3 and slot in without moving anything.
+/// so the registry has to come out that way, minus whatever a feature switches
+/// off. `t` is not in the list: .NET leaves `TemplateFormatter` out of
+/// `CreateDefaultSmartFormat`, and so does this port until a template is
+/// registered.
 #[test]
 fn the_default_registry_is_in_dotnet_order() {
     let smart = SmartFormatter::default();
 
     let names: Vec<&str> = smart.formatters().iter().map(|f| f.name()).collect();
-    #[cfg(feature = "plural")]
-    assert_eq!(names, ["plural", "cond", "choose", "d"]);
-    #[cfg(not(feature = "plural"))]
-    assert_eq!(names, ["cond", "choose", "d"]);
+    let expected: Vec<&str> = [
+        ("list", true),
+        ("plural", cfg!(feature = "plural")),
+        ("cond", true),
+        ("ismatch", cfg!(feature = "regex-formatters")),
+        ("isnull", true),
+        ("choose", true),
+        ("substr", true),
+        ("d", true),
+    ]
+    .into_iter()
+    .filter(|(_, registered)| *registered)
+    .map(|(name, _)| name)
+    .collect();
+    assert_eq!(names, expected);
+}
+
+/// Registering a template adds the formatter .NET's default registry leaves
+/// out, at .NET's rank for it: after `isnull`, before `choose`.
+#[test]
+fn a_registered_template_adds_the_formatter_at_its_dotnet_rank() {
+    let mut smart = SmartFormatter::default();
+    smart
+        .register_template("firstLast", "{First} {Last}")
+        .unwrap();
+
+    let names: Vec<&str> = smart.formatters().iter().map(|f| f.name()).collect();
+    let template = names
+        .iter()
+        .position(|name| *name == "t")
+        .expect("registered");
+    assert_eq!(names[template - 1], "isnull");
+    assert_eq!(names[template + 1], "choose");
+
+    // A second template joins the formatter that is already there.
+    smart
+        .register_template("lastFirst", "{Last}, {First}")
+        .unwrap();
+    assert_eq!(
+        smart
+            .formatters()
+            .iter()
+            .filter(|f| f.name() == "t")
+            .count(),
+        1
+    );
+    let person = Value::Map(
+        [
+            ("First".to_owned(), Value::from("Scott")),
+            ("Last".to_owned(), Value::from("Rippey")),
+        ]
+        .into_iter()
+        .collect(),
+    );
+    assert_eq!(
+        smart
+            .format("{:t:firstLast} / {:t:lastFirst}", &person)
+            .unwrap(),
+        "Scott Rippey / Rippey, Scott"
+    );
+}
+
+/// The template registry is matched with the formatter's own case sensitivity,
+/// which .NET fixes when the extension is initialized.
+#[test]
+fn template_names_follow_the_formatters_case_sensitivity() {
+    let mut smart = SmartFormatter::new(SmartSettings {
+        case_sensitive: CaseSensitivity::CaseInsensitive,
+        ..SmartSettings::default()
+    });
+    smart
+        .register_template("firstLast", "{First} {Last}")
+        .unwrap();
+
+    let person = Value::Map(
+        [
+            ("First".to_owned(), Value::from("Scott")),
+            ("Last".to_owned(), Value::from("Rippey")),
+        ]
+        .into_iter()
+        .collect(),
+    );
+    assert_eq!(
+        smart.format("{:t:FIRSTLAST}", &person).unwrap(),
+        "Scott Rippey"
+    );
+    // .NET's `Dictionary.Add` throws rather than overwriting, whatever the
+    // comparer says the two names are.
+    assert!(smart.register_template("FIRSTLAST", "{Last}").is_err());
 }
 
 /// Only the auto-detecting formatters are consulted for a placeholder that
@@ -172,6 +259,46 @@ fn choose_is_only_reached_by_name() {
     // With the name, the option list decides.
     assert_eq!(rendered("{0:choose(1|2):a|b}", Value::Int(2), "en"), "b");
     assert_eq!(rendered("{0:choose(2|1):a|b}", Value::Int(2), "en"), "a");
+}
+
+/// `list` outranks every other formatter, so a `|`-separated format on a list
+/// is a list even where `plural` or `cond` would have taken the same text for
+/// a number or a string. Probed in 3.6.1: `{0:one|many}` over `["x", "y"]` is
+/// item format `one`, spacer `many`.
+#[test]
+fn list_wins_over_plural_and_cond_for_lists() {
+    let items = Value::List(vec![Value::from("x"), Value::from("y")]);
+    assert_eq!(rendered("{0:one|many}", items.clone(), "en"), "xmanyy");
+    // The same format on a string is `cond`'s, and on a number `plural`'s.
+    assert_eq!(rendered("{0:one|many}", Value::from("s"), "en"), "one");
+    #[cfg(feature = "plural")]
+    assert_eq!(rendered("{0:one|many}", Value::Int(1), "en"), "one");
+}
+
+/// `{Index}` is `ListSource`'s selector and the collection index it reads is
+/// the `list` *formatter*'s, so the two halves of the extension only work
+/// together once both are registered. An item is not a list, so `{Index}`
+/// inside the item format resolves against the list one level up.
+#[test]
+fn the_index_selector_counts_the_list_being_formatted() {
+    let items = Value::List(vec![Value::from("a"), Value::from("b"), Value::from("c")]);
+    assert_eq!(
+        rendered("{0:list:{} = {Index}|, }", items, "en"),
+        "a = 0, b = 1, c = 2"
+    );
+    // Nested lists count independently, and the outer index is restored.
+    let nested = Value::List(vec![
+        Value::List(vec![Value::from("a"), Value::from("b")]),
+        Value::List(vec![Value::from("c")]),
+    ]);
+    assert_eq!(
+        rendered("{0:list:{Index}:{:list:{}{Index}|,}|; }", nested, "en"),
+        "0:a0,b1; 1:c0"
+    );
+    // Outside any list, `{Index}` is -1 (.NET
+    // `ListFormatter.CollectionIndex`'s initial value). It only answers as the
+    // first selector of a placeholder, so this one reads the argument list.
+    assert_eq!(rendered("{Index}", Value::from("anything"), "en"), "-1");
 }
 
 // ---------------------------------------------------------------------------

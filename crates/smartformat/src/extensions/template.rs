@@ -7,24 +7,19 @@
 //! formatter options — `{:t(firstLast)}` — or, when there are none, from the
 //! placeholder's format.
 //!
+//! .NET's `CreateDefaultSmartFormat` does not register this formatter, so a
+//! [`SmartFormatter`](crate::SmartFormatter) grows one the first time it is
+//! handed a template. Registering through
+//! [`SmartFormatter::register_template`](crate::SmartFormatter::register_template)
+//! is the way in; the type's own [`register`](TemplateFormatter::register) is
+//! for a caller assembling a registry by hand, and needs the parser passed
+//! explicitly.
+//!
 //! ```
-//! use smartformat::extensions::template::TemplateFormatter;
 //! use smartformat::{SmartFormatter, Value};
 //!
 //! let mut smart = SmartFormatter::default();
-//!
-//! // .NET's `CreateDefaultSmartFormat` does not register this formatter, so
-//! // it has to be added by hand — and its templates registered before it is,
-//! // since the registry takes ownership.
-//! let mut templates = TemplateFormatter::with_case_sensitivity(smart.settings().case_sensitive);
-//! templates
-//!     .register(smart.parser(), "firstLast", "{First} {Last}")
-//!     .unwrap();
-//!
-//! let formatters = smart.formatters_mut();
-//! // `DefaultFormatter` stays last, as in .NET.
-//! let last = formatters.len() - 1;
-//! formatters.insert(last, Box::new(templates));
+//! smart.register_template("firstLast", "{First} {Last}").unwrap();
 //!
 //! let person = Value::Map(
 //!     [
@@ -232,6 +227,13 @@ impl Formatter for TemplateFormatter {
     /// ("TemplateFormatter cannot handle auto-detection").
     fn can_auto_detect(&self) -> bool {
         false
+    }
+
+    /// Itself, which is what lets
+    /// [`SmartFormatter::register_template`](crate::SmartFormatter::register_template)
+    /// add a template to a formatter the registry already owns.
+    fn as_template_formatter_mut(&mut self) -> Option<&mut TemplateFormatter> {
+        Some(self)
     }
 
     fn try_evaluate_format(&self, info: &mut FormattingInfo<'_>) -> Result<bool, Error> {

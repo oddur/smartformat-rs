@@ -12,13 +12,10 @@
 //! the last item, a fourth the spacer for a list of exactly two:
 //!
 //! ```
-//! use smartformat::extensions::list::ListFormatter;
 //! use smartformat::{SmartFormatter, Value};
 //!
-//! // Registering it is the caller's job until the default registry grows a
-//! // slot for it — at index 0, where .NET sorts it.
-//! let mut smart = SmartFormatter::default();
-//! smart.formatters_mut().insert(0, Box::new(ListFormatter::new()));
+//! // Registered by default, at index 0 — where .NET sorts it.
+//! let smart = SmartFormatter::default();
 //!
 //! let names = Value::List(vec![Value::from("Jim"), Value::from("Pam"), Value::from("Dwight")]);
 //! let args = Value::List(vec![names]);

@@ -12,9 +12,14 @@ use std::borrow::Cow;
 use std::cell::Cell;
 
 use crate::error::Error;
+#[cfg(feature = "regex-formatters")]
+use crate::extensions::ismatch::IsMatchFormatter;
 #[cfg(feature = "plural")]
 use crate::extensions::PluralLocalizationFormatter;
-use crate::extensions::{ChooseFormatter, ConditionalFormatter};
+use crate::extensions::{
+    ChooseFormatter, ConditionalFormatter, ListFormatter, NullFormatter, RegisterError,
+    SubStringFormatter, TemplateFormatter,
+};
 use crate::fmt::culture::{self, CultureData};
 #[cfg(feature = "time")]
 use crate::fmt::date;
@@ -59,6 +64,50 @@ pub trait Formatter: Send + Sync {
     fn is_default_formatter(&self) -> bool {
         false
     }
+
+    /// This formatter as a [`TemplateFormatter`], if it is one — the port's
+    /// stand-in for .NET's `GetFormatterExtension<TemplateFormatter>()`, used
+    /// by [`SmartFormatter::register_template`] to reach a template registry
+    /// the [`FormatterRegistry`] already owns.
+    ///
+    /// A `dyn Formatter` cannot be downcast the ordinary way: `Any` would have
+    /// to be a supertrait, and coercing `&mut dyn Formatter` to `&mut dyn Any`
+    /// needs trait upcasting, stable well past this crate's MSRV. Only the
+    /// template formatter has to be found again — its registry is filled after
+    /// it is registered, where every other formatter is configured before —
+    /// so only it answers this question. [`TemplateFormatter`] overrides it;
+    /// no other formatter should.
+    ///
+    /// [`TemplateFormatter`]: crate::extensions::TemplateFormatter
+    fn as_template_formatter_mut(&mut self) -> Option<&mut TemplateFormatter> {
+        None
+    }
+}
+
+/// The rank .NET's `WellKnownExtensionTypes.Formatters` gives each extension,
+/// keyed by that extension's default name. The ranks .NET lists for extensions
+/// this port does not have — `TimeFormatter` (4000), `XElementFormatter` (5000)
+/// and `LocalizationFormatter` (8000) — are left out; nothing is inserted
+/// between them.
+const WELL_KNOWN_RANKS: [(&str, u32); 9] = [
+    ("list", 1000),
+    ("plural", 2000),
+    ("cond", 3000),
+    ("ismatch", 6000),
+    ("isnull", 7000),
+    ("t", 9000),
+    ("choose", 10000),
+    ("substr", 11000),
+    ("d", 12000),
+];
+
+/// The rank of the extension of that name, or `None` for a name .NET's table
+/// does not hold. Ordinal, as .NET's `Dictionary<string, int>` comparer is.
+fn well_known_rank(name: &str) -> Option<u32> {
+    WELL_KNOWN_RANKS
+        .iter()
+        .find(|(known, _)| *known == name)
+        .map(|(_, rank)| *rank)
 }
 
 /// The ordered list of [`Formatter`] extensions a [`SmartFormatter`] consults.
@@ -78,24 +127,40 @@ impl FormatterRegistry {
     /// ends up with.
     ///
     /// .NET adds its extensions in one call and lets `WellKnownExtensionTypes`
-    /// sort them by a fixed rank, which for the ones ported so far comes out as
+    /// sort them by a fixed rank: [`ListFormatter`] (1000),
     /// `PluralLocalizationFormatter` (2000), [`ConditionalFormatter`] (3000),
-    /// [`ChooseFormatter`] (10000), [`DefaultFormatter`] (12000). The gaps —
-    /// `ListFormatter` (1000), `IsMatchFormatter` (6000), `NullFormatter`
-    /// (7000) and `SubStringFormatter` (11000) — land in milestone M3 and slot
-    /// in between without moving anything.
+    /// [`IsMatchFormatter`] (6000), [`NullFormatter`] (7000),
+    /// [`ChooseFormatter`] (10000), [`SubStringFormatter`] (11000),
+    /// [`DefaultFormatter`] (12000). The ranks in between belong to extensions
+    /// this port does not have (`TimeFormatter` 4000, `XElementFormatter` 5000,
+    /// `LocalizationFormatter` 8000).
     ///
-    /// The order is observable: `PluralLocalizationFormatter` and
-    /// `ConditionalFormatter` both auto-detect a `|`-separated format, so the
-    /// first of the two decides what `{0:a|b}` means for a number. So does
-    /// `ListFormatter`, whose rank puts it *first* of all — `{0:a|b}` on a list
-    /// is a list in .NET, not a plural — so M3 has to insert it at index 0.
+    /// `TemplateFormatter` (9000) is deliberately absent: .NET's
+    /// `CreateDefaultSmartFormat` leaves it out too, because a template
+    /// formatter with no templates registered is useless. See
+    /// [`SmartFormatter::register_template`] for the way to add it.
+    ///
+    /// The order is observable: [`ListFormatter`],
+    /// `PluralLocalizationFormatter` and [`ConditionalFormatter`] all
+    /// auto-detect a `|`-separated format, so the first of the three decides
+    /// what `{0:a|b}` means. `ListFormatter` ranking first is what makes
+    /// `{0:one|many}` on a list a list and not a plural.
+    ///
+    /// [`ListFormatter`]: crate::extensions::ListFormatter
+    /// [`IsMatchFormatter`]: crate::extensions::ismatch::IsMatchFormatter
+    /// [`NullFormatter`]: crate::extensions::NullFormatter
+    /// [`SubStringFormatter`]: crate::extensions::SubStringFormatter
     pub fn new() -> Self {
         let formatters: Vec<Box<dyn Formatter>> = vec![
+            Box::new(ListFormatter::new()),
             #[cfg(feature = "plural")]
             Box::new(PluralLocalizationFormatter::new()),
             Box::new(ConditionalFormatter::new()),
+            #[cfg(feature = "regex-formatters")]
+            Box::new(IsMatchFormatter::new()),
+            Box::new(NullFormatter::new()),
             Box::new(ChooseFormatter::new()),
+            Box::new(SubStringFormatter::new()),
             Box::new(DefaultFormatter),
         ];
         Self { formatters }
@@ -105,6 +170,59 @@ impl FormatterRegistry {
     /// [`DefaultFormatter`] if one is registered.
     pub fn insert(&mut self, index: usize, formatter: Box<dyn Formatter>) {
         self.formatters.insert(index, formatter);
+    }
+
+    /// Adds a formatter at the position .NET's `WellKnownExtensionTypes` gives
+    /// it (`Registry.AddExtensions`), so that a formatter added to the default
+    /// registry ends up where `CreateDefaultSmartFormat` would have put it: a
+    /// `TemplateFormatter` after [`NullFormatter`] and before
+    /// [`ChooseFormatter`], whatever else is registered.
+    ///
+    /// A formatter .NET does not know is appended, exactly as there — which
+    /// puts it *after* [`DefaultFormatter`], where it never runs, so a custom
+    /// formatter wants [`insert`](Self::insert) instead. .NET has the same
+    /// trap.
+    ///
+    /// [`NullFormatter`]: crate::extensions::NullFormatter
+    pub fn add(&mut self, formatter: Box<dyn Formatter>) {
+        let index = self.index_to_insert(formatter.name());
+        self.formatters.insert(index, formatter);
+    }
+
+    /// Where a formatter of that name belongs, a port of
+    /// `WellKnownExtensionTypes.GetIndexToInsert`: after the last formatter
+    /// ranked at or before it, or at the end when neither is well known.
+    ///
+    /// .NET keys the rank table on the CLR type; a port has no type name to
+    /// key on and uses the formatter's name instead, which is the same thing
+    /// for a formatter that was not renamed.
+    fn index_to_insert(&self, name: &str) -> usize {
+        if self.formatters.is_empty() {
+            return 0;
+        }
+        let Some(rank) = well_known_rank(name) else {
+            return self.formatters.len();
+        };
+        for (index, formatter) in self.formatters.iter().enumerate().rev() {
+            match well_known_rank(formatter.name()) {
+                Some(other) if other <= rank => return index + 1,
+                _ => continue,
+            }
+        }
+        0
+    }
+
+    /// The [`TemplateFormatter`] in this registry, if one was added.
+    ///
+    /// [`SmartFormatter::register_template`] fills its registry through this;
+    /// a caller who registered a template formatter by hand can reach it the
+    /// same way. The first one wins, as name lookup does.
+    ///
+    /// [`TemplateFormatter`]: crate::extensions::TemplateFormatter
+    pub fn template_formatter_mut(&mut self) -> Option<&mut TemplateFormatter> {
+        self.formatters
+            .iter_mut()
+            .find_map(|formatter| formatter.as_template_formatter_mut())
     }
 
     pub fn push(&mut self, formatter: Box<dyn Formatter>) {
@@ -236,6 +354,60 @@ impl SmartFormatter {
 
     pub fn formatters_mut(&mut self) -> &mut FormatterRegistry {
         &mut self.formatters
+    }
+
+    /// Parses `template` and registers it under `name`, so that
+    /// `{:t:<name>}` renders it (.NET `TemplateFormatter.Register`).
+    ///
+    /// The first call also adds the [`TemplateFormatter`] itself, at .NET's
+    /// rank for it — after `isnull`, before `choose`. .NET's
+    /// `CreateDefaultSmartFormat` leaves the extension out, so a formatter
+    /// that is never handed a template never carries one either.
+    ///
+    /// The template is parsed with *this* formatter's [`parser`](Self::parser),
+    /// and the registry is matched with this formatter's
+    /// [`case_sensitive`](crate::SmartSettings::case_sensitive) setting as it
+    /// stands at the first call — .NET fixes the comparer in `Initialize` in
+    /// the same way. Going through
+    /// [`TemplateFormatter::register`](crate::extensions::TemplateFormatter::register)
+    /// by hand is what a caller with a second parser would have to do, and is
+    /// the only way to get a template parsed with settings the renderer does
+    /// not share.
+    ///
+    /// Fails if `template` does not parse, or if `name` is already registered
+    /// — .NET's `Dictionary.Add` throws rather than overwriting.
+    ///
+    /// ```
+    /// use smartformat::{SmartFormatter, Value};
+    ///
+    /// let mut smart = SmartFormatter::default();
+    /// smart.register_template("firstLast", "{First} {Last}").unwrap();
+    ///
+    /// let person = Value::Map(
+    ///     [
+    ///         ("First".to_owned(), Value::from("Scott")),
+    ///         ("Last".to_owned(), Value::from("Rippey")),
+    ///     ]
+    ///     .into_iter()
+    ///     .collect(),
+    /// );
+    /// assert_eq!(smart.format("{:t:firstLast}", &person).unwrap(), "Scott Rippey");
+    /// ```
+    pub fn register_template(
+        &mut self,
+        name: impl Into<String>,
+        template: &str,
+    ) -> Result<(), RegisterError> {
+        if self.formatters.template_formatter_mut().is_none() {
+            let formatter = TemplateFormatter::with_case_sensitivity(self.settings.case_sensitive);
+            self.formatters.add(Box::new(formatter));
+        }
+        // Disjoint fields: the parser is read while the registry is written.
+        let parser = &self.parser;
+        self.formatters
+            .template_formatter_mut()
+            .expect("a template formatter was just added")
+            .register(parser, name, template)
     }
 
     /// Parses a template once, for repeated formatting.
@@ -692,12 +864,22 @@ impl<'e> Engine<'e> {
     /// a formatter that declined the value, and no auto-detecting formatter
     /// at all with one message — and positions it at the *ordinal* index of
     /// the last evaluated selector, not at an offset into the template.
+    ///
+    /// A placeholder with no selector to report has none: .NET passes `-1`,
+    /// which `FormattingInfo.FormattingException` reads as "use the problem
+    /// item", and the problem item here is the placeholder's format. So
+    /// `{:nope:x}` is reported at 7 — where `x` starts — and not at 0
+    /// (probed against 3.6.1). `{:t:…}`, the way every template is named, is a
+    /// placeholder of exactly that shape.
     fn no_formatter_error(&self, placeholder: &Placeholder) -> Error {
         let index = placeholder
             .selectors
             .iter()
             .rfind(|selector| !skip_selector(selector))
-            .map_or(0, |selector| selector.index);
+            .map_or_else(
+                || self.utf16_position(error_position(placeholder)),
+                |selector| selector.index,
+            );
         self.formatting_error("No suitable Formatter could be found", index)
     }
 

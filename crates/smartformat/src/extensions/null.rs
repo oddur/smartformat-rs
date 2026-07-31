@@ -7,11 +7,9 @@
 //! With only one part a value that is not null renders nothing at all:
 //!
 //! ```
-//! use smartformat::extensions::null::NullFormatter;
 //! use smartformat::{SmartFormatter, Value};
 //!
-//! let mut smart = SmartFormatter::default();
-//! smart.formatters_mut().insert(0, Box::new(NullFormatter::new()));
+//! let smart = SmartFormatter::default();
 //!
 //! let args = Value::List(vec![Value::Null, Value::from("here")]);
 //! assert_eq!(smart.format("{0:isnull:nothing|{}}", &args).unwrap(), "nothing");

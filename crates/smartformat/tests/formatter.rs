@@ -824,6 +824,17 @@ fn output_error_in_result_writes_the_dotnet_exception_message() {
         "[Error parsing format string: No suitable Formatter could be found at 0\n\
          [{0:nosuchformatter:x}]\n^]"
     );
+    // With a selector the index is the selector's ordinal (0 above). With
+    // none, .NET falls back to the start of the placeholder's format — index
+    // 19, where `x` sits — rather than to 0 (probed against 3.6.1). This is
+    // the shape every template placeholder has: `{:t:name}`.
+    assert_eq!(
+        smart
+            .format("[{:nosuchformatter:x}]", &args([Value::Int(42)]))
+            .unwrap(),
+        "[Error parsing format string: No suitable Formatter could be found at 19\n\
+         [{:nosuchformatter:x}]\n-------------------^]"
+    );
 }
 
 #[test]

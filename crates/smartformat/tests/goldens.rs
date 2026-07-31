@@ -58,12 +58,9 @@ const SKIPPED: &[(&str, &str)] = &[
     ),
     (
         "sel-default-format-empty-args",
-        "default formatting of a collection renders the CLR type name in .NET; we fail loudly instead",
+        COLLECTION_TYPE_NAME,
     ),
-    (
-        "sel-default-format-list",
-        "default formatting of a collection renders the CLR type name in .NET; we fail loudly instead",
-    ),
+    ("sel-default-format-list", COLLECTION_TYPE_NAME),
     (
         "sel-default-format-map",
         "default formatting of a map renders the CLR type name in .NET; we fail loudly instead",
@@ -116,10 +113,6 @@ const SKIPPED: &[(&str, &str)] = &[
         "plural-option-iso-639-2",
         "a three-letter ISO 639-2 language code is mapped to its two-letter equivalent by ICU; we take the culture name as written",
     ),
-    (
-        "autodetect-list",
-        "ListFormatter sorts ahead of the plural formatter and auto-detects too, and it lands in M3",
-    ),
     // .NET's default calendar for ar-SA is UmAlQura; we render Gregorian
     // fields through ar-SA's Hijri month names. Every specifier that reads a
     // date field diverges; the time-only ones (`t`, `T`) do not and are
@@ -143,6 +136,13 @@ const SKIPPED: &[(&str, &str)] = &[
         "choose compares its options ordinally; .NET compares them with the culture's CompareInfo, which ignores a soft hyphen",
     ),
 ];
+
+/// `ListFormatter` does not change these: it declines a placeholder that
+/// carries no format at all, so a bare `{0}` on a list still reaches
+/// `DefaultFormatter` — in .NET too, where the value's `ToString()` is its CLR
+/// type name.
+const COLLECTION_TYPE_NAME: &str =
+    "default formatting of a collection renders the CLR type name in .NET; we fail loudly instead";
 
 const AR_SA_CALENDAR: &str =
     "ar-SA dates: .NET's default calendar for it is UmAlQura, and the port has no Hijri calendar";

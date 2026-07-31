@@ -8,15 +8,9 @@
 //! expression's capturing groups through the "magic" placeholder `{m[1]}`:
 //!
 //! ```
-//! use smartformat::extensions::ismatch::IsMatchFormatter;
-//! use smartformat::formatter::{DefaultFormatter, FormatterRegistry};
 //! use smartformat::{SmartFormatter, Value};
 //!
-//! let mut smart = SmartFormatter::default();
-//! let formatters = smart.formatters_mut();
-//! *formatters = FormatterRegistry::empty();
-//! formatters.push(Box::new(IsMatchFormatter::new()));
-//! formatters.push(Box::new(DefaultFormatter));
+//! let smart = SmartFormatter::default();
 //!
 //! let args = Value::List(vec![Value::from("Some123Content")]);
 //! // The options carry SmartFormat's own escaping, so the pattern the engine

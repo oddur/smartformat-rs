@@ -7,11 +7,9 @@
 //! takes everything from `start` on:
 //!
 //! ```
-//! use smartformat::extensions::substring::SubStringFormatter;
 //! use smartformat::{SmartFormatter, Value};
 //!
-//! let mut smart = SmartFormatter::default();
-//! smart.formatters_mut().insert(0, Box::new(SubStringFormatter::new()));
+//! let smart = SmartFormatter::default();
 //!
 //! let args = Value::List(vec![Value::from("Long John")]);
 //! assert_eq!(smart.format("{0:substr(5)}", &args).unwrap(), "John");
