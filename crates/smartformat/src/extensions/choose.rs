@@ -26,7 +26,7 @@ use crate::settings::CaseSensitivity;
 use crate::value::Value;
 use crate::Error;
 
-use super::{InvalidSplitChar, DEFAULT_SPLIT_CHAR};
+use super::{split_format, InvalidSplitChar, DEFAULT_SPLIT_CHAR};
 
 /// The default formatter name, .NET `ChooseFormatter.Name`.
 const NAME: &str = "choose";
@@ -170,7 +170,12 @@ impl Formatter for ChooseFormatter {
         let options = info.formatter_options()?;
         let options: Vec<&str> = options.split(self.split_char).collect();
 
-        let formats = info.format().map(|format| format.split(self.split_char));
+        // .NET splits before it counts, so a split that throws is the answer
+        // for every value, however many parts the formatter wanted.
+        let formats = info
+            .format()
+            .map(|format| split_format(info, format, self.split_char))
+            .transpose()?;
 
         // Check whether the arguments can be handled by this formatter.
         let formats = match formats {

@@ -12,6 +12,10 @@ pub mod plural_rules;
 
 use std::fmt;
 
+use crate::formatter::FormattingInfo;
+use crate::parsing::Format;
+use crate::Error;
+
 pub use choose::ChooseFormatter;
 pub use conditional::ConditionalFormatter;
 #[cfg(feature = "plural")]
@@ -51,4 +55,22 @@ pub(crate) fn valid_split_char(split_char: char) -> Result<char, InvalidSplitCha
     } else {
         Err(InvalidSplitChar(split_char))
     }
+}
+
+/// The parts `format` splits into, or the formatting error .NET's
+/// `Format.Split` throws for a crossed literal ([`SplitError`]).
+///
+/// All three formatters split *before* they count the parts, and .NET never
+/// reaches the count when the split throws, so this has to be propagated with
+/// `?` rather than folded into "requires at least N parts". Like the count
+/// errors, the exception is one .NET raises inside `TryEvaluateFormat` and the
+/// evaluator only wraps on the way out, so the message carries no envelope.
+pub(crate) fn split_format(
+    info: &FormattingInfo<'_>,
+    format: &Format,
+    separator: char,
+) -> Result<Vec<Format>, Error> {
+    format
+        .split(separator)
+        .map_err(|error| info.plain_error(&error.to_string(), info.error_position()))
 }

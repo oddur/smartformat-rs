@@ -4,7 +4,10 @@ use super::parser::{
     INVALID_CHARACTERS_IN_SELECTOR, MISSING_CLOSING_BRACE, TOO_MANY_CLOSING_BRACES,
     TRAILING_OPERATORS_IN_SELECTOR,
 };
-use super::{Format, FormatItem, LiteralText, Parser, ParserSettings, Placeholder, SelectorFilter};
+use super::{
+    Format, FormatItem, LiteralText, Parser, ParserSettings, Placeholder, SelectorFilter,
+    SplitError,
+};
 use crate::error::Error;
 use crate::settings::ErrorAction;
 
@@ -1049,11 +1052,17 @@ fn raws(pieces: &[Format]) -> Vec<&str> {
     pieces.iter().map(|piece| piece.raw.as_str()).collect()
 }
 
+/// The pieces of a split that does not reach a crossed literal, which is every
+/// split but the ones `split_fails_when_a_literal_has_crossed_ends` covers.
+fn split(format: &Format, separator: char) -> Vec<Format> {
+    format.split(separator).expect("a split that does not fail")
+}
+
 #[test]
 fn split_cuts_the_format_at_the_top_nesting_level() {
     let format = format_of("{0:choose(1|2):one|{1}two|three}");
 
-    let pieces = format.split('|');
+    let pieces = split(&format, '|');
     assert_eq!(raws(&pieces), ["one", "{1}two", "three"]);
     // The piece with the nested placeholder keeps it whole.
     assert_eq!(pieces[1].items.len(), 2);
@@ -1065,7 +1074,7 @@ fn split_does_not_look_inside_a_nested_placeholder() {
     // The `|` of the inner format belongs to the inner placeholder.
     let format = format_of("{0:cond:a{1:cond:x|y}b|c}");
 
-    assert_eq!(raws(&format.split('|')), ["a{1:cond:x|y}b", "c"]);
+    assert_eq!(raws(&split(&format, '|')), ["a{1:cond:x|y}b", "c"]);
 }
 
 #[test]
@@ -1073,7 +1082,7 @@ fn every_piece_spans_the_template_it_was_cut_from() {
     let template = "{0:choose(1|2):one|{1}two|three}";
     let format = format_of(template);
 
-    for piece in format.split('|') {
+    for piece in split(&format, '|') {
         assert_eq!(piece.end - piece.start, piece.raw.len());
         assert_eq!(&template[piece.start..piece.end], piece.raw);
     }
@@ -1083,21 +1092,21 @@ fn every_piece_spans_the_template_it_was_cut_from() {
 fn a_format_without_the_separator_is_one_piece() {
     let format = format_of("{0:choose(1):one}");
 
-    assert_eq!(format.split('|'), vec![format.clone()]);
+    assert_eq!(split(&format, '|'), vec![format.clone()]);
 }
 
 #[test]
 fn split_keeps_empty_pieces() {
     let format = format_of("{0:cond:|a||b|}");
 
-    assert_eq!(raws(&format.split('|')), ["", "a", "", "b", ""]);
+    assert_eq!(raws(&split(&format, '|')), ["", "a", "", "b", ""]);
 }
 
 #[test]
 fn split_uses_the_separator_it_is_given() {
     let format = format_of("{0:choose(1~2):a|b~c}");
 
-    assert_eq!(raws(&format.split('~')), ["a|b", "c"]);
+    assert_eq!(raws(&split(&format, '~')), ["a|b", "c"]);
 }
 
 #[test]
@@ -1107,7 +1116,7 @@ fn split_searches_the_source_text_so_an_escaped_separator_still_splits() {
     // keeps the lone backslash. Probed against 3.6.1.
     let format = format_of(r"{0:choose(1|2):a\|b|c}");
 
-    assert_eq!(raws(&format.split('|')), [r"a\", "b", "c"]);
+    assert_eq!(raws(&split(&format, '|')), [r"a\", "b", "c"]);
 }
 
 #[test]
@@ -1116,7 +1125,7 @@ fn a_separator_written_as_an_escape_sequence_does_not_split() {
     // .NET runs over that source text does not find it either.
     let format = format_of(r"{0:cond:a\u007Cb|c}");
 
-    let pieces = format.split('|');
+    let pieces = split(&format, '|');
     assert_eq!(raws(&pieces), [r"a\u007Cb", "c"]);
     assert_eq!(pieces[0].literal_text(), "a|b");
 }
@@ -1130,7 +1139,7 @@ fn a_piece_resolves_the_escape_sequence_the_cut_truncated() {
     // after the separator. Probed against 3.6.1.
     let format = format_of(r"{0:cond:\u00|41|c}");
 
-    let pieces = format.split('|');
+    let pieces = split(&format, '|');
     assert_eq!(raws(&pieces), [r"\u00", "41", "c"]);
     assert_eq!(pieces[0].literal_text(), "\0");
     assert!(pieces[0].items.iter().all(|item| match item {
@@ -1154,7 +1163,7 @@ fn a_piece_keeps_an_escape_sequence_unresolved_when_the_parser_does() {
     let FormatItem::Placeholder(placeholder) = &format.items[0] else {
         panic!("expected a placeholder");
     };
-    let pieces = placeholder.format.as_ref().expect("a format").split('|');
+    let pieces = split(placeholder.format.as_ref().expect("a format"), '|');
 
     assert_eq!(pieces[0].literal_text(), r"\u00");
 }
@@ -1286,28 +1295,32 @@ fn a_surrogate_pair_stays_in_one_literal() {
 }
 
 #[test]
-fn split_poisons_every_piece_when_a_literal_has_crossed_ends() {
+fn split_fails_when_a_literal_has_crossed_ends() {
     // .NET asks `string.IndexOf` for a negative count while it is still
     // looking for the separators and throws, so the whole split fails and
     // every argument fails with it — the piece it would have chosen is never
-    // reached. Here every piece carries that failure instead.
+    // reached, and neither is the formatter's own count of the pieces.
     for template in [
         r"{0:choose(1|2):\u|a\b}",
         r"{0:cond:\u|a\b}",
         r"{0:cond:a|\u12}",
         r"{0:choose(1|2):\uAB\n|x}",
+        // Too few pieces for the formatter that asked, which .NET never gets
+        // as far as noticing.
+        r"{0:cond:\uAB\n}",
+        r"{0:\u12}",
     ] {
-        let pieces = format_of(template).split('|');
-
-        assert_eq!(pieces.len(), 2, "{template:?}");
-        for (index, piece) in pieces.iter().enumerate() {
-            assert_eq!(
-                literal_at(piece, 0).escape_error.as_deref(),
-                Some(super::SPLIT_COUNT_ERROR),
-                "piece {index} of {template:?}"
-            );
-        }
+        assert_eq!(
+            format_of(template).split('|'),
+            Err(SplitError),
+            "{template:?}"
+        );
     }
+    assert_eq!(
+        SplitError.to_string(),
+        "Count must be positive and count must refer to a location within \
+         the string/array/collection. (Parameter 'count')"
+    );
 }
 
 #[test]
@@ -1328,9 +1341,9 @@ fn only_the_first_character_decides_whether_a_slice_is_resolved() {
 #[test]
 fn a_zero_digit_unicode_slice_is_an_error_but_only_where_it_is_written() {
     // Nothing is read past here — `abc` are not special — so there is no
-    // crossed literal and no poisoned split: only the piece that keeps the
+    // crossed literal and no failing split: only the piece that keeps the
     // `\u` fails, and it fails with .NET's own message.
-    let pieces = format_of(r"{0:choose(1|2):\u|abcd}").split('|');
+    let pieces = split(&format_of(r"{0:choose(1|2):\u|abcd}"), '|');
 
     assert_eq!(raws(&pieces), [r"\u", "abcd"]);
     assert_eq!(
@@ -1347,7 +1360,7 @@ fn split_skips_a_crossed_literal_it_has_already_passed() {
     // reached, crossed or not, so this format splits without ever asking for
     // a negative count — and the piece between the separators is cut out of
     // two literals that cover the same character.
-    let pieces = format_of(r"{0:choose(1|2):\u1\|2|x}").split('|');
+    let pieces = split(&format_of(r"{0:choose(1|2):\u1\|2|x}"), '|');
 
     assert_eq!(raws(&pieces), [r"\u1\", "2", "x"]);
     assert_eq!(literal_at(&pieces[1], 0).escape_error, None);

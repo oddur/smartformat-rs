@@ -9560,6 +9560,694 @@
       }
     },
     {
+      "id": "uesc-crossed-choose-1",
+      "template": "{0:choose(1|2):\\u|a\\b}",
+      "args": [
+        1
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "uesc-crossed-choose-2",
+      "template": "{0:choose(1|2):\\u|a\\b}",
+      "args": [
+        2
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "uesc-crossed-choose-ignore",
+      "template": "{0:choose(1|2):\\u|a\\b}",
+      "args": [
+        2
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "Ignore",
+        "parseErrorAction": "Ignore"
+      },
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "uesc-crossed-choose-output",
+      "template": "{0:choose(1|2):\\u|a\\b}",
+      "args": [
+        2
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult",
+        "parseErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "Count must be positive and count must refer to a location within the string/array/collection. (Parameter 'count')"
+      }
+    },
+    {
+      "id": "uesc-crossed-cond-true",
+      "template": "{0:cond:\\u|a\\b}",
+      "args": [
+        true
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "uesc-crossed-cond-false",
+      "template": "{0:cond:\\u|a\\b}",
+      "args": [
+        false
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "uesc-crossed-plural-1",
+      "template": "{0:plural:\\u|a\\b}",
+      "args": [
+        1
+      ],
+      "culture": "en-US",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "uesc-crossed-plural-2",
+      "template": "{0:plural:\\u|a\\b}",
+      "args": [
+        2
+      ],
+      "culture": "en-US",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "uesc-crossed-choose-hex-1",
+      "template": "{0:choose(1|2):\\uAB\\n|x}",
+      "args": [
+        1
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "uesc-crossed-choose-hex-2",
+      "template": "{0:choose(1|2):\\uAB\\n|x}",
+      "args": [
+        2
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "uesc-crossed-cond-tail-1",
+      "template": "{0:cond:a|\\u1}",
+      "args": [
+        true
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "uesc-crossed-cond-tail-2",
+      "template": "{0:cond:a|b\\u}",
+      "args": [
+        true
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "uesc-crossed-cond-repeated",
+      "template": "{0:cond:\\u\\u\\u|b}",
+      "args": [
+        true
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "uesc-closing-brace-in-window-true",
+      "template": "{0:cond:a|\\u12}",
+      "args": [
+        true
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "uesc-closing-brace-in-window-false",
+      "template": "{0:cond:a|\\u12}",
+      "args": [
+        false
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "uesc-closing-brace-in-window-ignore",
+      "template": "{0:cond:a|\\u12}",
+      "args": [
+        true
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "Ignore",
+        "parseErrorAction": "Ignore"
+      },
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "uesc-closing-brace-in-window-maintain",
+      "template": "{0:cond:a|\\u12}",
+      "args": [
+        true
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "MaintainTokens",
+        "parseErrorAction": "MaintainTokens"
+      },
+      "expected": {
+        "result": "{0:cond:a|\\u12}"
+      }
+    },
+    {
+      "id": "uesc-closing-brace-in-window-output",
+      "template": "{0:cond:a|\\u12}",
+      "args": [
+        true
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult",
+        "parseErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "Count must be positive and count must refer to a location within the string/array/collection. (Parameter 'count')"
+      }
+    },
+    {
+      "id": "uesc-closing-brace-in-window-no-convert",
+      "template": "{0:cond:a|\\u12}",
+      "args": [
+        true
+      ],
+      "culture": "",
+      "settings": {
+        "convertCharacterStringLiterals": false
+      },
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "uesc-closing-brace-in-window-unbalanced",
+      "template": "a\\u12}",
+      "args": [],
+      "culture": "",
+      "expected": {
+        "error": "ParsingErrors"
+      }
+    },
+    {
+      "id": "uesc-closing-brace-in-window-unbalanced-output",
+      "template": "a\\u12}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "parseErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "The format string has 1 issue:\nFormat string has too many closing braces\nIn: \"a\\u12}\"\nAt:  -----^ "
+      }
+    },
+    {
+      "id": "uesc-closing-brace-in-window-unbalanced-only",
+      "template": "\\u12}",
+      "args": [],
+      "culture": "",
+      "expected": {
+        "error": "ParsingErrors"
+      }
+    },
+    {
+      "id": "uesc-zero-digits-choose-1",
+      "template": "{0:choose(1|2):\\u|abcd}",
+      "args": [
+        1
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "uesc-zero-digits-choose-2",
+      "template": "{0:choose(1|2):\\u|abcd}",
+      "args": [
+        2
+      ],
+      "culture": "",
+      "expected": {
+        "result": "abcd"
+      }
+    },
+    {
+      "id": "uesc-zero-digits-choose-output",
+      "template": "{0:choose(1|2):\\u|abcd}",
+      "args": [
+        1
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "Unrecognized escape sequence in literal: \"\\u\""
+      }
+    },
+    {
+      "id": "uesc-zero-digits-cond-true",
+      "template": "{0:cond:\\u|abcd}",
+      "args": [
+        true
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "uesc-zero-digits-cond-false",
+      "template": "{0:cond:\\u|abcd}",
+      "args": [
+        false
+      ],
+      "culture": "",
+      "expected": {
+        "result": "abcd"
+      }
+    },
+    {
+      "id": "uesc-zero-digits-plural-1",
+      "template": "{0:plural:\\u|abcd}",
+      "args": [
+        1
+      ],
+      "culture": "en-US",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "uesc-zero-digits-plural-2",
+      "template": "{0:plural:\\u|abcd}",
+      "args": [
+        2
+      ],
+      "culture": "en-US",
+      "expected": {
+        "result": "abcd"
+      }
+    },
+    {
+      "id": "uesc-sliced-choose-first",
+      "template": "{0:choose(1|2):x|\\u00|41}",
+      "args": [
+        1
+      ],
+      "culture": "",
+      "expected": {
+        "result": "x"
+      }
+    },
+    {
+      "id": "uesc-sliced-choose-second",
+      "template": "{0:choose(1|2):x|\\u00|41}",
+      "args": [
+        2
+      ],
+      "culture": "",
+      "expected": {
+        "result": "\u0000"
+      }
+    },
+    {
+      "id": "uesc-sliced-choose-third",
+      "template": "{0:choose(1|2|3):x|\\u00|41}",
+      "args": [
+        3
+      ],
+      "culture": "",
+      "expected": {
+        "result": "41"
+      }
+    },
+    {
+      "id": "uesc-sliced-choose-one-digit-first",
+      "template": "{0:choose(1|2):\\u0|041}",
+      "args": [
+        1
+      ],
+      "culture": "",
+      "expected": {
+        "result": "\u0000"
+      }
+    },
+    {
+      "id": "uesc-sliced-choose-one-digit-second",
+      "template": "{0:choose(1|2):\\u0|041}",
+      "args": [
+        2
+      ],
+      "culture": "",
+      "expected": {
+        "result": "041"
+      }
+    },
+    {
+      "id": "uesc-sliced-cond-true",
+      "template": "{0:cond:\\u00|41}",
+      "args": [
+        true
+      ],
+      "culture": "",
+      "expected": {
+        "result": "\u0000"
+      }
+    },
+    {
+      "id": "uesc-sliced-cond-false",
+      "template": "{0:cond:\\u00|41}",
+      "args": [
+        false
+      ],
+      "culture": "",
+      "expected": {
+        "result": "41"
+      }
+    },
+    {
+      "id": "uesc-hex-window-space-none",
+      "template": "{0:cond:a\\u12b|c}",
+      "args": [
+        true
+      ],
+      "culture": "",
+      "expected": {
+        "result": "aī"
+      }
+    },
+    {
+      "id": "uesc-hex-window-space-inner",
+      "template": "{0:cond:a\\u1 2b|c}",
+      "args": [
+        true
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "uesc-hex-window-space-leading",
+      "template": "{0:cond:a\\u 12b|c}",
+      "args": [
+        true
+      ],
+      "culture": "",
+      "expected": {
+        "result": "aī"
+      }
+    },
+    {
+      "id": "uesc-crossed-walked-past-1",
+      "template": "{0:choose(1|2):\\u1\\|2|x}",
+      "args": [
+        1
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "uesc-crossed-walked-past-2",
+      "template": "{0:choose(1|2):\\u1\\|2|x}",
+      "args": [
+        2
+      ],
+      "culture": "",
+      "expected": {
+        "result": "22"
+      }
+    },
+    {
+      "id": "uesc-crossed-not-reached",
+      "template": "{0:choose(1|2|3):a|\\u12|c}",
+      "args": [
+        1
+      ],
+      "culture": "",
+      "expected": {
+        "result": "a"
+      }
+    },
+    {
+      "id": "uesc-open-brace-in-window",
+      "template": "x\\u12{0}y",
+      "args": [
+        5
+      ],
+      "culture": "",
+      "expected": {
+        "error": "ArgumentException"
+      }
+    },
+    {
+      "id": "uesc-open-brace-in-window-only",
+      "template": "\\u12{0}",
+      "args": [
+        5
+      ],
+      "culture": "",
+      "expected": {
+        "error": "ArgumentException"
+      }
+    },
+    {
+      "id": "uesc-open-brace-in-window-nested",
+      "template": "{0:cond:{1}\\u12|b}",
+      "args": [
+        true,
+        "x"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "x\u0012"
+      }
+    },
+    {
+      "id": "uesc-astral-literal",
+      "template": "a\uD83D\uDE00b",
+      "args": [],
+      "culture": "",
+      "expected": {
+        "result": "a\uD83D\uDE00b"
+      }
+    },
+    {
+      "id": "uesc-astral-cond",
+      "template": "{0:cond:a\uD83D\uDE00|b}",
+      "args": [
+        true
+      ],
+      "culture": "",
+      "expected": {
+        "result": "a\uD83D\uDE00"
+      }
+    },
+    {
+      "id": "uesc-astral-choose",
+      "template": "{0:choose(1|2):\uD83D\uDE00|b}",
+      "args": [
+        1
+      ],
+      "culture": "",
+      "expected": {
+        "result": "\uD83D\uDE00"
+      }
+    },
+    {
+      "id": "uesc-sliced-surrogate-pair",
+      "template": "{0:cond:\\uD83D\\uDE0|b}",
+      "args": [
+        true
+      ],
+      "culture": "",
+      "expected": {
+        "result": "\uFFFD\u0DE0"
+      }
+    },
+    {
+      "id": "uesc-crossed-cond-arity",
+      "template": "{0:cond:\\uAB\\n}",
+      "args": [
+        true
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "uesc-crossed-cond-arity-output",
+      "template": "{0:cond:\\uAB\\n}",
+      "args": [
+        true
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "Count must be positive and count must refer to a location within the string/array/collection. (Parameter 'count')"
+      }
+    },
+    {
+      "id": "uesc-crossed-choose-arity",
+      "template": "{0:choose(1|2|3):\\uAB\\n|x}",
+      "args": [
+        1
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "uesc-crossed-choose-arity-output",
+      "template": "{0:choose(1|2|3):\\uAB\\n|x}",
+      "args": [
+        1
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "Count must be positive and count must refer to a location within the string/array/collection. (Parameter 'count')"
+      }
+    },
+    {
+      "id": "uesc-crossed-plural-arity",
+      "template": "{0:plural:\\u\\u}",
+      "args": [
+        1
+      ],
+      "culture": "en-US",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "uesc-crossed-plural-arity-output",
+      "template": "{0:plural:\\u\\u}",
+      "args": [
+        1
+      ],
+      "culture": "en-US",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "Count must be positive and count must refer to a location within the string/array/collection. (Parameter 'count')"
+      }
+    },
+    {
+      "id": "uesc-crossed-list-split",
+      "template": "{0:\\u12}",
+      "args": [
+        5
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "uesc-crossed-list-split-output",
+      "template": "{0:\\u12}",
+      "args": [
+        5
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "Count must be positive and count must refer to a location within the string/array/collection. (Parameter 'count')"
+      }
+    },
+    {
+      "id": "uesc-crossed-list-split-nested",
+      "template": "{0:\\u12{1}}",
+      "args": [
+        5,
+        6
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "uesc-crossed-list-split-nested-output",
+      "template": "{0:\\u12{1}}",
+      "args": [
+        5,
+        6
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "Count must be positive and count must refer to a location within the string/array/collection. (Parameter 'count')"
+      }
+    },
+    {
       "id": "plural-en-0",
       "template": "{0:plural:one|other}",
       "args": [
@@ -12732,6 +13420,17 @@
       }
     },
     {
+      "id": "plural-option-sort-order-subtag",
+      "template": "{0:plural(en_US-POSIX):one|many}",
+      "args": [
+        2
+      ],
+      "culture": "ru",
+      "expected": {
+        "result": "many"
+      }
+    },
+    {
       "id": "plural-err-culture-name-trailing-dash",
       "template": "{0:plural(en-):a|b}",
       "args": [
@@ -12833,6 +13532,17 @@
     {
       "id": "plural-err-culture-name-long-language",
       "template": "{0:plural(aaaaaaaaaaaa):a|b}",
+      "args": [
+        1
+      ],
+      "culture": "en-US",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "plural-err-culture-name-en-us-posix",
+      "template": "{0:plural(en_US_POSIX):a|b}",
       "args": [
         1
       ],
@@ -21856,6 +22566,74 @@
       "culture": "de-DE",
       "expected": {
         "result": "2009-06-15 13:45:30Z"
+      }
+    },
+    {
+      "id": "culture-name-alt-sort-currency",
+      "template": "{0:C2}",
+      "args": [
+        1234.5
+      ],
+      "culture": "en_US",
+      "expected": {
+        "result": "¤1,234.50"
+      }
+    },
+    {
+      "id": "culture-name-alt-sort-currency-de",
+      "template": "{0:C2}",
+      "args": [
+        1234.5
+      ],
+      "culture": "de_DE",
+      "expected": {
+        "result": "1.234,50 ¤"
+      }
+    },
+    {
+      "id": "culture-name-alt-sort-base-is-a-culture",
+      "template": "{0:C2}",
+      "args": [
+        1234.5
+      ],
+      "culture": "de-DE_phoneb",
+      "expected": {
+        "result": "1.234,50 €"
+      }
+    },
+    {
+      "id": "culture-name-alt-sort-date",
+      "template": "{0:D}",
+      "args": [
+        {
+          "$dt": "2009-06-15T13:45:30.0000000"
+        }
+      ],
+      "culture": "en_US",
+      "expected": {
+        "result": "Monday, June 15, 2009"
+      }
+    },
+    {
+      "id": "culture-name-alt-sort-with-subtags",
+      "template": "{0:C2}",
+      "args": [
+        1234.5
+      ],
+      "culture": "en_US-POSIX",
+      "expected": {
+        "result": "¤1,234.50"
+      }
+    },
+    {
+      "id": "culture-name-alt-sort-uppercase",
+      "template": "{0:C2}",
+      "args": [
+        1234.5
+      ],
+      "culture": "EN_us",
+      "expected": {
+        "result": "¤1,234.50"
       }
     },
     {

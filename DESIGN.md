@@ -34,7 +34,7 @@ Everything in SmartFormat's core plus the built-in extensions, in this order:
 |---|---|
 | Data model | Own `Value` enum (no forced serde dep) + `#[derive(ToSmartValue)]` proc macro replacing .NET reflection |
 | Format specifiers | Full .NET *standard* specifiers; custom patterns are a hard error |
-| Culture data | Read out of .NET itself by `tools/culturegen` into `fmt::culture::generated`, for a fixed list of cultures. No ICU4X, no CLDR: mapped data would be *close*, and the goal is byte-identical. A culture outside the list is `None` from `culture::get`, never a guess |
+| Culture data | Read out of .NET itself by `tools/culturegen` into `fmt::culture::generated`, for a fixed list of cultures. No ICU4X, no CLDR: mapped data would be *close*, and the goal is byte-identical. A culture outside the list is `None` from `culture::get`, as is a name .NET itself rejects, never a guess |
 | Pluralization | A port of SmartFormat.NET's own `PluralRules.cs` table, not CLDR. SmartFormat does not consult CLDR at runtime either, and its table disagrees with CLDR in places (Icelandic is `one`/`other`); agreeing with .NET is the requirement |
 | Date/time | `jiff`, with a .NET-pattern → strtime translator for standard date specifiers |
 | Errors | `format() -> Result<String, Error>`; SmartFormat's `ErrorAction` settings honored (`Error` ⇒ `Err`, lenient modes recover and return `Ok`) |
@@ -224,20 +224,24 @@ answer is not reproducible.
   and `…::a_large_double_is_the_same_known_divergence`.
 - **A `plural(…)` culture name is validated, not resolved.** .NET hands the
   name to `CultureInfo.GetCultureInfo` and reads `TwoLetterISOLanguageName` off
-  the result; we validate the name the way ICU does (ASCII alphanumerics, `-`,
-  at most one `_`, no empty subtag, a language subtag of 1–11 characters and at
-  least 2 when it is the whole name) and take its primary subtag, which is the
-  `TwoLetterISOLanguageName` of every culture .NET knows. A rejected name
-  reproduces the `CultureNotFoundException` message .NET wraps at index 0 —
-  text that belongs to the *runtime*, not to SmartFormat, so a .NET version
-  that rewords it moves the pin. Three ICU behaviors are out of reach: a
-  three-letter ISO 639-2 code with a two-letter equivalent (`eng` is English in
-  .NET, unknown here), `und` (the invariant culture, whose language is `iv`),
-  and a name with an underscore and more than two subtags (`en_US_POSIX`, which
-  .NET rejects and we read as `en`).
+  the result; we validate the name the way ICU does — `fmt::culture::language_subtag`,
+  the crate's one notion of a .NET culture name, shared with `culture::get`:
+  ASCII alphanumerics, `-`, at most one `_`, no empty subtag, a language subtag
+  of 1–11 characters and at least 2 when it is the whole name — and take its
+  primary subtag, which is the `TwoLetterISOLanguageName` of every culture .NET
+  knows. A rejected name reproduces the `CultureNotFoundException` message .NET
+  wraps at index 0 — text that belongs to the *runtime*, not to SmartFormat, so
+  a .NET version that rewords it moves the pin. Two ICU behaviors are out of
+  reach: a three-letter ISO 639-2 code with a two-letter equivalent (`eng` is
+  English in .NET, unknown here) and `und` (the invariant culture, whose
+  language is `iv`). A name with an underscore and more than two subtags is
+  *not* a third: probed on .NET 10, `en_US_POSIX` is two underscores and both
+  sides reject it, and `en_US-POSIX` is one underscore and both sides read it
+  as `en`.
   *Pins:* `plural-option-underscore-ru`, `plural-option-underscore-en`,
-  `plural-option-long-name`, the ten `plural-err-culture-name-*` cases,
-  `errtext-plural-invalid-culture-name`,
+  `plural-option-long-name`, `plural-option-sort-order-subtag`, the eleven
+  `plural-err-culture-name-*` cases (`plural-err-culture-name-en-us-posix`
+  included), `errtext-plural-invalid-culture-name`,
   `errtext-plural-invalid-culture-name-upper`, `plural-option-iso-639-2` (the
   divergence, skipped) and
   `extensions::plural::tests::a_malformed_culture_name_is_the_dotnet_culture_error`.
@@ -291,6 +295,65 @@ as an explicit input instead.
   here, so a custom rule is `PluralLocalizationFormatter::with_custom_rule` and
   the language table is read-only. .NET's precedence is kept: a language named
   in the formatter options still wins over the custom rule.
+
+## Reproduced .NET quirks
+
+Not divergences either: .NET behavior that reads like a bug, which we match on
+purpose because a template out there may depend on it. Each says what shape of
+Rust code the quirk forced, so nobody "cleans it up".
+
+- **Unicode escapes the parser reads past.** .NET's
+  `Parser.ParseAlternativeEscaping` spans six characters for `\uXXXX` without
+  checking that the four are hex digits, then advances the cursor by *one*
+  (`Current += 1`, not `+= 6`), so those four are read again as ordinary
+  template text. Three consequences, all reproduced:
+  a `|`, `{`, `}` or `\` among them is a real one — `{0:cond:a|\u12}` is a
+  closed placeholder and `x\u12{0}y` holds a nested placeholder; the literal run
+  that such a character *ends* is recorded as *starting* at the end of the
+  escape window, so .NET builds a `LiteralText` whose start is after its end
+  (`LiteralText::end` may be before `start`, and any code walking the tree has
+  to allow for that); and a split cuts
+  a `\uXXXX` apart, with each piece resolved afresh, so one to three hex digits
+  still resolve (`\u00` is a NUL character) while zero digits do not
+  (`int.TryParse` fails on the empty slice, giving
+  `Unrecognized escape sequence in literal: "\u"`).
+  A crossed literal is why `Format::split` returns `Result`: .NET asks
+  `string.IndexOf` for a negative count and throws
+  `ArgumentOutOfRangeException` out of the whole split, so *no* argument gets a
+  result — not even one whose piece count the formatter would have rejected.
+  `choose`, `cond` and `plural` therefore propagate `SplitError` with `?` before
+  they count anything, `plural` in its auto-detection path included.
+  *Pins:* the `uesc-*` goldens (the `-output` ones pin the exact
+  `Count must be positive …` text), `parsing::tests::split_fails_when_a_literal_has_crossed_ends`,
+  `…::a_zero_digit_unicode_slice_is_an_error_but_only_where_it_is_written`,
+  `…::split_skips_a_crossed_literal_it_has_already_passed`,
+  `…::a_piece_resolves_the_escape_sequence_the_cut_truncated`.
+- **`LiteralText` is built through one constructor, not field by field.**
+  `text` and `escape_error` are derived from `raw` and
+  `convert_character_literals`, so `LiteralText::resolved(raw, start, end,
+  convert)` is the only way to make one: there is no default for `convert` that
+  is right on its own, and a derived `Default` would have to pick one that
+  contradicts `ParserSettings::convert_character_string_literals`. Hence no
+  `Default` impl, and `#[non_exhaustive]` so a later field is not a breaking
+  change for callers outside the crate. Making the default `true` was rejected —
+  it hides the coupling instead of removing it, and still lets a caller build a
+  literal whose `text` disagrees with its `raw`.
+  *Pin:* `parsing::tests::only_the_first_character_decides_whether_a_slice_is_resolved`.
+- **An alternate sort order in a culture name is dropped, not resolved.** .NET
+  reads the text after the single `_` of a culture name as a collation, not as a
+  subtag: `GetCultureInfo("en_US")` is "English, sort order us" and carries the
+  data of the neutral culture `en`, not of `en-US`. Probed on .NET 10 field by
+  field over everything `CultureData` holds: `en_US` == `en` (currency `¤`, not
+  `en-US`'s `$`), `de_DE` == `de`, `is_IS` == `is`, `sr_Latn-RS` == `sr`, and
+  where the part before the `_` is a full culture it wins — `de-DE_phoneb` ==
+  `de-DE`, `en-US_us` == `en-US`. `culture::get` therefore validates the name,
+  drops the `_…` tail and looks up what is left, so
+  `format_with_culture_name("en_US")` formats as `en` instead of failing. A name
+  .NET accepts whose resolved culture we do not ship is still `UnknownCulture`
+  (`zh_Hans` is `zh` in .NET, and we ship `zh-Hans` and `zh-CN` but not `zh`) —
+  the ordinary limit of the generated table, not a new one.
+  *Pins:* the `culture-name-alt-sort-*` cases and
+  `fmt::culture::tests::an_alternate_sort_order_resolves_to_the_culture_before_it`.
 
 ## Pinned to SmartFormat.NET 3.6.1
 

@@ -26,12 +26,14 @@ FormatterOptions(cases);
 ListIndex(cases);
 SettingsCases(cases);
 LazyEscapeCases(cases);
+UnicodeEscapeSliceCases(cases);
 PluralCases(cases);
 ChooseCases(cases);
 ConditionalCases(cases);
 AutoDetectCases(cases);
 CultureNumberCases(cases);
 CultureDateCases(cases);
+CultureNameCases(cases);
 CultureFormatterCases(cases);
 FormatterErrorTextCases(cases);
 
@@ -832,6 +834,139 @@ static void LazyEscapeCases(List<GoldenCase> cases)
 }
 
 // ---------------------------------------------------------------------------
+// `\uXXXX` sequences the parser reads past.
+//
+// .NET's `Parser.ParseAlternativeEscaping` spans six characters for `\uXXXX`
+// without checking that the four are hex digits, but then advances by *one*,
+// so the four are read again as ordinary template text. Three consequences,
+// all pinned below:
+//
+//   * a `|`, `{`, `}` or `\` among them is a real one — `{0:cond:a|\u12}` is a
+//     closed placeholder and `x\u12{0}y` holds a nested placeholder;
+//   * the literal run such a character ends starts *past* it, so .NET builds a
+//     `LiteralText` whose `StartIndex` is after its `EndIndex`, and every
+//     `Format.Split` over it asks `string.IndexOf` for a negative count and
+//     throws `ArgumentOutOfRangeException` — for *every* argument;
+//   * a split can also cut a `\uXXXX` apart, and .NET resolves each piece
+//     afresh, so a truncated sequence of one to three digits still resolves
+//     (zero digits does not).
+// ---------------------------------------------------------------------------
+
+static void UnicodeEscapeSliceCases(List<GoldenCase> cases)
+{
+    void Add(string id, string template, string argsJson, CaseSettings? settings = null,
+             string culture = "") =>
+        cases.Add(new GoldenCase("uesc-" + id, template, argsJson, settings, culture));
+
+    var bothIgnore = new CaseSettings(
+        FormatErrorAction: FormatErrorAction.Ignore, ParseErrorAction: ParseErrorAction.Ignore);
+    var bothOutput = new CaseSettings(
+        FormatErrorAction: FormatErrorAction.OutputErrorInResult,
+        ParseErrorAction: ParseErrorAction.OutputErrorInResult);
+    var bothMaintain = new CaseSettings(
+        FormatErrorAction: FormatErrorAction.MaintainTokens,
+        ParseErrorAction: ParseErrorAction.MaintainTokens);
+    var noConvert = new CaseSettings(ConvertCharacterStringLiterals: false);
+    var parseOutput = new CaseSettings(ParseErrorAction: ParseErrorAction.OutputErrorInResult);
+    var fmtOutput = new CaseSettings(FormatErrorAction: FormatErrorAction.OutputErrorInResult);
+
+    // -- A crossed literal fails for every argument, whichever piece is picked.
+    Add("crossed-choose-1", @"{0:choose(1|2):\u|a\b}", "[1]");
+    Add("crossed-choose-2", @"{0:choose(1|2):\u|a\b}", "[2]");
+    Add("crossed-choose-ignore", @"{0:choose(1|2):\u|a\b}", "[2]", bothIgnore);
+    Add("crossed-choose-output", @"{0:choose(1|2):\u|a\b}", "[2]", bothOutput);
+    Add("crossed-cond-true", @"{0:cond:\u|a\b}", "[true]");
+    Add("crossed-cond-false", @"{0:cond:\u|a\b}", "[false]");
+    Add("crossed-plural-1", @"{0:plural:\u|a\b}", "[1]", culture: "en-US");
+    Add("crossed-plural-2", @"{0:plural:\u|a\b}", "[2]", culture: "en-US");
+    // The crossed literal is reached on the very first `IndexOf`, so neither
+    // argument gets as far as choosing a piece.
+    Add("crossed-choose-hex-1", @"{0:choose(1|2):\uAB\n|x}", "[1]");
+    Add("crossed-choose-hex-2", @"{0:choose(1|2):\uAB\n|x}", "[2]");
+    Add("crossed-cond-tail-1", @"{0:cond:a|\u1}", "[true]");
+    Add("crossed-cond-tail-2", @"{0:cond:a|b\u}", "[true]");
+    Add("crossed-cond-repeated", @"{0:cond:\u\u\u|b}", "[true]");
+
+    // -- The `}` inside the escape window really closes the placeholder.
+    Add("closing-brace-in-window-true", @"{0:cond:a|\u12}", "[true]");
+    Add("closing-brace-in-window-false", @"{0:cond:a|\u12}", "[false]");
+    Add("closing-brace-in-window-ignore", @"{0:cond:a|\u12}", "[true]", bothIgnore);
+    Add("closing-brace-in-window-maintain", @"{0:cond:a|\u12}", "[true]", bothMaintain);
+    Add("closing-brace-in-window-output", @"{0:cond:a|\u12}", "[true]", bothOutput);
+    // A crossed literal is a fact about the parse, not about escape
+    // resolution, so turning resolution off does not change the answer.
+    Add("closing-brace-in-window-no-convert", @"{0:cond:a|\u12}", "[true]", noConvert);
+    // Outside a placeholder the same `}` is one closing brace too many.
+    Add("closing-brace-in-window-unbalanced", @"a\u12}", "[]");
+    Add("closing-brace-in-window-unbalanced-output", @"a\u12}", "[]", parseOutput);
+    Add("closing-brace-in-window-unbalanced-only", @"\u12}", "[]");
+
+    // -- Zero hex digits never resolve: `int.TryParse` fails on the empty
+    // slice. Only the piece that keeps the `\u` fails.
+    Add("zero-digits-choose-1", @"{0:choose(1|2):\u|abcd}", "[1]");
+    Add("zero-digits-choose-2", @"{0:choose(1|2):\u|abcd}", "[2]");
+    Add("zero-digits-choose-output", @"{0:choose(1|2):\u|abcd}", "[1]", fmtOutput);
+    Add("zero-digits-cond-true", @"{0:cond:\u|abcd}", "[true]");
+    Add("zero-digits-cond-false", @"{0:cond:\u|abcd}", "[false]");
+    Add("zero-digits-plural-1", @"{0:plural:\u|abcd}", "[1]", culture: "en-US");
+    Add("zero-digits-plural-2", @"{0:plural:\u|abcd}", "[2]", culture: "en-US");
+
+    // -- One to three digits do resolve, so a split through the hex window
+    // gives two pieces that each mean something.
+    Add("sliced-choose-first", @"{0:choose(1|2):x|\u00|41}", "[1]");
+    Add("sliced-choose-second", @"{0:choose(1|2):x|\u00|41}", "[2]");
+    Add("sliced-choose-third", @"{0:choose(1|2|3):x|\u00|41}", "[3]");
+    Add("sliced-choose-one-digit-first", @"{0:choose(1|2):\u0|041}", "[1]");
+    Add("sliced-choose-one-digit-second", @"{0:choose(1|2):\u0|041}", "[2]");
+    Add("sliced-cond-true", @"{0:cond:\u00|41}", "[true]");
+    Add("sliced-cond-false", @"{0:cond:\u00|41}", "[false]");
+    // `NumberStyles.HexNumber` allows white space around the digits.
+    Add("hex-window-space-none", @"{0:cond:a\u12b|c}", "[true]");
+    Add("hex-window-space-inner", @"{0:cond:a\u1 2b|c}", "[true]");
+    Add("hex-window-space-leading", @"{0:cond:a\u 12b|c}", "[true]");
+
+    // -- A crossed literal the split walks past without ever asking for a
+    // negative count: the middle piece is cut out of two literals that cover
+    // the same character.
+    Add("crossed-walked-past-1", @"{0:choose(1|2):\u1\|2|x}", "[1]");
+    Add("crossed-walked-past-2", @"{0:choose(1|2):\u1\|2|x}", "[2]");
+    Add("crossed-not-reached", @"{0:choose(1|2|3):a|\u12|c}", "[1]");
+
+    // -- A brace inside the window opens a real placeholder, and the literal
+    // that ends at it is unresolvable however it is written: the
+    // `ArgumentException` comes from the parser, where no error action helps.
+    Add("open-brace-in-window", @"x\u12{0}y", "[5]");
+    Add("open-brace-in-window-only", @"\u12{0}", "[5]");
+    Add("open-brace-in-window-nested", @"{0:cond:{1}\u12|b}", @"[true,""x""]");
+
+    // -- Surrogate handling is untouched by any of this.
+    Add("astral-literal", "a\U0001F600b", "[]");
+    Add("astral-cond", "{0:cond:a\U0001F600|b}", "[true]");
+    Add("astral-choose", "{0:choose(1|2):\U0001F600|b}", "[1]");
+    Add("sliced-surrogate-pair", @"{0:cond:\uD83D\uDE0|b}", "[true]");
+
+    // -- The split throws before the formatter counts the pieces, so a piece
+    // count the formatter would have rejected never gets the chance to be
+    // reported: the `OutputErrorInResult` twin of each is the Count message,
+    // not "requires at least N format parameters".
+    Add("crossed-cond-arity", @"{0:cond:\uAB\n}", "[true]");
+    Add("crossed-cond-arity-output", @"{0:cond:\uAB\n}", "[true]", fmtOutput);
+    Add("crossed-choose-arity", @"{0:choose(1|2|3):\uAB\n|x}", "[1]");
+    Add("crossed-choose-arity-output", @"{0:choose(1|2|3):\uAB\n|x}", "[1]", fmtOutput);
+    Add("crossed-plural-arity", @"{0:plural:\u\u}", "[1]", culture: "en-US");
+    Add("crossed-plural-arity-output", @"{0:plural:\u\u}", "[1]", fmtOutput, "en-US");
+    // A placeholder with no formatter name at all: .NET reaches the same
+    // throw through ListFormatter, which splits the format of *every*
+    // placeholder that has one before it looks at the value. We have no list
+    // formatter yet and reach it through the plural formatter's
+    // auto-detection, which also splits before it counts.
+    Add("crossed-list-split", @"{0:\u12}", "[5]");
+    Add("crossed-list-split-output", @"{0:\u12}", "[5]", fmtOutput);
+    Add("crossed-list-split-nested", @"{0:\u12{1}}", "[5,6]");
+    Add("crossed-list-split-nested-output", @"{0:\u12{1}}", "[5,6]", fmtOutput);
+}
+
+// ---------------------------------------------------------------------------
 // M2: PluralLocalizationFormatter.
 //
 // One block per language, crossed with the counts that separate its rule's
@@ -1007,12 +1142,18 @@ static void PluralCases(List<GoldenCase> cases)
     cases.Add(new GoldenCase("plural-option-underscore-ru", "{0:plural(ru_RU):a|b|c}", "[1]"));
     cases.Add(new GoldenCase("plural-option-underscore-en", "{0:plural(en_US):one|many}", "[2]", Culture: "ru"));
     cases.Add(new GoldenCase("plural-option-long-name", "{0:plural(en-us-x-private):one|many}", "[2]", Culture: "ru"));
+    // One `_` is an alternate sort order, so everything after it is dropped
+    // and the language is still `en`.
+    cases.Add(new GoldenCase(
+        "plural-option-sort-order-subtag", "{0:plural(en_US-POSIX):one|many}", "[2]", Culture: "ru"));
     foreach (var (slug, name) in new (string, string)[]
              {
                  ("trailing-dash", "en-"), ("double-dash", "en--US"), ("leading-dash", "-en"),
                  ("trailing-underscore", "EN_"), ("two-underscores", "aa_bb_cc"),
                  ("punctuation", "@@"), ("space", "e n"), ("non-ascii", "ру"),
                  ("one-character", "a"), ("long-language", "aaaaaaaaaaaa"),
+                 // Two `_`, which is one sort order too many.
+                 ("en-us-posix", "en_US_POSIX"),
              })
         cases.Add(new GoldenCase(
             $"plural-err-culture-name-{slug}", "{0:plural(" + name + "):a|b}", "[1]", Culture: "en-US"));
@@ -1475,6 +1616,32 @@ static void CultureDateCases(List<GoldenCase> cases)
 }
 
 // ---------------------------------------------------------------------------
+// How a culture *name* resolves. .NET reads the text after the single `_` of a
+// name as an alternate sort order, not as a subtag, and a sort order changes
+// how strings compare and nothing about how values format: `en_US` carries the
+// data of the neutral culture `en`, not of `en-US`. What sits before the `_`
+// wins when it is itself a full culture (`de-DE_phoneb`).
+// ---------------------------------------------------------------------------
+
+static void CultureNameCases(List<GoldenCase> cases)
+{
+    void Add(string id, string template, string argsJson, string culture) =>
+        cases.Add(new GoldenCase("culture-name-" + id, template, argsJson, Culture: culture));
+
+    // The load-bearing one: `en`'s currency symbol is `¤`, `en-US`'s is `$`.
+    Add("alt-sort-currency", "{0:C2}", "[1234.5]", "en_US");
+    Add("alt-sort-currency-de", "{0:C2}", "[1234.5]", "de_DE");
+    // Here the part before the `_` is a full culture, and it is kept.
+    Add("alt-sort-base-is-a-culture", "{0:C2}", "[1234.5]", "de-DE_phoneb");
+    // The DateTimeFormat half of the same lookup.
+    Add("alt-sort-date", "{0:D}", """[{"$dt":"2009-06-15T13:45:30.0000000"}]""", "en_US");
+    // One underscore, so `us-posix` is all sort order and the culture is `en`.
+    Add("alt-sort-with-subtags", "{0:C2}", "[1234.5]", "en_US-POSIX");
+    // The name is matched case-insensitively before the sort order is dropped.
+    Add("alt-sort-uppercase", "{0:C2}", "[1234.5]", "EN_us");
+}
+
+// ---------------------------------------------------------------------------
 // Where the M2 formatters meet the culture: what a nested placeholder renders
 // as, and what the option comparison does with a culture that has one.
 // ---------------------------------------------------------------------------
@@ -1691,7 +1858,8 @@ internal sealed record CaseSettings(
     CaseSensitivityType CaseSensitivity = CaseSensitivityType.CaseSensitive,
     bool StringFormatCompatibility = false,
     char AlignmentFillCharacter = ' ',
-    string CustomSelectorChars = "")
+    string CustomSelectorChars = "",
+    bool ConvertCharacterStringLiterals = true)
 {
     public static readonly CaseSettings Default = new();
 
@@ -1706,7 +1874,11 @@ internal sealed record CaseSettings(
                 ErrorAction = FormatErrorAction,
                 AlignmentFillCharacter = AlignmentFillCharacter,
             },
-            Parser = { ErrorAction = ParseErrorAction },
+            Parser =
+            {
+                ErrorAction = ParseErrorAction,
+                ConvertCharacterStringLiterals = ConvertCharacterStringLiterals,
+            },
         };
         if (CustomSelectorChars.Length > 0)
             settings.Parser.AddCustomSelectorChars(CustomSelectorChars.ToCharArray());
@@ -1729,6 +1901,8 @@ internal sealed record CaseSettings(
             json["alignmentFillCharacter"] = AlignmentFillCharacter.ToString();
         if (CustomSelectorChars != Default.CustomSelectorChars)
             json["customSelectorChars"] = CustomSelectorChars;
+        if (ConvertCharacterStringLiterals != Default.ConvertCharacterStringLiterals)
+            json["convertCharacterStringLiterals"] = ConvertCharacterStringLiterals;
         return json;
     }
 }

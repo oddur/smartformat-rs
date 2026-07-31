@@ -75,6 +75,7 @@ holding only the properties that differ. The Rust runner mirrors the same keys.
 | `stringFormatCompatibility` | `SmartSettings.StringFormatCompatibility` | `true` |
 | `alignmentFillCharacter` | `SmartSettings.Formatter.AlignmentFillCharacter` | a one-character string |
 | `customSelectorChars` | `ParserSettings.AddCustomSelectorChars` | the characters to allow |
+| `convertCharacterStringLiterals` | `SmartSettings.Parser.ConvertCharacterStringLiterals` | `false` |
 
 ## How `args` maps to .NET values
 
@@ -106,7 +107,8 @@ The case table in `Program.cs` is grouped by feature: literals and escaping, sel
 alignment, nesting, numeric specifiers, date specifiers, errors, `StringSource` selector
 methods, formatter names and options, the list-index operator, non-default settings, the
 `plural` / `choose` / `cond` formatters, which of the two auto-detecting formatters claims
-an unnamed `|`-separated format, and the culture data. Numeric, date, plural and culture
+an unnamed `|`-separated format, the `\uXXXX` sequences the parser reads past (the `uesc-*`
+group), how a culture *name* resolves, and the culture data. Numeric, date, plural and culture
 cases are generated combinatorially from a value or culture list crossed with a specifier
 list, which is where most of the volume comes from.
 

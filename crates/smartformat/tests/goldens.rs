@@ -307,6 +307,10 @@ fn formatter_for(node: &Json) -> SmartFormatter {
                 "customSelectorChars" => parser_settings
                     .add_custom_selector_chars(text().chars())
                     .expect("custom selector characters"),
+                "convertCharacterStringLiterals" => {
+                    parser_settings.convert_character_string_literals =
+                        value.as_bool().expect("a boolean setting");
+                }
                 other => panic!("unknown setting {other}"),
             }
         }

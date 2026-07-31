@@ -30,7 +30,7 @@ use crate::parsing::Format;
 use crate::value::Value;
 use crate::Error;
 
-use super::{InvalidSplitChar, DEFAULT_SPLIT_CHAR};
+use super::{split_format, InvalidSplitChar, DEFAULT_SPLIT_CHAR};
 
 /// The .NET `ConditionalFormatter.Name`. .NET 3.6.1 still carries an obsolete
 /// `Names` array holding `conditional` / `cond` / `""`, but only `Name`
@@ -174,7 +174,9 @@ impl Formatter for ConditionalFormatter {
     fn try_evaluate_format(&self, info: &mut FormattingInfo<'_>) -> Result<bool, Error> {
         // See if the format string contains un-nested splits.
         let parameters = match info.format() {
-            Some(format) => format.split(self.split_char),
+            // .NET splits before it counts, so a split that throws is the
+            // answer for every value, however many parts the formatter wanted.
+            Some(format) => split_format(info, format, self.split_char)?,
             None => Vec::new(),
         };
 

@@ -31,7 +31,7 @@ use crate::formatter::{Formatter, FormattingInfo};
 use crate::value::Value;
 use crate::Error;
 
-use super::{InvalidSplitChar, DEFAULT_SPLIT_CHAR};
+use super::{split_format, InvalidSplitChar, DEFAULT_SPLIT_CHAR};
 
 /// The default formatter name, .NET `PluralLocalizationFormatter.Name`.
 ///
@@ -205,8 +205,10 @@ impl Formatter for PluralLocalizationFormatter {
         };
         let current = info.current();
 
-        // Extract the plural words from the format string.
-        let plural_words = format.split(self.split_char);
+        // Extract the plural words from the format string. .NET splits before
+        // it counts them — and before it decides that auto-detection does not
+        // apply — so a split that throws is the answer for every value.
+        let plural_words = split_format(info, format, self.split_char)?;
 
         let use_auto_detection = info.placeholder().formatter_name.is_empty();
 

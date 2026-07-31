@@ -19,19 +19,34 @@ pub use settings::{CustomCharError, ParserSettings, SelectorFilter};
 use std::fmt;
 use std::fmt::Write as _;
 
-/// What .NET's `Format.Split` fails with when it reaches a literal whose ends
-/// are crossed — the ones the parser leaves behind when it reads past the end
-/// of a `\uXXXX` sequence that is not four hex digits, as in `{0:cond:a|\u12}`.
+/// What [`Format::split`] fails with when it reaches a literal whose ends are
+/// crossed — the ones the parser leaves behind when it reads past the end of a
+/// `\uXXXX` sequence that is not four hex digits, as in `{0:cond:a|\u12}`.
 ///
 /// .NET asks `string.IndexOf(char, int, int)` for a negative count there and
-/// the `ArgumentOutOfRangeException` it gets aborts the whole split, so every
-/// argument fails, whichever piece it would have chosen. `Format::split` has
-/// no way to return that, and its callers — the `choose`, `cond` and `plural`
-/// formatters — count the pieces before they write one, so instead every piece
-/// is poisoned with this message and fails as soon as it is written. The
-/// message is .NET's verbatim, since `ErrorAction::OutputErrorInResult` writes
-/// it into the result.
-const SPLIT_COUNT_ERROR: &str = "Count must be positive and count must refer to a location within the string/array/collection. (Parameter 'count')";
+/// the `ArgumentOutOfRangeException` it gets aborts the whole split, so no
+/// argument gets a result, whichever piece it would have chosen — not even one
+/// the formatter would have rejected for holding too few pieces. This is the
+/// same abort, and the callers — the `choose`, `cond` and `plural` formatters —
+/// propagate it before they count anything.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SplitError;
+
+impl SplitError {
+    /// The exception message, .NET's verbatim: it is what
+    /// [`ErrorAction::OutputErrorInResult`](crate::ErrorAction::OutputErrorInResult)
+    /// writes into the result, so a reworded copy would be a rendering
+    /// difference.
+    pub const MESSAGE: &'static str = "Count must be positive and count must refer to a location within the string/array/collection. (Parameter 'count')";
+}
+
+impl fmt::Display for SplitError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(Self::MESSAGE)
+    }
+}
+
+impl std::error::Error for SplitError {}
 
 /// A parsed format string: literal text interleaved with placeholders.
 ///
@@ -87,50 +102,36 @@ impl Format {
     /// came from.
     ///
     /// A format the parser left with a literal whose ends are crossed — see
-    /// [`LiteralText::end`] — poisons every piece instead: .NET throws out of
-    /// the split rather than returning, so no argument gets a result, and
-    /// every piece here fails with that exception's message as soon as it is
-    /// written.
-    pub fn split(&self, separator: char) -> Vec<Format> {
-        let (positions, crossed) = self.find_all(separator);
+    /// [`LiteralText::end`] — is a [`SplitError`] instead of a list of pieces,
+    /// because .NET throws out of the split rather than returning.
+    pub fn split(&self, separator: char) -> Result<Vec<Format>, SplitError> {
+        let positions = self.find_all(separator)?;
         // .NET returns the format itself when it holds no separator.
-        let mut pieces = if positions.is_empty() {
-            vec![self.clone()]
-        } else {
-            let mut pieces = Vec::with_capacity(positions.len() + 1);
-            let mut start = self.start;
-            for position in positions {
-                pieces.push(self.substring(start, position));
-                start = position + separator.len_utf8();
-            }
-            pieces.push(self.substring(start, self.end));
-            pieces
-        };
-
-        if crossed {
-            for piece in &mut pieces {
-                piece.items.insert(
-                    0,
-                    FormatItem::Literal(LiteralText::failing(SPLIT_COUNT_ERROR, self.start)),
-                );
-            }
+        if positions.is_empty() {
+            return Ok(vec![self.clone()]);
         }
-        pieces
+
+        let mut pieces = Vec::with_capacity(positions.len() + 1);
+        let mut start = self.start;
+        for position in positions {
+            pieces.push(self.substring(start, position));
+            start = position + separator.len_utf8();
+        }
+        pieces.push(self.substring(start, self.end));
+        Ok(pieces)
     }
 
     /// Every offset of `separator` in the literal text of this format, as a
     /// byte offset into the template (.NET `Format.FindAll` over
-    /// `Format.IndexOf`), and whether the search reached a crossed literal —
-    /// the point where .NET throws.
-    fn find_all(&self, separator: char) -> (Vec<usize>, bool) {
+    /// `Format.IndexOf`), or the [`SplitError`] the search reached.
+    fn find_all(&self, separator: char) -> Result<Vec<usize>, SplitError> {
         let mut positions = Vec::new();
-        let mut crossed = false;
         let mut from = self.start;
-        while let Some(position) = self.index_of(separator, from, &mut crossed) {
+        while let Some(position) = self.index_of(separator, from)? {
             positions.push(position);
             from = position + separator.len_utf8();
         }
-        (positions, crossed)
+        Ok(positions)
     }
 
     /// The first offset of `separator` at or after `from` (.NET
@@ -141,12 +142,12 @@ impl Format {
     /// part of an escape sequence — `\|`, which is not a valid sequence and
     /// fails when it is written — splits the format all the same.
     ///
-    /// `crossed` is set when the search reaches a literal whose end is before
-    /// its start, which is where .NET asks `string.IndexOf` for a negative
-    /// count and throws instead of returning. The search carries on so that
-    /// the caller still gets the number of pieces the formatter expects; the
-    /// caller poisons them all.
-    fn index_of(&self, separator: char, from: usize, crossed: &mut bool) -> Option<usize> {
+    /// A literal whose end is before the point the search has reached is where
+    /// .NET asks `string.IndexOf` for a negative count and throws, so the
+    /// search fails with [`SplitError`] rather than returning an offset. A
+    /// crossed literal the search has *already passed* is skipped like any
+    /// other item and is not an error.
+    fn index_of(&self, separator: char, from: usize) -> Result<Option<usize>, SplitError> {
         let mut start = from;
         for item in &self.items {
             // Note the strict `<`: a literal ending exactly where the search
@@ -160,8 +161,7 @@ impl Format {
 
             let search_start = start.max(literal.start);
             if literal.end < search_start {
-                *crossed = true;
-                continue;
+                return Err(SplitError);
             }
             start = search_start;
 
@@ -171,10 +171,10 @@ impl Format {
                 .get(offset..)
                 .and_then(|rest| rest.find(separator))
             {
-                return Some(start + found);
+                return Ok(Some(start + found));
             }
         }
-        None
+        Ok(None)
     }
 
     /// The part of this format between two byte offsets into the template
@@ -341,8 +341,8 @@ pub struct LiteralText {
     /// sequence whose four characters are not hex digits, and .NET leaves the
     /// text between there and wherever the literal really ended as a literal
     /// whose ends are crossed. Such a literal holds no text; it only ever
-    /// shows up as the `Count must be positive …` error
-    /// [`Format::split`](Format::split) raises for it.
+    /// shows up as the [`SplitError`] [`Format::split`](Format::split) fails
+    /// with when it reaches one.
     pub end: usize,
 }
 
@@ -373,20 +373,6 @@ impl LiteralText {
             convert_character_literals: convert,
             start,
             end,
-        }
-    }
-
-    /// An empty literal that fails with `message` when it is written: how the
-    /// port carries an error .NET raises where no result can be returned.
-    fn failing(message: &str, start: usize) -> Self {
-        LiteralText {
-            text: String::new(),
-            raw: String::new(),
-            escape_error: Some(message.to_owned()),
-            // Nothing to resolve, so the setting cannot be observed.
-            convert_character_literals: false,
-            start,
-            end: start,
         }
     }
 }
