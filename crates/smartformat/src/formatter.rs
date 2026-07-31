@@ -34,6 +34,12 @@ use crate::value::Value;
 /// The value a nameless placeholder resolves to when there is nothing in scope.
 static NULL: Value = Value::Null;
 
+/// How deep a scope chain [`FormattingInfo::write_child`] builds on the stack
+/// before it falls back to the heap. One scope per enclosing placeholder plus
+/// the two a list item pushes; templates nest a handful deep at most, and the
+/// array is eight pointers.
+const INLINE_SCOPES: usize = 8;
+
 // ---------------------------------------------------------------------------
 // Formatter extensions
 // ---------------------------------------------------------------------------
@@ -399,7 +405,7 @@ impl SmartFormatter {
         template: &str,
     ) -> Result<(), RegisterError> {
         if self.formatters.template_formatter_mut().is_none() {
-            let formatter = TemplateFormatter::with_case_sensitivity(self.settings.case_sensitive);
+            let formatter = TemplateFormatter::new(self.settings.case_sensitive);
             self.formatters.add(Box::new(formatter));
         }
         // Disjoint fields: the parser is read while the registry is written.
@@ -1129,10 +1135,8 @@ impl<'a> FormattingInfo<'a> {
     /// Renders `format` with `value` as the current scope, appending to the
     /// same output (.NET `IFormattingInfo.FormatAsChild`).
     pub fn format_as_child(&mut self, format: &Format, value: &Value) -> Result<(), Error> {
-        let mut scopes = self.scopes.to_vec();
-        scopes.push(value);
-        self.engine
-            .write_format(format, &scopes, self.alignment, self.output)
+        let alignment = self.alignment;
+        self.write_child(format, &[value], alignment)
     }
 
     /// Like [`format_as_child`](Self::format_as_child), but for a value that is
@@ -1157,9 +1161,42 @@ impl<'a> FormattingInfo<'a> {
         value: &Value,
         alignment: i32,
     ) -> Result<(), Error> {
-        let mut scopes = self.scopes.to_vec();
-        scopes.push(self.current);
-        scopes.push(value);
+        let current = self.current;
+        self.write_child(format, &[current, value], alignment)
+    }
+
+    /// Renders `format` with `pushed` appended to this placeholder's scope
+    /// chain — the shared body of the two `format_as_child` calls above.
+    ///
+    /// The chain is built on the stack while it fits in [`INLINE_SCOPES`].
+    /// `ListFormatter` renders a child per item *and* one per spacer, so a
+    /// heap-allocated chain would cost `2n` vectors for an `n`-item list, and
+    /// a list of lists would multiply that by the inner length. .NET copies
+    /// nothing at all: its `FormattingInfo`s are pooled and the chain is a
+    /// walk up parent pointers. A stack buffer is the same cost for the depths
+    /// a template reaches, and the `Vec` stays as the fallback for the rest.
+    fn write_child<'v>(
+        &mut self,
+        format: &Format,
+        pushed: &[&'v Value],
+        alignment: i32,
+    ) -> Result<(), Error>
+    where
+        'a: 'v,
+    {
+        let carried = self.scopes.len();
+        let total = carried + pushed.len();
+        if total <= INLINE_SCOPES {
+            let mut scopes = [&NULL; INLINE_SCOPES];
+            scopes[..carried].copy_from_slice(self.scopes);
+            scopes[carried..total].copy_from_slice(pushed);
+            return self
+                .engine
+                .write_format(format, &scopes[..total], alignment, self.output);
+        }
+        let mut scopes = Vec::with_capacity(total);
+        scopes.extend_from_slice(self.scopes);
+        scopes.extend_from_slice(pushed);
         self.engine
             .write_format(format, &scopes, alignment, self.output)
     }

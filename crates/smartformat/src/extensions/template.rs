@@ -13,7 +13,9 @@
 //! [`SmartFormatter::register_template`](crate::SmartFormatter::register_template)
 //! is the way in; the type's own [`register`](TemplateFormatter::register) is
 //! for a caller assembling a registry by hand, and needs the parser passed
-//! explicitly.
+//! explicitly — as [`TemplateFormatter::new`] needs the host's
+//! [`CaseSensitivity`], which .NET's `Initialize` copies off the
+//! `SmartFormatter` the extension is added to.
 //!
 //! ```
 //! use smartformat::{SmartFormatter, Value};
@@ -82,17 +84,8 @@ pub struct TemplateFormatter {
 }
 
 impl TemplateFormatter {
-    /// A formatter named `t` whose template names are matched
-    /// case-sensitively — .NET's default `SmartSettings.CaseSensitivity`.
-    pub fn new() -> Self {
-        Self {
-            name: NAME.to_owned(),
-            case_sensitivity: CaseSensitivity::CaseSensitive,
-            templates: Vec::new(),
-        }
-    }
-
-    /// A formatter whose template names are matched with `case_sensitivity`.
+    /// A formatter named `t` whose template names are matched with
+    /// `case_sensitivity`.
     ///
     /// This is .NET's `Initialize`, which builds the dictionary with the
     /// comparer of the `SmartFormatter` the formatter is added to, so pass
@@ -100,10 +93,18 @@ impl TemplateFormatter {
     /// of the formatter this one is registered with. As in .NET, the choice is
     /// then fixed: a [`SmartFormatter`](crate::SmartFormatter) whose setting is
     /// changed afterwards does not change how template names are matched here.
-    pub fn with_case_sensitivity(case_sensitivity: CaseSensitivity) -> Self {
+    ///
+    /// There is deliberately no `Default` and no argument-less constructor.
+    /// .NET's `AddExtensions` always runs `Initialize`, so the host's setting
+    /// always wins there however the extension was built; a default here would
+    /// be silently wrong for a host set to
+    /// [`CaseSensitivity::CaseInsensitive`], which is the one thing this
+    /// type cannot recover from later.
+    pub fn new(case_sensitivity: CaseSensitivity) -> Self {
         Self {
+            name: NAME.to_owned(),
             case_sensitivity,
-            ..Self::new()
+            templates: Vec::new(),
         }
     }
 
@@ -128,6 +129,11 @@ impl TemplateFormatter {
     /// .NET's `Dictionary.Add` throws an `ArgumentException` rather than
     /// overwriting, so re-registering a name means [`remove`](Self::remove)
     /// first.
+    ///
+    /// The two checks run in .NET's order — `Register` is
+    /// `var parsed = Parser.ParseFormat(template); _templates.Add(name, parsed);`
+    /// — so a duplicate name carrying a template that does not parse reports
+    /// the *parse* error, not the duplicate.
     pub fn register(
         &mut self,
         parser: &Parser,
@@ -135,12 +141,13 @@ impl TemplateFormatter {
         template: &str,
     ) -> Result<(), RegisterError> {
         let name = name.into();
+        // .NET parses eagerly, so a template that does not parse fails here
+        // rather than when a placeholder asks for it — and before the
+        // dictionary is touched at all.
+        let parsed = parser.parse(template).map_err(RegisterError::Parse)?;
         if self.get(&name).is_some() {
             return Err(RegisterError::Duplicate(name));
         }
-        // .NET parses eagerly, so a template that does not parse fails here
-        // rather than when a placeholder asks for it.
-        let parsed = parser.parse(template).map_err(RegisterError::Parse)?;
         self.templates.push((name, parsed));
         Ok(())
     }
@@ -209,12 +216,6 @@ impl TemplateFormatter {
             // `Dictionary.TryGetValue` and get an `ArgumentNullException`.
             None => Err(info.plain_error(NULL_KEY, info.error_position())),
         }
-    }
-}
-
-impl Default for TemplateFormatter {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -349,7 +350,7 @@ mod tests {
         smart: &SmartFormatter,
         case_sensitivity: CaseSensitivity,
     ) -> TemplateFormatter {
-        let mut templates = TemplateFormatter::with_case_sensitivity(case_sensitivity);
+        let mut templates = TemplateFormatter::new(case_sensitivity);
         let mut register = |name: &str, template: &str| {
             templates
                 .register(smart.parser(), name, template)
@@ -425,7 +426,7 @@ mod tests {
 
     #[test]
     fn name_and_defaults_match_dotnet() {
-        let formatter = TemplateFormatter::new();
+        let formatter = TemplateFormatter::new(CaseSensitivity::CaseSensitive);
         assert_eq!(formatter.name(), "t");
         // .NET's `CanAutoDetect` setter throws for `true`, so there is nothing
         // to turn on here.
@@ -433,7 +434,9 @@ mod tests {
         assert_eq!(formatter.case_sensitivity(), CaseSensitivity::CaseSensitive);
         assert!(formatter.is_empty());
         assert_eq!(
-            TemplateFormatter::new().with_name("template").name(),
+            TemplateFormatter::new(CaseSensitivity::CaseSensitive)
+                .with_name("template")
+                .name(),
             "template"
         );
     }
@@ -504,7 +507,7 @@ mod tests {
             format_error_action: ErrorAction::Error,
             ..SmartSettings::default()
         });
-        let mut templates = TemplateFormatter::new();
+        let mut templates = TemplateFormatter::new(CaseSensitivity::CaseSensitive);
         for (name, template) in [
             ("salutation", "{1:cond:{:t:sal_formal}|{:t:sal_informal}}"),
             ("sal_formal", "Dear Mr {LastName}"),
@@ -590,7 +593,7 @@ mod tests {
     #[test]
     fn the_empty_name_can_be_registered() {
         let mut smart = SmartFormatter::new(SmartSettings::default());
-        let mut templates = TemplateFormatter::new();
+        let mut templates = TemplateFormatter::new(CaseSensitivity::CaseSensitive);
         templates.register(smart.parser(), "", "EMPTY").unwrap();
         smart.formatters_mut().push(Box::new(templates));
 
@@ -625,7 +628,7 @@ mod tests {
             format_error_action: ErrorAction::Error,
             ..SmartSettings::default()
         });
-        let mut templates = TemplateFormatter::new();
+        let mut templates = TemplateFormatter::new(CaseSensitivity::CaseSensitive);
         templates
             .register(smart.parser(), r"back\slash", "BS")
             .unwrap();
@@ -661,9 +664,9 @@ mod tests {
             format_error_action: ErrorAction::OutputErrorInResult,
             ..SmartSettings::default()
         });
-        smart
-            .formatters_mut()
-            .push(Box::new(TemplateFormatter::new()));
+        smart.formatters_mut().push(Box::new(TemplateFormatter::new(
+            CaseSensitivity::CaseSensitive,
+        )));
 
         match smart.format(r"{:t(a\qb)}", &person()) {
             Err(Error::Escape { message, .. }) => {
@@ -700,7 +703,7 @@ mod tests {
                 ..ParserSettings::default()
             },
         );
-        let mut templates = TemplateFormatter::new();
+        let mut templates = TemplateFormatter::new(CaseSensitivity::CaseSensitive);
         templates.register(smart.parser(), "tab", r"a\tb").unwrap();
         // The parsed template is kept, not the string it came from.
         assert_eq!(templates.len(), 1);
@@ -714,7 +717,7 @@ mod tests {
     fn register_rejects_a_duplicate_name() {
         // .NET's `Dictionary.Add` throws rather than overwriting.
         let smart = SmartFormatter::new(SmartSettings::default());
-        let mut templates = TemplateFormatter::new();
+        let mut templates = TemplateFormatter::new(CaseSensitivity::CaseSensitive);
         templates.register(smart.parser(), "dup", "one").unwrap();
         let error = templates
             .register(smart.parser(), "dup", "two")
@@ -729,8 +732,7 @@ mod tests {
 
         // A name that differs only in case collides when names are matched
         // case-insensitively, as .NET's comparer does.
-        let mut insensitive =
-            TemplateFormatter::with_case_sensitivity(CaseSensitivity::CaseInsensitive);
+        let mut insensitive = TemplateFormatter::new(CaseSensitivity::CaseInsensitive);
         insensitive.register(smart.parser(), "dup", "one").unwrap();
         let error = insensitive
             .register(smart.parser(), "DUP", "two")
@@ -740,7 +742,7 @@ mod tests {
             "An item with the same key has already been added. Key: DUP"
         );
         // Case-sensitive matching keeps the two apart.
-        let mut sensitive = TemplateFormatter::new();
+        let mut sensitive = TemplateFormatter::new(CaseSensitivity::CaseSensitive);
         sensitive.register(smart.parser(), "dup", "one").unwrap();
         sensitive.register(smart.parser(), "DUP", "two").unwrap();
         assert_eq!(sensitive.len(), 2);
@@ -749,7 +751,7 @@ mod tests {
     #[test]
     fn register_reports_a_template_that_does_not_parse() {
         let smart = SmartFormatter::new(SmartSettings::default());
-        let mut templates = TemplateFormatter::new();
+        let mut templates = TemplateFormatter::new(CaseSensitivity::CaseSensitive);
         let error = templates
             .register(smart.parser(), "bad", "{unclosed")
             .unwrap_err();
@@ -758,6 +760,29 @@ mod tests {
             "{error:?}"
         );
         assert!(templates.is_empty());
+    }
+
+    #[test]
+    fn a_duplicate_name_that_does_not_parse_reports_the_parse_error() {
+        // .NET's `Register` is `var parsed = Parser.ParseFormat(template);
+        // _templates.Add(name, parsed);` — the parse runs before the
+        // dictionary is touched, so the parse error wins over the duplicate.
+        // Probed against 3.6.1: registering "dup" twice, the second time with
+        // "{unclosed", throws `ParsingErrors`, not the `ArgumentException`
+        // `Dictionary.Add` raises for a duplicate key.
+        let smart = SmartFormatter::new(SmartSettings::default());
+        let mut templates = TemplateFormatter::new(CaseSensitivity::CaseSensitive);
+        templates.register(smart.parser(), "dup", "one").unwrap();
+        let error = templates
+            .register(smart.parser(), "dup", "{unclosed")
+            .unwrap_err();
+        assert!(
+            matches!(error, RegisterError::Parse(Error::Parse { .. })),
+            "{error:?}"
+        );
+        // Neither check changed the registry.
+        assert_eq!(templates.len(), 1);
+        assert_eq!(templates.get("dup").unwrap().raw, "one");
     }
 
     #[test]
@@ -780,8 +805,7 @@ mod tests {
         assert!(templates.get("firstLast").is_none());
 
         // `Remove` uses the same comparer as the lookup.
-        let mut insensitive =
-            TemplateFormatter::with_case_sensitivity(CaseSensitivity::CaseInsensitive);
+        let mut insensitive = TemplateFormatter::new(CaseSensitivity::CaseInsensitive);
         insensitive.register(smart.parser(), "a", "A").unwrap();
         assert!(insensitive.remove("A"));
         assert!(insensitive.is_empty());
@@ -795,7 +819,7 @@ mod tests {
             string_format_compatibility: true,
             ..SmartSettings::default()
         });
-        let mut templates = TemplateFormatter::new();
+        let mut templates = TemplateFormatter::new(CaseSensitivity::CaseSensitive);
         templates.register(smart.parser(), "x", "X").unwrap();
         smart.formatters_mut().push(Box::new(templates));
 
@@ -818,7 +842,7 @@ mod tests {
             format_error_action: ErrorAction::OutputErrorInResult,
             ..SmartSettings::default()
         });
-        let mut templates = TemplateFormatter::new();
+        let mut templates = TemplateFormatter::new(CaseSensitivity::CaseSensitive);
         templates.register(smart.parser(), "bad", "{Nope}").unwrap();
         smart.formatters_mut().push(Box::new(templates));
 

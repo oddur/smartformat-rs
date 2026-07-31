@@ -162,14 +162,23 @@ answer is not reproducible.
   `lit-escape-unicode-high-then-non-surrogate`.
   `substr` reaches the same place from the other side: its start index and
   length count UTF-16 code units, as .NET's do, so a cut can split a surrogate
-  pair. `{0:substr(0,1)}` over `"\u{1F600}abc"` is a lone high surrogate in
-  .NET, which its UTF-8 encoding writes as `EF BF BD` — the same U+FFFD a Rust
-  `String` holds — so the two are byte-identical and these are ordinary
-  goldens, not divergences. The *counting* stays in code units either way:
+  pair. A *single* orphaned half is byte-identical: `{0:substr(0,1)}` over
+  `"\u{1F600}abc"` is a lone high surrogate in .NET, which its UTF-8 encoding
+  writes as `EF BF BD` — the same U+FFFD a Rust `String` holds. Those cases are
+  ordinary goldens. The *counting* stays in code units either way:
   `{0:substr(2)}` is `abc` and `{0:substr(0,5)}` is the whole string.
-  *Pins:* the `substr-astral-*` cases and
-  `extensions::substring::tests::a_cut_inside_a_surrogate_pair`,
-  `…::a_string_of_wide_characters`.
+  Two complementary halves written next to each other are **not**
+  byte-identical, for the same reason the escaped surrogates above recombine:
+  .NET still holds each half as a code unit, so
+  `{0:substr(0,1)}{0:substr(1,1)}` over `"\u{1F600}"` re-forms the pair and
+  writes the emoji (`F0 9F 98 80`), where each half here was already replaced
+  and the result is two U+FFFDs. A child format on each placeholder makes no
+  difference; halves in the wrong order do not join in .NET either. Because the
+  pair is well-formed, `Utf8JsonWriter` records .NET's emoji as an emoji, so
+  this one *is* a golden that fails, and is skipped.
+  *Pins:* the `substr-astral-*` cases, `substr-astral-halves-rejoin` (skipped),
+  and `extensions::substring::tests::a_cut_inside_a_surrogate_pair`,
+  `…::two_halves_of_one_pair_do_not_rejoin`, `…::a_string_of_wide_characters`.
 - **Unicode case mapping.** `ToUpper`/`ToLower` and case-insensitive selector
   matching use Rust's Unicode mappings. Case-insensitive matching restricts
   itself to one-to-one mappings, like .NET's `OrdinalIgnoreCase`, but
@@ -217,32 +226,70 @@ answer is not reproducible.
   `ToString` is never what the template author meant.
   *Pin:* `list-map-is-enumerable`.
 - **`ismatch` runs on `fancy-regex`, not `System.Text.RegularExpressions`.**
-  No Rust engine reads .NET's dialect exactly. Four constructs .NET accepts
+  No Rust engine reads .NET's dialect exactly. Five constructs .NET accepts
   fail to compile here, which fails the whole call rather than matching
   different text: the alternative named-group syntax `(?'name'…)`, `\Z` (end of
   input or before a final newline — `\z` agrees in both), balancing groups
-  `(?<-x>…)`, and .NET's Unicode *block* names such as `\p{IsBasicLatin}`.
-  Four more compile on both sides and mean different things, which nothing can
-  detect, so each is pinned by a test: `$` matches before a final newline in
-  .NET and not here; `[a-z-[aeiou]]` is class subtraction in .NET and a union
-  here (write `[a-z&&[^aeiou]]`); `a{,3}` is five literal characters in .NET
-  and `a{0,3}` here (write `a{0,3}`); and .NET numbers *named* groups after all
-  unnamed ones, where fancy-regex numbers left to right, so `(a)(?<x>b)(c)` on
-  `"abc"` gives `{m[2]}` = `c` in .NET and `b` here. `IgnoreCase` is always
-  culture-invariant here; .NET folds with the thread culture unless
-  `CultureInvariant` is set. `RegexOptions` members with no equivalent —
-  `ExplicitCapture` (dropping it would renumber every group `{m[i]}` reads),
-  `RightToLeft`, `ECMAScript`, `NonBacktracking`, and any undefined bit — fail
-  the call rather than silently matching different text; `Compiled` and
-  `CultureInvariant` are accepted and ignored. The goldens stay inside the
-  subset both engines agree on, with one divergent pattern held as a skip.
-  *Pins:* `ismatch-dollar-before-final-newline` (skipped), and in
+  `(?<-x>…)`, .NET's Unicode *block* names such as `\p{IsBasicLatin}`, and
+  octal escapes such as `\101`.
+  The rest compile on both sides and mean different things, which nothing can
+  detect, so each is pinned by a test:
+  - **Anchors.** `$` matches before a final newline in .NET and not here.
+  - **Group numbering.** .NET numbers *named* groups after all unnamed ones,
+    where fancy-regex numbers left to right, so `(a)(?<x>b)(c)` on `"abc"`
+    gives `{m[2]}` = `c` in .NET and `b` here.
+  - **String element.** .NET matches over UTF-16 code units and fancy-regex
+    over Unicode scalars, so every astral character is two elements there and
+    one here. `^.$` over `"😀"` is "no" in .NET and "yes" here, `^..$` and
+    `^.{2}$` the other way round, a negated class likewise, and `^(.).*$`
+    captures half a surrogate pair there and the whole character here. This is
+    deliberately *not* aligned with `substr`, which counts code units because
+    .NET's `String.Substring` does; each extension follows its own counterpart.
+  - **`\w` and `\b`.** .NET's `\w` is `[\p{L}\p{Mn}\p{Nd}\p{Pc}]`; the `regex`
+    crate's is `[\p{Alphabetic}\p{M}\p{Nd}\p{Pc}\p{Join_Control}]`, so `Nl`,
+    `Mc` and `Me` are word characters here and not there, and `\b` moves with
+    them. `\d` and `\s` agree.
+  - **Character classes**, in four ways. `[a-z-[aeiou]]` is subtraction in .NET
+    and a union here; `[a&&b]` is the three characters `a`, `&`, `b` in .NET
+    and an intersection here, so `[a-z&&[^aeiou]]` — the fancy-regex spelling
+    of the subtraction — is a one-way door; `[[:alpha:]]` is a set of literals
+    plus a literal `]` in .NET and the POSIX class here; `[a[bc]]` likewise
+    against a nested union.
+  - **Quantifiers.** `a{,3}` is five literal characters in .NET and `a{0,3}`
+    here (write `a{0,3}`).
+  - **`\0`.** NUL in .NET; a back reference to group 0 in fancy-regex, which
+    the pinned 0.14 compiles into a pattern matching nothing (0.19 rejects it,
+    so a bump turns this one loud). Write `\x00`.
+  - **Case folding.** `IgnoreCase` uses Unicode simple case *folding* here and
+    simple case *mapping* in .NET, and .NET never folds across a surrogate
+    pair. `CultureInvariant` does not reconcile them: with both options set,
+    `^s$` matches `"ſ"` here and not there, and likewise `σ`/`ς` and Deseret
+    `𐐀`/`𐐨`. Separately, `IgnoreCase` is always culture-invariant here where
+    .NET folds with the thread culture unless `CultureInvariant` is set.
+
+  `RegexOptions` members with no equivalent — `ExplicitCapture` (dropping it
+  would renumber every group `{m[i]}` reads), `RightToLeft`, `ECMAScript`,
+  `NonBacktracking`, and any undefined bit — fail the call rather than silently
+  matching different text; `Compiled` and `CultureInvariant` are accepted and
+  ignored. The goldens stay inside the subset both engines agree on, with the
+  divergent patterns held as skips.
+  *Pins:* the skipped goldens `ismatch-dollar-before-final-newline`, the four
+  `ismatch-astral-*`, the three `ismatch-word-*`, the three `ismatch-fold-*`
+  that diverge, the three `ismatch-class-*`, `ismatch-nul-escape` and
+  `ismatch-octal-escape`; the ones that agree (`ismatch-digit-arabic-indic`,
+  `ismatch-whitespace-nel`, `ismatch-hex-nul-escape`,
+  `ismatch-fold-kelvin`, `ismatch-fold-capital-sharp-s`) run. And in
   `extensions::ismatch::tests`
   `a_pattern_dotnet_accepts_and_fancy_regex_does_not_fails_loudly`,
   `dollar_does_not_match_before_a_final_newline`,
   `character_class_subtraction_is_a_silent_divergence`,
+  `class_intersection_posix_names_and_nesting_are_silent_divergences`,
   `an_open_lower_bound_is_a_silent_divergence`,
   `named_groups_are_numbered_left_to_right`,
+  `matching_counts_scalars_where_dotnet_counts_utf16_units`,
+  `the_word_character_class_covers_more_than_dotnets`,
+  `case_insensitive_matching_folds_wider_than_dotnets`,
+  `a_nul_escape_matches_nothing_and_an_octal_escape_fails`,
   `unsupported_regex_options_fail_loudly`,
   `dotnet_syntax_that_both_engines_agree_on` (the constructs that do agree).
 - **`ismatch` has no match timeout.** .NET compiles every pattern with
@@ -410,11 +457,16 @@ as an explicit input instead.
 - **A template registry's comparer is fixed at construction.** .NET's
   `TemplateFormatter.Initialize` builds its dictionary with
   `Settings.GetCaseSensitivityComparer()` and never revisits it, so a settings
-  change afterwards does not reach the registry. `TemplateFormatter::with_case_sensitivity`
-  mirrors that trap deliberately: the comparer is the formatter's own state,
-  not `info.settings()` at render time. `SmartFormatter::register_template`
+  change afterwards does not reach the registry. `TemplateFormatter::new` takes
+  the comparer and mirrors that trap deliberately: it is the formatter's own
+  state, not `info.settings()` at render time. `SmartFormatter::register_template`
   seeds it from the formatter's settings at the first call, which is the path
   that cannot get the two out of step.
+  What .NET *does* do, and a `Formatter` here cannot, is run `Initialize` from
+  `AddExtensions`, so the host's setting there always wins however the
+  extension was built. That is why `TemplateFormatter` has no `Default` and no
+  argument-less constructor: a default would be silently wrong for a
+  case-insensitive host assembled by hand, and nothing later could tell.
   *Pins:* `extensions::template::tests::templates_are_case_sensitive`,
   `…::templates_can_be_case_insensitive`.
 
@@ -423,6 +475,15 @@ as an explicit input instead.
 Not divergences either: .NET behavior that reads like a bug, which we match on
 purpose because a template out there may depend on it. Each says what shape of
 Rust code the quirk forced, so nobody "cleans it up".
+
+- **`TemplateFormatter::register` parses before it checks for a duplicate**,
+  because .NET's `Register` is `var parsed = Parser.ParseFormat(template);
+  _templates.Add(templateName, parsed);` — the parse runs first and
+  `Dictionary.Add` throws second. Registering a name that is already taken with
+  a template that does not parse therefore reports the *parse* error, not the
+  duplicate. No rendering depends on it; it is the kind of ordering a port
+  silently gets backwards.
+  *Pin:* `extensions::template::tests::a_duplicate_name_that_does_not_parse_reports_the_parse_error`.
 
 - **Unicode escapes the parser reads past.** .NET's
   `Parser.ParseAlternativeEscaping` spans six characters for `\uXXXX` without

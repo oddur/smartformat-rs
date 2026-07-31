@@ -358,10 +358,17 @@ fn utf16_len(text: &str) -> usize {
 ///
 /// A .NET substring is cut between code units, so a cut can fall inside a
 /// surrogate pair and leave a lone surrogate behind. A Rust `String` cannot
-/// hold one, so the orphaned half becomes U+FFFD — which is exactly the byte
-/// sequence .NET produces once such a string is encoded as UTF-8
-/// (`{S:substr(0,1)}` over `"\u{1F600}abc"` writes `EF BF BD` there too,
-/// probed). See DESIGN.md, "Known divergences".
+/// hold one, so the orphaned half becomes U+FFFD. While the half *stays*
+/// orphaned that is byte-for-byte what .NET writes: `{0:substr(0,1)}` over
+/// `"\u{1F600}abc"` encodes to `EF BF BD` there too (probed).
+///
+/// It stops being identical when the two halves of one pair end up next to
+/// each other in the output. .NET keeps them as UTF-16 code units in the
+/// result string, so `{0:substr(0,1)}{0:substr(1,1)}` over `"\u{1F600}"`
+/// re-forms the pair and writes the emoji, `F0 9F 98 80`; here each half was
+/// already replaced, and the result is two U+FFFDs. That is the same
+/// recombination the escaped-`\uXXXX` divergence has, from the other side.
+/// See DESIGN.md, "Known divergences".
 ///
 /// The caller has checked the bounds, so `start` and `length` are within the
 /// string.
@@ -869,6 +876,29 @@ mod tests {
         // The whole string is five code units, not four characters.
         assert_eq!(cut("{S:substr(0,5)}"), "\u{1F600}abc");
         assert_eq!(cut("{S:substr(0,6)}"), "");
+    }
+
+    #[test]
+    fn two_halves_of_one_pair_do_not_rejoin() {
+        // The divergence the entry above stops short of: .NET holds each half
+        // as a UTF-16 code unit, so writing the two next to each other
+        // re-forms the pair and encodes the emoji. Probed against 3.6.1, which
+        // renders "😀" (F0 9F 98 80) for the first two and the two replacement
+        // characters for the third — halves in the wrong order do not join
+        // there either.
+        let args = Value::List(vec![Value::from("\u{1F600}")]);
+        let smart = smart();
+        let cut = |template: &str| format_with(&smart, template, &args);
+
+        assert_eq!(cut("{0:substr(0,1)}{0:substr(1,1)}"), "\u{FFFD}\u{FFFD}");
+        assert_eq!(
+            cut("{0:substr(0,1):{}}{0:substr(1,1):{}}"),
+            "\u{FFFD}\u{FFFD}"
+        );
+        assert_eq!(cut("{0:substr(1,1)}{0:substr(0,1)}"), "\u{FFFD}\u{FFFD}");
+        // Anything between the halves keeps .NET from joining them, so these
+        // two agree.
+        assert_eq!(cut("{0:substr(0,1)}x{0:substr(1,1)}"), "\u{FFFD}x\u{FFFD}");
     }
 
     /// A character outside the ASCII range still counts as one code unit.

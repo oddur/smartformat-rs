@@ -40,14 +40,52 @@
 //!   `b`; fancy-regex numbers groups left to right, so `{m[2]}` is `b` and
 //!   `{m[3]}` is `c`. Patterns that mix named and unnamed groups therefore
 //!   index differently.
-//! * Case-insensitive matching is always culture-invariant (Unicode simple
-//!   case folding). .NET folds with the current culture unless
-//!   [`RegexOptions::CULTURE_INVARIANT`] is set, which is why that option is
-//!   accepted here and does nothing.
-//! * .NET's character-class subtraction (`[a-z-[aeiou]]`) is not fancy-regex
-//!   syntax. fancy-regex reads `[a-z-[aeiou]]` as the *union* of `a-z`, `-`
-//!   and `aeiou`, so `^[a-z-[aeiou]]+$` matches `bad` here and not in .NET.
-//!   Write `[a-z&&[^aeiou]]` instead.
+//! * .NET matches over **UTF-16 code units**; fancy-regex matches over
+//!   Unicode scalars. Every character outside the Basic Multilingual Plane is
+//!   two units there and one scalar here, so `.`, a negated class, a
+//!   quantifier count and the text of a captured group all differ over astral
+//!   input. `^.$` over `"😀"` is "no" in .NET and "yes" here; `^..$` and
+//!   `^.{2}$` are "yes" there and "no" here; and `^(.).*$` captures a lone
+//!   high surrogate in .NET where group 1 is the whole emoji here. Nothing
+//!   detects this, and `substr` counting code units does not help: the two
+//!   extensions measure strings differently on purpose, each after its own
+//!   .NET counterpart.
+//! * `\w` and `\b` cover different characters. .NET defines `\w` as
+//!   `[\p{L}\p{Mn}\p{Nd}\p{Pc}]`; the `regex` crate underneath fancy-regex
+//!   defines it as `[\p{Alphabetic}\p{M}\p{Nd}\p{Pc}\p{Join_Control}]`. Letter
+//!   numbers (`Nl`, such as `Ⅷ`) and the `Mc` and `Me` marks are word
+//!   characters here and not in .NET, and `\b` moves with them: `^\w+$` over
+//!   `"Ⅷ"` is "no" there and "yes" here, and `\bx\b` over `"ⅧxⅧ"` is "yes"
+//!   there and "no" here. `\d` and `\s` do agree.
+//! * Case-insensitive matching folds differently, and setting
+//!   [`RegexOptions::CULTURE_INVARIANT`] does not reconcile it. .NET compares
+//!   the simple case *mapping* of two characters and never folds across a
+//!   surrogate pair; fancy-regex uses Unicode simple case *folding*, which has
+//!   larger equivalence classes. With `IgnoreCase | CultureInvariant` on both
+//!   sides, `^s$` matches `"ſ"` here and not in .NET, `^σ$` matches `"ς"`, and
+//!   `^𐐀$` matches `"𐐨"`. (Kelvin sign against `k`, and `ẞ` against `ß`, do
+//!   agree.) Separately, .NET folds with the *thread* culture unless
+//!   `CultureInvariant` is set, where this port is always culture-invariant —
+//!   which is why the option is accepted and changes nothing.
+//! * Character classes read differently in four ways, none of them
+//!   detectable. .NET has class subtraction and no class intersection, no
+//!   POSIX class names and no nesting; fancy-regex is the other way round.
+//!     * `[a-z-[aeiou]]` is "a-z except the vowels" in .NET and the *union* of
+//!       `a-z`, `-` and `aeiou` here, so `^[a-z-[aeiou]]+$` matches `"bad"`
+//!       here and not there.
+//!     * `[a&&b]` is the three characters `a`, `&`, `b` in .NET and the
+//!       (empty) intersection of `a` and `b` here. So `[a-z&&[^aeiou]]`, the
+//!       fancy-regex spelling of the subtraction above, is a one-way door: it
+//!       means something else again in .NET.
+//!     * `[[:alpha:]]` is `[`, `:`, `a`, `l`, `p`, `h` followed by a literal
+//!       `]` in .NET, and the POSIX letter class here.
+//!     * `[a[bc]]` is `a`, `[`, `b`, `c` followed by a literal `]` in .NET,
+//!       and a nested union here.
+//! * `\0` is the NUL character in .NET. fancy-regex reads it as a back
+//!   reference to group 0: with the pinned 0.14 it compiles into a pattern
+//!   that matches nothing at all, so `^\0$` over a NUL is "yes" in .NET and
+//!   "no" here — the one divergence in this list that a later version of the
+//!   engine turns loud (0.19 rejects the pattern). Write `\x00`.
 //! * `a{,3}` is a literal `a{,3}` in .NET, which has no open-ended lower
 //!   bound; fancy-regex reads it as `a{0,3}`. Write `a{0,3}`.
 //! * .NET aborts a match that runs for 500 ms; fancy-regex has no timeout, so
@@ -58,8 +96,8 @@
 //!
 //! Everything else .NET accepts and fancy-regex does not — `(?'name'…)`, `\Z`,
 //! balancing groups such as `(?<-x>…)`, block names such as
-//! `\p{IsBasicLatin}` — fails the format call with the engine's parse error
-//! rather than matching something else.
+//! `\p{IsBasicLatin}`, octal escapes such as `\101` — fails the format call
+//! with the engine's parse error rather than matching something else.
 //!
 //! [fancy-regex]: https://docs.rs/fancy-regex
 
@@ -1420,7 +1458,8 @@ mod tests {
             ),
             "yes"
         );
-        // The fancy-regex spelling of the same intent works as expected.
+        // The fancy-regex spelling of the same intent works as expected —
+        // here. It is a one-way door: see the test below.
         assert_eq!(
             format_with(
                 smart(),
@@ -1428,6 +1467,201 @@ mod tests {
                 args([Value::from("bad")])
             ),
             "no"
+        );
+    }
+
+    #[test]
+    fn class_intersection_posix_names_and_nesting_are_silent_divergences() {
+        // Three more character-class constructs both engines accept and read
+        // differently. Probed against 3.6.1, which renders the opposite of
+        // every assertion here: .NET has no intersection, no POSIX class name
+        // and no nesting, so it reads each of these as a set of literal
+        // characters followed by a literal `]`.
+        for (pattern, input, here) in [
+            // .NET: the three characters `a`, `&`, `b`. Here: the empty
+            // intersection of `a` and `b`, which matches nothing.
+            (r"^[a&&b]+$", "ab", "no"),
+            (r"^[a&&b]+$", "&", "no"),
+            // .NET: `[`, `:`, `a`, `l`, `p`, `h` and then a literal `]`.
+            (r"^[[\:alpha\:]]+$", "abc", "yes"),
+            // .NET: `a`, `[`, `b`, `c` and then a literal `]`.
+            (r"^[a[bc]]+$", "abc", "yes"),
+        ] {
+            let template = std::format!("{{0:ismatch({pattern}):yes|no}}");
+            assert_eq!(
+                format_with(smart(), &template, args([Value::from(input)])),
+                here,
+                "{template:?} over {input:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn matching_counts_scalars_where_dotnet_counts_utf16_units() {
+        // .NET's engine runs over UTF-16 code units, so an astral character is
+        // two of them; fancy-regex runs over Unicode scalars, where it is one.
+        // Probed against 3.6.1, which renders the opposite of each of the
+        // first four.
+        let emoji = || args([Value::from("\u{1F600}")]);
+        assert_eq!(
+            format_with(smart(), r"{0:ismatch(^.$):yes|no}", emoji()),
+            "yes"
+        );
+        assert_eq!(
+            format_with(smart(), r"{0:ismatch(^..$):yes|no}", emoji()),
+            "no"
+        );
+        assert_eq!(
+            format_with(smart(), r"{0:ismatch(^.\{2\}$):yes|no}", emoji()),
+            "no"
+        );
+        // A negated class is one scalar here and one code unit in .NET, so it
+        // matches the whole emoji here and only half of it there.
+        assert_eq!(
+            format_with(smart(), r"{0:ismatch(^[^a]$):yes|no}", emoji()),
+            "yes"
+        );
+        // A captured group carries the whole character here; in .NET group 1
+        // is the lone high surrogate, which its UTF-8 encoding writes as
+        // U+FFFD.
+        assert_eq!(
+            format_with(
+                smart(),
+                r"{0:ismatch(^\(.\).*$):[{m[1]}]|no}",
+                args([Value::from("\u{1F600}abc")])
+            ),
+            "[\u{1F600}]"
+        );
+    }
+
+    #[test]
+    fn the_word_character_class_covers_more_than_dotnets() {
+        // .NET's `\w` is `[\p{L}\p{Mn}\p{Nd}\p{Pc}]`; the `regex` crate's is
+        // `[\p{Alphabetic}\p{M}\p{Nd}\p{Pc}\p{Join_Control}]`. Probed against
+        // 3.6.1, which renders "no" for the first three and "yes" for the
+        // fourth.
+        for input in [
+            "\u{2167}", // Ⅷ, a letter number (Nl)
+            "\u{903}",  // Devanagari visarga, a spacing mark (Mc)
+            "a\u{488}", // combining cyrillic hundred thousands (Me)
+        ] {
+            assert_eq!(
+                format_with(
+                    smart(),
+                    r"{0:ismatch(^\\w+$):yes|no}",
+                    args([Value::from(input)])
+                ),
+                "yes",
+                "{input:?}"
+            );
+        }
+        // `\b` moves with `\w`: between `Ⅷ` and `x` there is a boundary in
+        // .NET and none here.
+        assert_eq!(
+            format_with(
+                smart(),
+                r"{0:ismatch(\\bx\\b):yes|no}",
+                args([Value::from("\u{2167}x\u{2167}")])
+            ),
+            "no"
+        );
+        // `\d` and `\s` do agree: an Arabic-Indic digit and NEL match in both.
+        assert_eq!(
+            format_with(
+                smart(),
+                r"{0:ismatch(^\\d+$):yes|no}",
+                args([Value::from("\u{663}")])
+            ),
+            "yes"
+        );
+        assert_eq!(
+            format_with(
+                smart(),
+                r"{0:ismatch(^\\s$):yes|no}",
+                args([Value::from("\u{85}")])
+            ),
+            "yes"
+        );
+    }
+
+    #[test]
+    fn case_insensitive_matching_folds_wider_than_dotnets() {
+        // `CultureInvariant` does not reconcile the two: .NET compares simple
+        // case *mappings* and never folds across a surrogate pair, where
+        // fancy-regex uses Unicode simple case *folding*. Probed against 3.6.1
+        // with the same two options set, which renders "no" for all three.
+        let folding = || with_options(RegexOptions::IGNORE_CASE | RegexOptions::CULTURE_INVARIANT);
+        for (pattern, input) in [
+            ("^s$", "\u{17f}"),           // ſ, long s
+            ("^\u{3c3}$", "\u{3c2}"),     // σ against final ς
+            ("^\u{10400}$", "\u{10428}"), // Deseret, a surrogate pair in .NET
+        ] {
+            let template = std::format!("{{0:ismatch({pattern}):yes|no}}");
+            assert_eq!(
+                format_with(folding(), &template, args([Value::from(input)])),
+                "yes",
+                "{template:?} over {input:?}"
+            );
+        }
+        // The controls that do agree, so the test is about folding width and
+        // not about `IgnoreCase` at large.
+        for (pattern, input, both) in [
+            ("^k$", "\u{212a}", "yes"),      // Kelvin sign
+            ("^\u{1e9e}$", "\u{df}", "yes"), // ẞ against ß
+            ("^i$", "\u{131}", "no"),        // dotless ı
+            ("^i$", "\u{130}", "no"),        // dotted İ
+        ] {
+            let template = std::format!("{{0:ismatch({pattern}):yes|no}}");
+            assert_eq!(
+                format_with(folding(), &template, args([Value::from(input)])),
+                both,
+                "{template:?} over {input:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_nul_escape_matches_nothing_and_an_octal_escape_fails() {
+        // `\0` is NUL in .NET, which renders "yes" for both of these (probed).
+        // fancy-regex 0.14 reads it as a back reference to group 0 and builds
+        // a pattern that matches nothing at all — the only silent divergence
+        // in this module that a dependency bump would turn loud, since 0.19
+        // rejects the same pattern.
+        assert_eq!(
+            format_with(
+                smart(),
+                r"{0:ismatch(^\\0$):yes|no}",
+                args([Value::from("\0")])
+            ),
+            "no"
+        );
+        assert_eq!(
+            format_with(
+                smart(),
+                r"{0:ismatch(a\\0b):yes|no}",
+                args([Value::from("a\0b")])
+            ),
+            "no"
+        );
+        // `\x00` is the spelling that works in both.
+        assert_eq!(
+            format_with(
+                smart(),
+                r"{0:ismatch(^\\x00$):yes|no}",
+                args([Value::from("\0")])
+            ),
+            "yes"
+        );
+        // An octal escape is loud rather than silent: .NET renders "yes" for
+        // `^\101$` over "A" and fancy-regex refuses to compile it.
+        let message = message_of(
+            smart(),
+            r"{0:ismatch(^\\101$):yes|no}",
+            args([Value::from("A")]),
+        );
+        assert!(
+            message.starts_with("Invalid regular expression"),
+            "{message}"
         );
     }
 

@@ -142,9 +142,21 @@ static SmartFormatter BuildFormatter(CaseSettings settings)
     isMatch.RegexOptions = settings.RegexOptions;
     isMatch.SplitChar = settings.IsMatchSplitChar;
     isMatch.PlaceholderNameForMatches = settings.IsMatchPlaceholderName;
+    isMatch.CanAutoDetect = settings.IsMatchCanAutoDetect;
 
-    smart.GetFormatterExtension<SubStringFormatter>()!.OutOfRangeBehavior =
-        settings.SubStringOutOfRangeBehavior;
+    var subString = smart.GetFormatterExtension<SubStringFormatter>()!;
+    subString.OutOfRangeBehavior = settings.SubStringOutOfRangeBehavior;
+    subString.NullDisplayString = settings.SubStringNullDisplayString;
+    subString.SplitChar = settings.SubStringSplitChar;
+    subString.CanAutoDetect = settings.SubStringCanAutoDetect;
+
+    var isNull = smart.GetFormatterExtension<NullFormatter>()!;
+    isNull.SplitChar = settings.IsNullSplitChar;
+    isNull.CanAutoDetect = settings.IsNullCanAutoDetect;
+
+    var list = smart.GetFormatterExtension<ListFormatter>()!;
+    list.SplitChar = settings.ListSplitChar;
+    list.CanAutoDetect = settings.ListCanAutoDetect;
 
     if (settings.Templates != TemplateSet.None)
     {
@@ -2085,6 +2097,19 @@ static void ListFormatterCases(List<GoldenCase> cases)
     Add("of-lists", @"{0:list:{:list:{:D3}|, |, }|\n|\n}", "[[[1,2,3],[4,5,6],[7,8,9]]]");
     Add("of-lists-index", "{0:list:{Index}={:list:{}|+}|;}", "[[[1,2],[3,4]]]");
 
+    // -- The two knobs on the formatter itself.
+    var tildeSplit = new CaseSettings(ListSplitChar: '~');
+    Add("splitchar-tilde", "{0:list:{}~, ~, and }", abc, tildeSplit);
+    // The pipe is an ordinary character once the split char has moved.
+    Add("splitchar-tilde-pipe-is-literal", "{0:list:{}|x~, }", abc, tildeSplit);
+    var noAutoDetect = new CaseSettings(ListCanAutoDetect: false);
+    // With auto-detection off the `|` format falls to the next formatter that
+    // takes it, which for a collection is the plural formatter.
+    Add("autodetect-off", "{0:one|many}", abc, noAutoDetect);
+    // Naming the formatter still works: CanAutoDetect only governs the
+    // unnamed path.
+    Add("autodetect-off-named", "{0:list:{}|, }", abc, noAutoDetect);
+
     // -- Divergences, held here with .NET's answer and skipped by the runner.
     // A .NET Dictionary is IEnumerable, so it formats as a list of its pairs.
     Add("map-is-enumerable", "{0:list:{}|, }", """[{"a":1,"b":2}]""");
@@ -2246,6 +2271,53 @@ static void SubStringCases(List<GoldenCase> cases)
     cases.Add(new GoldenCase("substr-errtext-overflow", "{0:substr(2147483648)}", longJohn, output));
     cases.Add(new GoldenCase("substr-errtext-out-of-range", "{0:substr(-999)}", longJohn, output));
     cases.Add(new GoldenCase("substr-errtext-format-is-text", "{0:substr(0,2):x}", longJohn, output));
+
+    // -- Options the parser never reaches, and whitespace it does not skip.
+    // `int.Parse` runs on the first two options only, so a third is ignored
+    // however it is spelled.
+    Add("third-option-unparsed", "{0:substr(1,2,x)}", longJohn);
+    // An empty second option is not a number: .NET's `Number.IsWhite` skips
+    // ASCII whitespace only, so a non-breaking space is not whitespace either.
+    cases.Add(new GoldenCase("substr-errtext-empty-length", "{0:substr(-4,)}", longJohn, output));
+    cases.Add(new GoldenCase("substr-errtext-nbsp-start", "{0:substr(\u00A01)}", longJohn, output));
+
+    // -- NullDisplayString, which only a null value reaches.
+    var nullDisplay = new CaseSettings(SubStringNullDisplayString: "???");
+    Add("nulldisplay", "{0:substr(0,3)}", nul, nullDisplay);
+    Add("nulldisplay-aligned", "[{0,10:substr(0,3)}]", nul, nullDisplay);
+    // A child format is written instead of the null string, against a null
+    // value — so the string never appears.
+    Add("nulldisplay-child-format-wins", "{0:substr(0,3):[{}]}", nul, nullDisplay);
+    Add("nulldisplay-not-null", "{0:substr(0,3)}", longJohn, nullDisplay);
+
+    // -- SplitChar, which separates the options and nothing else.
+    var pipeSplit = new CaseSettings(SubStringSplitChar: '|');
+    Add("splitchar-pipe", "{0:substr(-4|-1)}", longJohn, pipeSplit);
+    cases.Add(new GoldenCase("substr-errtext-splitchar-moved", "{0:substr(-4,-1)}", longJohn,
+        new CaseSettings(SubStringSplitChar: '|',
+            FormatErrorAction: FormatErrorAction.OutputErrorInResult)));
+
+    // -- CanAutoDetect, off by default. With it on, an unnamed placeholder
+    // whose options parse as a substring is claimed by this formatter.
+    var autoDetect = new CaseSettings(SubStringCanAutoDetect: true);
+    Add("autodetect-on", "{0:(0,4)}", longJohn, autoDetect);
+    // It still declines what it cannot slice: a non-string, and options that
+    // are empty. Declining while unnamed is not an error, so the next
+    // formatter — here the default one — gets its turn.
+    Add("autodetect-on-declines-non-string", "{0:(0,4)}", "[true]", autoDetect);
+    Add("autodetect-on-declines-empty-options", "{0:()}", longJohn, autoDetect);
+    // Off, the same placeholder never reaches this formatter.
+    Add("autodetect-off", "{0:(0,4)}", longJohn);
+
+    // -- A divergence: two halves of one surrogate pair, written next to each
+    // other. .NET keeps each half as a UTF-16 code unit, so the pair re-forms.
+    Add("astral-halves-rejoin", "{0:substr(0,1)}{0:substr(1,1)}", JsonString("\U0001F600"));
+    Add("astral-halves-rejoin-child-format",
+        "{0:substr(0,1):{}}{0:substr(1,1):{}}", JsonString("\U0001F600"));
+    // The controls: halves in the wrong order, and halves with text between
+    // them, do not join in .NET either.
+    Add("astral-halves-reversed", "{0:substr(1,1)}{0:substr(0,1)}", JsonString("\U0001F600"));
+    Add("astral-halves-separated", "{0:substr(0,1)}x{0:substr(1,1)}", JsonString("\U0001F600"));
 }
 
 // ---------------------------------------------------------------------------
@@ -2323,6 +2395,24 @@ static void IsNullCases(List<GoldenCase> cases)
     Add("crossed-second-branch-null", @"{0:isnull:a|\u12}", "[null]");
     Add("crossed-second-branch-value", @"{0:isnull:a|\u12}", @"[""v""]");
     Add("crossed-third-branch", @"{0:isnull:a|b|\u12}", "[null]");
+
+    // -- The two knobs on the formatter itself.
+    var tildeSplit = new CaseSettings(IsNullSplitChar: '~');
+    Add("splitchar-tilde-null", "{0:isnull:N~Y}", "[null]", tildeSplit);
+    Add("splitchar-tilde-value", "{0:isnull:N~Y}", @"[""v""]", tildeSplit);
+    // The pipe is an ordinary character once the split char has moved, so
+    // this is one format and the value branch has nothing to write.
+    Add("splitchar-tilde-pipe-is-literal", "{0:isnull:N|Y}", "[null]", tildeSplit);
+
+    // -- CanAutoDetect, off by default. On, an unnamed two-part format is
+    // claimed by this formatter — but only after list, plural and cond, which
+    // all rank ahead of it and auto-detect the same shape.
+    var autoDetect = new CaseSettings(IsNullCanAutoDetect: true);
+    Add("autodetect-on-null", "{0:N|Y}", "[null]", autoDetect);
+    Add("autodetect-on-string", "{0:N|Y}", @"[""v""]", autoDetect);
+    Add("autodetect-on-int", "{0:N|Y}", "[123]", autoDetect);
+    Add("autodetect-on-list", "{0:N|Y}", """[["a","b"]]""", autoDetect);
+    Add("autodetect-off-null", "{0:N|Y}", "[null]");
 }
 
 // ---------------------------------------------------------------------------
@@ -2513,9 +2603,62 @@ static void IsMatchCases(List<GoldenCase> cases)
     cases.Add(new GoldenCase(
         "ismatch-errtext-null-value", "{0:ismatch(^.+$):a|b}", "[null]", output));
 
-    // -- One documented divergence, held here with .NET's answer: .NET's `$`
-    // also matches before a final newline, where fancy-regex's does not.
+    // -- Every item of a matched format takes the placeholder's alignment,
+    // the literals included.
+    Add("aligned-multi-item", "{0,10:ismatch(b):x{}y|N}", JsonString("abc"));
+
+    // -- CanAutoDetect, off by default. On, an unnamed placeholder is offered
+    // to this formatter, which declines rather than fails when it cannot use
+    // the format.
+    var autoDetect = new CaseSettings(IsMatchCanAutoDetect: true);
+    Add("autodetect-on", "{0:yes|no}", JsonString("abc"), autoDetect);
+    Add("autodetect-on-one-part", "{0:only}", JsonString("abc"), autoDetect);
+    Add("autodetect-off", "{0:yes|no}", JsonString("abc"));
+
+    // -- Documented divergences, held here with .NET's answer and skipped by
+    // the runner. .NET's `$` also matches before a final newline, where
+    // fancy-regex's does not.
     Add("dollar-before-final-newline", "{0:ismatch(^abc$):yes|no}", JsonString("abc\n"));
+    // .NET matches over UTF-16 code units, so an astral character is two of
+    // them; fancy-regex matches over scalars, where it is one.
+    Add("astral-dot", "{0:ismatch(^.$):yes|no}", JsonString("\U0001F600"));
+    Add("astral-two-dots", "{0:ismatch(^..$):yes|no}", JsonString("\U0001F600"));
+    Add("astral-negated-class", "{0:ismatch(^[^a]$):yes|no}", JsonString("\U0001F600"));
+    Add("astral-captured-group", @"{0:ismatch(^\(.\).*$):[{m[1]}]|no}",
+        JsonString("\U0001F600abc"));
+    // .NET's `\w` does not include letter numbers, spacing marks or enclosing
+    // marks; the `regex` crate's does.
+    Add("word-letter-number", @"{0:ismatch(^\\w+$):yes|no}", JsonString("Ⅷ"));
+    Add("word-spacing-mark", @"{0:ismatch(^\\w+$):yes|no}", JsonString("ः"));
+    Add("word-boundary-letter-number", @"{0:ismatch(\\bx\\b):yes|no}",
+        JsonString("ⅧxⅧ"));
+    // `\d` and `\s` agree, so these are ordinary cases rather than skips.
+    Add("digit-arabic-indic", @"{0:ismatch(^\\d+$):yes|no}", JsonString("٣"));
+    Add("whitespace-nel", @"{0:ismatch(^\\s$):yes|no}", JsonString("\u0085"));
+    // Simple case folding is wider than .NET's simple case mapping, and
+    // CultureInvariant does not reconcile them.
+    Options("fold-long-s", "{0:ismatch(^s$):yes|no}", JsonString("ſ"),
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    Options("fold-final-sigma", "{0:ismatch(^σ$):yes|no}", JsonString("ς"),
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    Options("fold-deseret", "{0:ismatch(^\U00010400$):yes|no}", JsonString("\U00010428"),
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    // The controls that do agree.
+    Options("fold-kelvin", "{0:ismatch(^k$):yes|no}", JsonString("K"),
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    Options("fold-capital-sharp-s", "{0:ismatch(^ẞ$):yes|no}", JsonString("ß"),
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    // `\0` is NUL in .NET; fancy-regex reads it as a back reference.
+    Add("nul-escape", @"{0:ismatch(^\\0$):yes|no}", JsonString("\0"));
+    // `\x00` is the spelling both engines agree on.
+    Add("hex-nul-escape", @"{0:ismatch(^\\x00$):yes|no}", JsonString("\0"));
+    // Class intersection, POSIX names and nesting, which .NET reads as
+    // literal characters.
+    Add("class-intersection", @"{0:ismatch(^[a&&b]+$):yes|no}", JsonString("ab"));
+    Add("class-posix-name", @"{0:ismatch(^[[\:alpha\:]]+$):yes|no}", JsonString("abc"));
+    Add("class-nested", @"{0:ismatch(^[a[bc]]+$):yes|no}", JsonString("abc"));
+    // An octal escape is the loud kind: fancy-regex refuses to compile it.
+    Add("octal-escape", @"{0:ismatch(^\\101$):yes|no}", JsonString("A"));
 }
 
 // ---------------------------------------------------------------------------
@@ -2769,8 +2912,16 @@ internal sealed record CaseSettings(
     RegexOptions RegexOptions = RegexOptions.None,
     char IsMatchSplitChar = '|',
     string IsMatchPlaceholderName = "m",
+    bool IsMatchCanAutoDetect = false,
     SubStringFormatter.SubStringOutOfRangeBehavior SubStringOutOfRangeBehavior =
         SubStringFormatter.SubStringOutOfRangeBehavior.ReturnEmptyString,
+    string SubStringNullDisplayString = "",
+    char SubStringSplitChar = ',',
+    bool SubStringCanAutoDetect = false,
+    char IsNullSplitChar = '|',
+    bool IsNullCanAutoDetect = false,
+    char ListSplitChar = '|',
+    bool ListCanAutoDetect = true,
     TemplateSet Templates = TemplateSet.None)
 {
     public static readonly CaseSettings Default = new();
@@ -2821,8 +2972,24 @@ internal sealed record CaseSettings(
             json["isMatchSplitChar"] = IsMatchSplitChar.ToString();
         if (IsMatchPlaceholderName != Default.IsMatchPlaceholderName)
             json["isMatchPlaceholderName"] = IsMatchPlaceholderName;
+        if (IsMatchCanAutoDetect != Default.IsMatchCanAutoDetect)
+            json["isMatchCanAutoDetect"] = IsMatchCanAutoDetect;
         if (SubStringOutOfRangeBehavior != Default.SubStringOutOfRangeBehavior)
             json["subStringOutOfRangeBehavior"] = SubStringOutOfRangeBehavior.ToString();
+        if (SubStringNullDisplayString != Default.SubStringNullDisplayString)
+            json["subStringNullDisplayString"] = SubStringNullDisplayString;
+        if (SubStringSplitChar != Default.SubStringSplitChar)
+            json["subStringSplitChar"] = SubStringSplitChar.ToString();
+        if (SubStringCanAutoDetect != Default.SubStringCanAutoDetect)
+            json["subStringCanAutoDetect"] = SubStringCanAutoDetect;
+        if (IsNullSplitChar != Default.IsNullSplitChar)
+            json["isNullSplitChar"] = IsNullSplitChar.ToString();
+        if (IsNullCanAutoDetect != Default.IsNullCanAutoDetect)
+            json["isNullCanAutoDetect"] = IsNullCanAutoDetect;
+        if (ListSplitChar != Default.ListSplitChar)
+            json["listSplitChar"] = ListSplitChar.ToString();
+        if (ListCanAutoDetect != Default.ListCanAutoDetect)
+            json["listCanAutoDetect"] = ListCanAutoDetect;
         if (Templates != Default.Templates)
             json["templates"] = Templates.ToString();
         return json;

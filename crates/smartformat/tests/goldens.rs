@@ -154,8 +154,37 @@ const SKIPPED: &[(&str, &str)] = &[
         "a custom numeric pattern as the item format is the documented custom-pattern non-goal; `D2` is the standard-specifier equivalent",
     ),
     (
+        "substr-astral-halves-rejoin",
+        SURROGATE_HALVES_REJOIN,
+    ),
+    (
+        "substr-astral-halves-rejoin-child-format",
+        SURROGATE_HALVES_REJOIN,
+    ),
+    (
         "ismatch-dollar-before-final-newline",
         "regex engines: .NET's `$` also matches before a final newline, where fancy-regex's does not (`\\z` agrees in both)",
+    ),
+    ("ismatch-astral-dot", REGEX_STRING_ELEMENT),
+    ("ismatch-astral-two-dots", REGEX_STRING_ELEMENT),
+    ("ismatch-astral-negated-class", REGEX_STRING_ELEMENT),
+    ("ismatch-astral-captured-group", REGEX_STRING_ELEMENT),
+    ("ismatch-word-letter-number", REGEX_WORD_CHARACTER),
+    ("ismatch-word-spacing-mark", REGEX_WORD_CHARACTER),
+    ("ismatch-word-boundary-letter-number", REGEX_WORD_CHARACTER),
+    ("ismatch-fold-long-s", REGEX_CASE_FOLDING),
+    ("ismatch-fold-final-sigma", REGEX_CASE_FOLDING),
+    ("ismatch-fold-deseret", REGEX_CASE_FOLDING),
+    (
+        "ismatch-nul-escape",
+        "regex engines: `\\0` is NUL in .NET and a back reference to group 0 in fancy-regex, which the pinned version compiles into a pattern matching nothing; write `\\x00`",
+    ),
+    ("ismatch-class-intersection", REGEX_CHARACTER_CLASS),
+    ("ismatch-class-posix-name", REGEX_CHARACTER_CLASS),
+    ("ismatch-class-nested", REGEX_CHARACTER_CLASS),
+    (
+        "ismatch-octal-escape",
+        "regex engines: .NET reads `\\101` as an octal escape and fancy-regex refuses to compile it, so the call fails loudly",
     ),
     (
         "template-error-inside",
@@ -172,6 +201,21 @@ const COLLECTION_TYPE_NAME: &str =
 
 const AR_SA_CALENDAR: &str =
     "ar-SA dates: .NET's default calendar for it is UmAlQura, and the port has no Hijri calendar";
+
+const SURROGATE_HALVES_REJOIN: &str =
+    "two halves of one surrogate pair, written next to each other: .NET holds each as a UTF-16 code unit and the pair re-forms, where a Rust String replaced each half already";
+
+const REGEX_STRING_ELEMENT: &str =
+    "regex engines: .NET matches over UTF-16 code units and fancy-regex over Unicode scalars, so an astral character is two elements there and one here";
+
+const REGEX_WORD_CHARACTER: &str =
+    "regex engines: .NET's `\\w` is [\\p{L}\\p{Mn}\\p{Nd}\\p{Pc}] and the regex crate's also covers Nl, Mc and Me, which moves `\\b` with it";
+
+const REGEX_CASE_FOLDING: &str =
+    "regex engines: IgnoreCase is Unicode simple case folding here and simple case mapping in .NET, which also never folds across a surrogate pair; CultureInvariant does not reconcile them";
+
+const REGEX_CHARACTER_CLASS: &str =
+    "regex engines: .NET has no class intersection, no POSIX class name and no nesting, so it reads `&&`, `[[:alpha:]]` and `[a[bc]]` as literal characters";
 
 #[test]
 fn goldens_match_smartformat_net() {
@@ -291,9 +335,11 @@ fn skip_reason(id: &str, case: &Json) -> Option<&'static str> {
     }
     // Without the plural formatter registered, its cases report "No suitable
     // Formatter could be found", and the auto-detection cases would be decided
-    // by the conditional formatter alone.
+    // by the conditional formatter alone. `list-autodetect-off` is one of
+    // those: turning the list formatter's auto-detection off is what hands its
+    // `|` format to the plural formatter in the first place.
     #[cfg(not(feature = "plural"))]
-    if id.contains("plural") || id.starts_with("autodetect-") {
+    if id.contains("plural") || id.starts_with("autodetect-") || id == "list-autodetect-off" {
         return Some("pluralization needs the \"plural\" feature");
     }
     #[cfg(not(feature = "time"))]
@@ -351,6 +397,9 @@ fn formatter_for(node: &Json) -> SmartFormatter {
                 "isMatchPlaceholderName" => {
                     extensions.is_match_placeholder_name = Some(text().to_owned());
                 }
+                "isMatchCanAutoDetect" => {
+                    extensions.is_match_can_auto_detect = value.as_bool();
+                }
                 "subStringOutOfRangeBehavior" => {
                     extensions.substring_out_of_range = Some(match text() {
                         "ReturnEmptyString" => SubStringOutOfRangeBehavior::ReturnEmptyString,
@@ -360,6 +409,27 @@ fn formatter_for(node: &Json) -> SmartFormatter {
                         "ThrowException" => SubStringOutOfRangeBehavior::ThrowException,
                         other => panic!("unknown out-of-range behavior {other}"),
                     });
+                }
+                "subStringNullDisplayString" => {
+                    extensions.substring_null_display = Some(text().to_owned());
+                }
+                "subStringSplitChar" => {
+                    extensions.substring_split_char = text().chars().next();
+                }
+                "subStringCanAutoDetect" => {
+                    extensions.substring_can_auto_detect = value.as_bool();
+                }
+                "isNullSplitChar" => {
+                    extensions.is_null_split_char = text().chars().next();
+                }
+                "isNullCanAutoDetect" => {
+                    extensions.is_null_can_auto_detect = value.as_bool();
+                }
+                "listSplitChar" => {
+                    extensions.list_split_char = text().chars().next();
+                }
+                "listCanAutoDetect" => {
+                    extensions.list_can_auto_detect = value.as_bool();
                 }
                 "templates" => extensions.templates = Some(text().to_owned()),
                 other => panic!("unknown setting {other}"),
@@ -399,7 +469,15 @@ struct Extensions {
     regex_options: Option<String>,
     is_match_split_char: Option<char>,
     is_match_placeholder_name: Option<String>,
+    is_match_can_auto_detect: Option<bool>,
     substring_out_of_range: Option<SubStringOutOfRangeBehavior>,
+    substring_null_display: Option<String>,
+    substring_split_char: Option<char>,
+    substring_can_auto_detect: Option<bool>,
+    is_null_split_char: Option<char>,
+    is_null_can_auto_detect: Option<bool>,
+    list_split_char: Option<char>,
+    list_can_auto_detect: Option<bool>,
     templates: Option<String>,
 }
 
@@ -408,7 +486,15 @@ impl Extensions {
         self.regex_options.is_some()
             || self.is_match_split_char.is_some()
             || self.is_match_placeholder_name.is_some()
+            || self.is_match_can_auto_detect.is_some()
             || self.substring_out_of_range.is_some()
+            || self.substring_null_display.is_some()
+            || self.substring_split_char.is_some()
+            || self.substring_can_auto_detect.is_some()
+            || self.is_null_split_char.is_some()
+            || self.is_null_can_auto_detect.is_some()
+            || self.list_split_char.is_some()
+            || self.list_can_auto_detect.is_some()
     }
 
     /// The default registry, with the configured extensions in place of the
@@ -418,7 +504,15 @@ impl Extensions {
     /// added in.
     fn registry(&self) -> FormatterRegistry {
         let mut registry = FormatterRegistry::empty();
-        registry.add(Box::new(ListFormatter::new()));
+        let mut list = ListFormatter::new();
+        if let Some(split_char) = self.list_split_char {
+            list.set_split_char(split_char)
+                .expect("a valid split character");
+        }
+        if let Some(can_auto_detect) = self.list_can_auto_detect {
+            list.set_can_auto_detect(can_auto_detect);
+        }
+        registry.add(Box::new(list));
         #[cfg(feature = "plural")]
         registry.add(Box::new(PluralLocalizationFormatter::new()));
         registry.add(Box::new(ConditionalFormatter::new()));
@@ -436,13 +530,36 @@ impl Extensions {
             if let Some(name) = &self.is_match_placeholder_name {
                 is_match.set_placeholder_name_for_matches(name.clone());
             }
+            if let Some(can_auto_detect) = self.is_match_can_auto_detect {
+                is_match.set_can_auto_detect(can_auto_detect);
+            }
             registry.add(Box::new(is_match));
         }
-        registry.add(Box::new(NullFormatter::new()));
+        let mut is_null = NullFormatter::new();
+        if let Some(split_char) = self.is_null_split_char {
+            is_null
+                .set_split_char(split_char)
+                .expect("a valid split character");
+        }
+        if let Some(can_auto_detect) = self.is_null_can_auto_detect {
+            is_null.set_can_auto_detect(can_auto_detect);
+        }
+        registry.add(Box::new(is_null));
         registry.add(Box::new(ChooseFormatter::new()));
         let mut substring = SubStringFormatter::new();
         if let Some(behavior) = self.substring_out_of_range {
             substring.set_out_of_range_behavior(behavior);
+        }
+        if let Some(null_display) = &self.substring_null_display {
+            substring.set_null_display_string(null_display.clone());
+        }
+        if let Some(split_char) = self.substring_split_char {
+            substring
+                .set_split_char(split_char)
+                .expect("a valid split character");
+        }
+        if let Some(can_auto_detect) = self.substring_can_auto_detect {
+            substring.set_can_auto_detect(can_auto_detect);
         }
         registry.add(Box::new(substring));
         registry.add(Box::new(DefaultFormatter));

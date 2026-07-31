@@ -86,8 +86,19 @@ exactly the same way, so they ride along in the same record and the same JSON ob
 | `regexOptions` | `IsMatchFormatter.RegexOptions` | a `[Flags]` name, or several comma-separated |
 | `isMatchSplitChar` | `IsMatchFormatter.SplitChar` | a one-character string |
 | `isMatchPlaceholderName` | `IsMatchFormatter.PlaceholderNameForMatches` | the name, default `m` |
+| `isMatchCanAutoDetect` | `IsMatchFormatter.CanAutoDetect` | `true` |
 | `subStringOutOfRangeBehavior` | `SubStringFormatter.OutOfRangeBehavior` | `ReturnStartIndexToEndOfString`, `ThrowException` |
+| `subStringNullDisplayString` | `SubStringFormatter.NullDisplayString` | the text a null value writes |
+| `subStringSplitChar` | `SubStringFormatter.SplitChar` | one of `|`, `,`, `~` |
+| `subStringCanAutoDetect` | `SubStringFormatter.CanAutoDetect` | `true` |
+| `isNullSplitChar` | `NullFormatter.SplitChar` | one of `|`, `,`, `~` |
+| `isNullCanAutoDetect` | `NullFormatter.CanAutoDetect` | `true` |
+| `listSplitChar` | `ListFormatter.SplitChar` | one of `|`, `,`, `~` |
+| `listCanAutoDetect` | `ListFormatter.CanAutoDetect` | `false` |
 | `templates` | which set `TemplateFormatter.Register` is called with | `Standard`, `WithEmptyName`, `CaseInsensitive`, `Simple` |
+
+`SplitChar` is validated by `Utilities.Validation.GetValidSplitCharOrThrow`, which accepts
+only `|`, `,` and `~`, so those are the only values a case may ask for.
 
 `TemplateFormatter` is not in `CreateDefaultSmartFormat`, so a case only has one when it
 names a template set. The four sets are built by `TemplateFixture` in `Program.cs` and
