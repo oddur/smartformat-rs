@@ -149,10 +149,12 @@ impl PluralLocalizationFormatter {
         // sequence that resolves to nothing fail at this point.
         let options = info.formatter_options()?.trim();
         if !options.is_empty() {
-            return Ok(ResolvedRule::Table(language_rule(
-                &two_letter_iso_language_name(options),
-                info,
-            )?));
+            // .NET resolves the name through `CultureInfo.GetCultureInfo`,
+            // which rejects a malformed one; the `CultureNotFoundException` it
+            // throws is wrapped in a `FormattingException` reported at index 0.
+            let language = named_culture_language(options)
+                .map_err(|message| info.formatting_error_at_utf16(&message, 0))?;
+            return Ok(ResolvedRule::Table(language_rule(&language, info)?));
         }
 
         if let Some(rule) = &self.custom_rule {
@@ -302,16 +304,90 @@ fn language_rule(language: &str, info: &FormattingInfo<'_>) -> Result<PluralRule
 /// `zh`, and a language with no two-letter code keeps its three-letter one
 /// (`kde`).
 ///
-/// .NET resolves the name through `CultureInfo.GetCultureInfo` first, which
-/// also maps a handful of legacy names to their modern language (`iw` to
-/// `he`); we take the subtag as written. Neither `iw` nor `he-IL` is a name a
-/// template is likely to spell.
+/// The names this is given come from the culture table, which holds the names
+/// .NET itself spelled, so they need no validation; a name out of a
+/// `plural(…)` option goes through [`named_culture_language`] instead.
 fn two_letter_iso_language_name(culture_name: &str) -> String {
     culture_name
-        .split('-')
+        .split(['-', '_'])
         .next()
         .unwrap_or_default()
         .to_ascii_lowercase()
+}
+
+/// The language of the culture a `plural(…)` option names, .NET
+/// `CultureInfo.GetCultureInfo(options).TwoLetterISOLanguageName`, or the
+/// message of the `CultureNotFoundException` .NET throws for a name it rejects.
+///
+/// .NET hands the name to ICU, which normalizes it and answers the language
+/// subtag: `en-US`, `EN`, `en_US` and `en-us-x-private` are all `en`, and a
+/// language with no two-letter code keeps its own (`kde`). We take the primary
+/// subtag, which agrees with .NET for every culture .NET knows — the primary
+/// subtag of every name `CultureInfo.GetCultures(AllCultures)` returns is its
+/// `TwoLetterISOLanguageName` (probed).
+///
+/// Two ICU behaviors we do not reproduce, both documented in DESIGN.md: a
+/// three-letter ISO 639-2 code that has a two-letter equivalent is mapped to it
+/// (`eng` is English in .NET, and unknown here), and `und` is the invariant
+/// culture, whose language is `iv`.
+fn named_culture_language(name: &str) -> Result<String, String> {
+    if is_valid_culture_name(name) {
+        Ok(two_letter_iso_language_name(name))
+    } else {
+        // .NET's `CultureNotFoundException.Message`. `CultureInfo.GetCultureInfo`
+        // looks the name up ASCII-lowercased, and quotes that spelling here.
+        Err(format!(
+            "Culture is not supported. (Parameter 'name')\n{} is an invalid culture identifier.",
+            name.to_ascii_lowercase()
+        ))
+    }
+}
+
+/// `CultureInfo.GetCultureInfo`'s longest accepted name, .NET
+/// `CultureData.LocaleNameMaxLength`.
+const LOCALE_NAME_MAX_LENGTH: usize = 85;
+
+/// ICU's longest accepted language subtag, `ULOC_LANG_CAPACITY` minus the
+/// terminator (probed: `aaaaaaaaaaa` resolves, `aaaaaaaaaaaa` does not).
+const LANGUAGE_SUBTAG_MAX_LENGTH: usize = 11;
+
+/// Whether .NET's `CultureInfo.GetCultureInfo` accepts a culture name, as far
+/// as a name in a `plural(…)` option can tell.
+///
+/// .NET checks the characters itself (`CultureData.IcuIsValidCultureName`:
+/// ASCII letters and digits, `-`, and at most one `_`) and leaves the rest to
+/// ICU. Probed against SmartFormat.NET 3.6.1 on .NET 10, ICU additionally
+/// rejects an empty subtag (`en-`, `en--US`, `_en`), a language subtag longer
+/// than [`LANGUAGE_SUBTAG_MAX_LENGTH`], and a name that is one character long
+/// (`a`, though `a-b` is accepted).
+fn is_valid_culture_name(name: &str) -> bool {
+    if name.is_empty() || name.len() > LOCALE_NAME_MAX_LENGTH {
+        return false;
+    }
+    if !name
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        return false;
+    }
+    if name.matches('_').count() > 1 {
+        return false;
+    }
+
+    let mut subtags = name.split(['-', '_']);
+    let language = subtags.next().unwrap_or_default();
+    if language.len() > LANGUAGE_SUBTAG_MAX_LENGTH {
+        return false;
+    }
+    let mut has_more = false;
+    for subtag in subtags {
+        has_more = true;
+        if subtag.is_empty() {
+            return false;
+        }
+    }
+    // A name of one character is a culture only with a subtag after it.
+    language.len() >= if has_more { 1 } else { 2 }
 }
 
 /// The number a value pluralizes by: a number as itself, a list by how many
@@ -898,6 +974,12 @@ mod tests {
 
     #[test]
     fn auto_detection_needs_more_than_one_word() {
+        // These run with the stripped registry of `smart()`, which holds this
+        // formatter and the default one. They pin what *this* formatter does
+        // with an unnamed format, not what the default registry renders: .NET
+        // sorts `ListFormatter` — which auto-detects as well — ahead of this
+        // one, so `{0:one|many}` on a list is a list there once M3 lands.
+        //
         // Two words and no formatter name: the plural formatter takes it.
         assert_eq!(format_in("en", "{0:one|many}", Value::Int(1)), "one");
         assert_eq!(format_in("en", "{0:one|many}", Value::Int(2)), "many");
@@ -1008,6 +1090,85 @@ mod tests {
                 (expected, 0),
                 "{value:?}"
             );
+        }
+    }
+
+    #[test]
+    fn a_named_culture_may_use_an_underscore() {
+        // .NET hands the name to ICU, which reads `en_US` as English —
+        // `CultureInfo.GetCultureInfo("en_US").TwoLetterISOLanguageName` is
+        // "en" (probed).
+        assert_eq!(
+            format_in("en", "{0:plural(ru_RU):a|b|c}", Value::Int(1)),
+            "a"
+        );
+        assert_eq!(format_in("ru", "{0:plural(en_US):a|b}", Value::Int(2)), "b");
+        assert_eq!(
+            format_in("en", "{0:plural(zh_Hans):all}", Value::Int(7)),
+            "all"
+        );
+    }
+
+    #[test]
+    fn a_malformed_culture_name_is_the_dotnet_culture_error() {
+        // .NET's `CultureInfo.GetCultureInfo` throws a
+        // `CultureNotFoundException`, which the formatter wraps in a
+        // `FormattingException` reported at index 0 — so this message carries
+        // the envelope, where the "no rule for this language" one does not.
+        // The names are the ones .NET rejects: an empty subtag, a character
+        // outside the ASCII alphanumerics, more than one underscore, a
+        // one-character name, and a language subtag of more than 11 characters.
+        let cases = [
+            ("en-", "en-"),
+            ("en--US", "en--us"),
+            ("-en", "-en"),
+            ("EN_", "en_"),
+            ("aa_bb_cc", "aa_bb_cc"),
+            ("@@", "@@"),
+            ("e n", "e n"),
+            ("ру", "ру"),
+            ("a", "a"),
+            ("aaaaaaaaaaaa", "aaaaaaaaaaaa"),
+        ];
+        for (name, quoted) in cases {
+            let template = format!("{{0:plural({name}):a|b}}");
+            let (message, position) = error_of(&template, Value::Int(1));
+            assert_eq!(
+                message,
+                envelope(
+                    &template,
+                    &format!(
+                        "Culture is not supported. (Parameter 'name')\n\
+                         {quoted} is an invalid culture identifier."
+                    ),
+                    0
+                ),
+                "{name}"
+            );
+            assert_eq!(position, 0, "{name}");
+        }
+
+        // A name .NET accepts but has no rule for is the other error, without
+        // the envelope — `a-b` and `1234` are cultures as far as ICU cares.
+        for (name, language) in [
+            ("a-b", "a"),
+            ("1234", "1234"),
+            ("aaaaaaaaaaa", "aaaaaaaaaaa"),
+        ] {
+            let template = format!("{{0:plural({name}):a|b}}");
+            let (message, _) = error_of(&template, Value::Int(1));
+            assert_eq!(
+                message,
+                format!(
+                    "IsoLangToDelegate not found for {language} (Parameter 'twoLetterIsoLanguageName')"
+                )
+            );
+        }
+
+        // And a long name whose language .NET does know renders.
+        for name in ["en-US-POSIX", "en-us-x-private", "en-Latn-US"] {
+            let template = format!("{{0:plural({name}):one|many}}");
+            assert_eq!(format_in("ru", &template, Value::Int(2)), "many", "{name}");
         }
     }
 
@@ -1124,6 +1285,20 @@ mod tests {
             format_in("en", template, Value::Int(10_000_000_000_000_001)),
             "c"
         );
+    }
+
+    #[test]
+    fn a_large_double_is_the_same_known_divergence() {
+        // `to_decimal` rounds to the 15 significant digits `Convert.ToDecimal`
+        // keeps, but the result goes back into an `f64`, which cannot hold the
+        // exact decimal above 2^53 either: 1e28 is 10000000000000000905969664
+        // as a double, so the `% 10` the Russian rule runs sees 4 ("few")
+        // where .NET's decimal sees 0 ("other", "c"). Probed against 3.6.1.
+        let template = "{0:plural(ru):a|b|c}";
+        assert_eq!(format_in("en", template, Value::Float(1e28)), "b");
+        assert_eq!(format_in("en", template, Value::Float(1e24)), "b");
+        // Below ~3.9e17 every double still has an exact `f64` decimal.
+        assert_eq!(format_in("en", template, Value::Float(1e17)), "c");
     }
 
     #[test]

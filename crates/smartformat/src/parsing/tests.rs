@@ -1122,6 +1122,43 @@ fn a_separator_written_as_an_escape_sequence_does_not_split() {
 }
 
 #[test]
+fn a_piece_resolves_the_escape_sequence_the_cut_truncated() {
+    // The `|` sits among the hex digits, so the sequence is invalid as parsed
+    // and each piece resolves what is left of it: `\u00` is a NUL character
+    // (.NET's `\u` takes fewer than four digits at the end of a slice) and the
+    // stray `4` joins the `1` after the separator. Probed against 3.6.1.
+    let format = format_of(r"{0:cond:\u00|41|c}");
+
+    let pieces = format.split('|');
+    assert_eq!(raws(&pieces), [r"\u00", "41", "c"]);
+    assert_eq!(pieces[0].literal_text(), "\0");
+    assert!(pieces[0].items.iter().all(|item| match item {
+        FormatItem::Literal(literal) => literal.escape_error.is_none(),
+        _ => false,
+    }));
+    assert_eq!(pieces[1].literal_text(), "41");
+}
+
+#[test]
+fn a_piece_keeps_an_escape_sequence_unresolved_when_the_parser_does() {
+    // With `convert_character_string_literals` off, neither the literal nor a
+    // slice of it resolves anything.
+    let settings = ParserSettings {
+        convert_character_string_literals: false,
+        ..ParserSettings::default()
+    };
+    let format = Parser::new(settings)
+        .parse(r"{0:cond:\u00|41|c}")
+        .expect("parses");
+    let FormatItem::Placeholder(placeholder) = &format.items[0] else {
+        panic!("expected a placeholder");
+    };
+    let pieces = placeholder.format.as_ref().expect("a format").split('|');
+
+    assert_eq!(pieces[0].literal_text(), r"\u00");
+}
+
+#[test]
 fn substring_takes_a_placeholder_whole_and_slices_a_literal() {
     let format = format_of("{0:cond:ab{1}cd}");
     // Byte offsets into the template: `b{1}c`.

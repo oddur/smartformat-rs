@@ -34,12 +34,14 @@ const NAME: &str = "choose";
 /// Chooses one of several formats by matching the value against a list of
 /// options, ported from .NET `ChooseFormatter`.
 ///
-/// The formatter is never auto-detected: a placeholder has to name it
-/// (.NET `CanAutoDetect = false`).
+/// A placeholder has to name the formatter unless
+/// [`set_can_auto_detect`](Self::set_can_auto_detect) turns auto-detection on
+/// (.NET `CanAutoDetect`, which defaults to `false` here as it does there).
 #[derive(Debug, Clone)]
 pub struct ChooseFormatter {
     name: String,
     split_char: char,
+    can_auto_detect: bool,
     case_sensitivity: CaseSensitivity,
 }
 
@@ -50,6 +52,7 @@ impl ChooseFormatter {
         Self {
             name: NAME.to_owned(),
             split_char: DEFAULT_SPLIT_CHAR,
+            can_auto_detect: false,
             case_sensitivity: CaseSensitivity::CaseSensitive,
         }
     }
@@ -73,6 +76,21 @@ impl ChooseFormatter {
     pub fn set_split_char(&mut self, split_char: char) -> Result<(), InvalidSplitChar> {
         self.split_char = super::valid_split_char(split_char)?;
         Ok(())
+    }
+
+    /// Whether a placeholder that names no formatter may be handled here.
+    ///
+    /// Unlike the other two `|`-splitting formatters this defaults to `false`,
+    /// as .NET's settable `ChooseFormatter.CanAutoDetect` does: `{0:(1|2):a|b}`
+    /// is not a `choose` unless the caller turns this on. With it on, the
+    /// formatter is consulted for an unnamed format like any other — after
+    /// `plural` and `cond`, which the default registry lists first.
+    pub fn can_auto_detect(&self) -> bool {
+        self.can_auto_detect
+    }
+
+    pub fn set_can_auto_detect(&mut self, can_auto_detect: bool) {
+        self.can_auto_detect = can_auto_detect;
     }
 
     /// Whether the option strings are matched case-sensitively. Defaults to
@@ -143,7 +161,7 @@ impl Formatter for ChooseFormatter {
     }
 
     fn can_auto_detect(&self) -> bool {
-        false
+        self.can_auto_detect
     }
 
     fn try_evaluate_format(&self, info: &mut FormattingInfo<'_>) -> Result<bool, Error> {
@@ -365,13 +383,38 @@ mod tests {
     }
 
     #[test]
-    fn is_never_auto_detected() {
+    fn is_not_auto_detected_by_default() {
         // Without a formatter name the choose formatter is skipped, and the
         // default formatter renders the value — a string ignores the
         // specifier. (.NET renders this template with whichever of its other
         // auto-detecting extensions takes it first, which we do not have
         // registered here.)
         assert_eq!(format("{0:(1|2):a|b}", Value::from("x")), "x");
+    }
+
+    #[test]
+    fn auto_detection_can_be_turned_on() {
+        // .NET's `CanAutoDetect` is a settable property, so a caller can have
+        // the formatter consulted for a placeholder that names none.
+        let mut formatter = ChooseFormatter::new();
+        formatter.set_can_auto_detect(true);
+        assert!(formatter.can_auto_detect());
+
+        let smart = smart_with(
+            SmartSettings {
+                format_error_action: ErrorAction::Error,
+                ..SmartSettings::default()
+            },
+            formatter,
+        );
+        // A placeholder with no formatter name has no options either — .NET
+        // parses `{0:(1|2):a|b}` as one format of three parts, not as options
+        // plus formats (probed) — so the one option is the empty string and
+        // the second format is the "else" branch.
+        let empty = args([Value::from("")]);
+        assert_eq!(smart.format("{0:a|b}", &empty).unwrap(), "a");
+        let other = args([Value::from("x")]);
+        assert_eq!(smart.format("{0:a|b}", &other).unwrap(), "b");
     }
 
     #[test]

@@ -108,6 +108,18 @@ const SKIPPED: &[(&str, &str)] = &[
         "plural-i64-beyond-double",
         "pluralization runs on f64 where .NET runs on decimal, so an integer above 2^53 loses the last digits the Russian rule looks at",
     ),
+    (
+        "plural-f64-beyond-double",
+        "pluralization runs on f64 where .NET runs on decimal, so a double above 2^53 loses the last digits the Russian rule looks at",
+    ),
+    (
+        "plural-option-iso-639-2",
+        "a three-letter ISO 639-2 language code is mapped to its two-letter equivalent by ICU; we take the culture name as written",
+    ),
+    (
+        "autodetect-list",
+        "ListFormatter sorts ahead of the plural formatter and auto-detects too, and it lands in M3",
+    ),
     // .NET's default calendar for ar-SA is UmAlQura; we render Gregorian
     // fields through ar-SA's Hijri month names. Every specifier that reads a
     // date field diverges; the time-only ones (`t`, `T`) do not and are
@@ -334,6 +346,8 @@ fn to_value(node: &Json) -> Value {
             // A 32-bit .NET int, which `Value` widens to i64 — the marker
             // exists only for the cases pinning that difference.
             Some(("$i32", text)) => Value::Int(text.parse::<i32>().expect("int literal").into()),
+            // A .NET ulong, which JSON cannot spell above 2^53.
+            Some(("$u64", text)) => Value::UInt(text.parse().expect("unsigned literal")),
             Some(("$f", text)) => Value::Float(match text {
                 "NaN" => f64::NAN,
                 "Infinity" => f64::INFINITY,

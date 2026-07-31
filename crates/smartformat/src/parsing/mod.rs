@@ -152,23 +152,31 @@ impl Format {
 
 /// The part of a literal between two byte offsets into the template.
 ///
-/// A slice that cuts an escape sequence in half keeps the characters that are
-/// left as they are. .NET resolves the escape sequences of the slice afresh,
-/// which for the sequence a split character normally occurs in — `\|`, whose
-/// left half is a lone `\` — has the same result. The two differ only when the
-/// split character sits among the hex digits of a `\uXXXX` sequence
-/// (`\u12|4`), where .NET resolves the truncated `\u12`; re-resolving here
-/// would need the parser settings, which a [`Format`] does not carry.
+/// The escape sequences of the slice are resolved afresh, as .NET resolves
+/// those of a `Format.Substring` slice: a slice that cuts one in half is
+/// resolved as the truncated sequence it now is, so the left half of
+/// `\u00|41` is `\u00`, which is a NUL character and not four characters of
+/// text. (.NET's `\u` accepts fewer than four hex digits at the end of a
+/// slice.) The common case, a split character inside `\|`, is a lone `\` on
+/// the left, which resolves to itself either way.
 fn slice_literal(literal: &LiteralText, start: usize, end: usize) -> LiteralText {
     if start == literal.start && end == literal.end {
         return literal.clone();
     }
 
     let raw = slice(&literal.raw, literal.start, start, end);
+    let convert = literal.convert_character_literals;
+    let chars: Vec<char> = raw.chars().collect();
+    let (text, escape_error) = match escaped_literal::resolve_literal(&chars, convert) {
+        Ok(text) => (text, None),
+        Err(message) => (raw.clone(), Some(message)),
+    };
+
     LiteralText {
-        text: raw.clone(),
+        text,
         raw,
-        escape_error: None,
+        escape_error,
+        convert_character_literals: convert,
         start,
         end,
     }
@@ -250,6 +258,13 @@ pub struct LiteralText {
     /// rendered — which a format that a formatter reads as a specifier, such
     /// as `{0:0.00}`, never is.
     pub escape_error: Option<String>,
+    /// Whether the escape sequences in [`raw`](Self::raw) are resolved at all,
+    /// the parser's
+    /// [`convert_character_string_literals`](ParserSettings::convert_character_string_literals)
+    /// setting. .NET reads the setting off the item every time it resolves
+    /// (`LiteralText.AsSpan()`), so a slice of this literal — one of the pieces
+    /// [`Format::split`](Format::split) cuts — is resolved the same way.
+    pub convert_character_literals: bool,
     /// Byte offset of the first character in the input.
     pub start: usize,
     /// Byte offset one past the last character in the input.

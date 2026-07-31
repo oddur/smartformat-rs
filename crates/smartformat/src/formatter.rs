@@ -86,7 +86,9 @@ impl FormatterRegistry {
     ///
     /// The order is observable: `PluralLocalizationFormatter` and
     /// `ConditionalFormatter` both auto-detect a `|`-separated format, so the
-    /// first of the two decides what `{0:a|b}` means for a number.
+    /// first of the two decides what `{0:a|b}` means for a number. So does
+    /// `ListFormatter`, whose rank puts it *first* of all — `{0:a|b}` on a list
+    /// is a list in .NET, not a plural — so M3 has to insert it at index 0.
     pub fn new() -> Self {
         let formatters: Vec<Box<dyn Formatter>> = vec![
             #[cfg(feature = "plural")]

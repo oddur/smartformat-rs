@@ -12,7 +12,7 @@ use super::chars::{
     FORMATTER_OPTIONS_BEGIN_CHAR, FORMATTER_OPTIONS_END_CHAR, FORMAT_OPTIONS_TERMINATOR_CHARS,
     LIST_INDEX_END_CHAR, NULLABLE_OPERATOR, PLACEHOLDER_BEGIN_CHAR, PLACEHOLDER_END_CHAR,
 };
-use super::escaped_literal::{self, try_get_char, unescape};
+use super::escaped_literal::{self, resolve_literal, try_get_char, unescape};
 use super::settings::{CharSet, ParserSettings};
 use super::{Format, FormatItem, LiteralText, Placeholder, Selector};
 use crate::error::{Error, ParseError};
@@ -276,25 +276,7 @@ impl<'a> State<'a> {
         let raw: String = self.chars[start..end].iter().collect();
         let convert = self.parser.settings.convert_character_string_literals;
 
-        let resolved = {
-            let span = &self.chars[start..end];
-            if span.is_empty() {
-                Ok(String::new())
-            } else if convert && span[0] == CHAR_LITERAL_ESCAPE_CHAR {
-                unescape(span, false, true)
-            } else if !convert
-                && span.len() == 2
-                && span[0] == span[1]
-                && span[0] == CHAR_LITERAL_ESCAPE_CHAR
-            {
-                // Special case: the escape character escaping itself.
-                Ok(CHAR_LITERAL_ESCAPE_CHAR.to_string())
-            } else {
-                Ok(raw.clone())
-            }
-        };
-
-        let (text, escape_error) = match resolved {
+        let (text, escape_error) = match resolve_literal(&self.chars[start..end], convert) {
             Ok(text) => (text, None),
             Err(message) => (raw.clone(), Some(message)),
         };
@@ -303,6 +285,7 @@ impl<'a> State<'a> {
             text,
             raw,
             escape_error,
+            convert_character_literals: convert,
             start: self.byte(start),
             end: self.byte(end),
         }
@@ -346,6 +329,8 @@ impl<'a> State<'a> {
             text: brace.clone(),
             raw: brace,
             escape_error: None,
+            // Text the parser made up rather than read: nothing to resolve.
+            convert_character_literals: false,
             start: self.byte(self.current),
             end: self.byte(self.current + 1),
         }));
@@ -815,6 +800,7 @@ impl<'a> State<'a> {
                         text: message.clone(),
                         raw: message.clone(),
                         escape_error: None,
+                        convert_character_literals: false,
                         start: 0,
                         end,
                     })],
@@ -871,6 +857,7 @@ fn replace_erroneous_placeholders(format: &mut Format, issue_positions: &[usize]
                 text: String::new(),
                 raw: String::new(),
                 escape_error: None,
+                convert_character_literals: false,
                 start: placeholder.start,
                 end: placeholder.start,
             }
@@ -879,6 +866,8 @@ fn replace_erroneous_placeholders(format: &mut Format, issue_positions: &[usize]
                 text: placeholder.raw.clone(),
                 raw: placeholder.raw.clone(),
                 escape_error: None,
+                // The tokens are put back as written, not resolved.
+                convert_character_literals: false,
                 start: placeholder.start,
                 end: placeholder.end,
             }

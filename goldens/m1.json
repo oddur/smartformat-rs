@@ -12699,6 +12699,149 @@
       }
     },
     {
+      "id": "plural-option-underscore-ru",
+      "template": "{0:plural(ru_RU):a|b|c}",
+      "args": [
+        1
+      ],
+      "culture": "",
+      "expected": {
+        "result": "a"
+      }
+    },
+    {
+      "id": "plural-option-underscore-en",
+      "template": "{0:plural(en_US):one|many}",
+      "args": [
+        2
+      ],
+      "culture": "ru",
+      "expected": {
+        "result": "many"
+      }
+    },
+    {
+      "id": "plural-option-long-name",
+      "template": "{0:plural(en-us-x-private):one|many}",
+      "args": [
+        2
+      ],
+      "culture": "ru",
+      "expected": {
+        "result": "many"
+      }
+    },
+    {
+      "id": "plural-err-culture-name-trailing-dash",
+      "template": "{0:plural(en-):a|b}",
+      "args": [
+        1
+      ],
+      "culture": "en-US",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "plural-err-culture-name-double-dash",
+      "template": "{0:plural(en--US):a|b}",
+      "args": [
+        1
+      ],
+      "culture": "en-US",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "plural-err-culture-name-leading-dash",
+      "template": "{0:plural(-en):a|b}",
+      "args": [
+        1
+      ],
+      "culture": "en-US",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "plural-err-culture-name-trailing-underscore",
+      "template": "{0:plural(EN_):a|b}",
+      "args": [
+        1
+      ],
+      "culture": "en-US",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "plural-err-culture-name-two-underscores",
+      "template": "{0:plural(aa_bb_cc):a|b}",
+      "args": [
+        1
+      ],
+      "culture": "en-US",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "plural-err-culture-name-punctuation",
+      "template": "{0:plural(@@):a|b}",
+      "args": [
+        1
+      ],
+      "culture": "en-US",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "plural-err-culture-name-space",
+      "template": "{0:plural(e n):a|b}",
+      "args": [
+        1
+      ],
+      "culture": "en-US",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "plural-err-culture-name-non-ascii",
+      "template": "{0:plural(ру):a|b}",
+      "args": [
+        1
+      ],
+      "culture": "en-US",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "plural-err-culture-name-one-character",
+      "template": "{0:plural(a):a|b}",
+      "args": [
+        1
+      ],
+      "culture": "en-US",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "plural-err-culture-name-long-language",
+      "template": "{0:plural(aaaaaaaaaaaa):a|b}",
+      "args": [
+        1
+      ],
+      "culture": "en-US",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
       "id": "plural-err-unknown-language",
       "template": "{0:plural(xx):a|b}",
       "args": [
@@ -12743,6 +12886,17 @@
       }
     },
     {
+      "id": "plural-sliced-unicode-escape",
+      "template": "{0:plural:\\u00|41}",
+      "args": [
+        1
+      ],
+      "culture": "en-US",
+      "expected": {
+        "result": "\u0000"
+      }
+    },
+    {
       "id": "plural-i64-beyond-double",
       "template": "{0:plural(ru):a|b|c}",
       "args": [
@@ -12751,6 +12905,28 @@
       "culture": "en-US",
       "expected": {
         "result": "a"
+      }
+    },
+    {
+      "id": "plural-f64-beyond-double",
+      "template": "{0:plural(ru):a|b|c}",
+      "args": [
+        1e28
+      ],
+      "culture": "en-US",
+      "expected": {
+        "result": "c"
+      }
+    },
+    {
+      "id": "plural-option-iso-639-2",
+      "template": "{0:plural(eng):one|many}",
+      "args": [
+        2
+      ],
+      "culture": "ru",
+      "expected": {
+        "result": "many"
       }
     },
     {
@@ -13303,6 +13479,42 @@
       }
     },
     {
+      "id": "choose-sliced-unicode-escape",
+      "template": "{0:choose(1|2):\\u00|41}",
+      "args": [
+        1
+      ],
+      "culture": "",
+      "expected": {
+        "result": "\u0000"
+      }
+    },
+    {
+      "id": "choose-sliced-unicode-escape-second",
+      "template": "{0:choose(1|2):\\u00|41}",
+      "args": [
+        2
+      ],
+      "culture": "",
+      "expected": {
+        "result": "41"
+      }
+    },
+    {
+      "id": "choose-case-insensitive-settings",
+      "template": "{0:choose(string|STRING):one|two|default}",
+      "args": [
+        "String"
+      ],
+      "culture": "",
+      "settings": {
+        "caseSensitivity": "CaseInsensitive"
+      },
+      "expected": {
+        "result": "default"
+      }
+    },
+    {
       "id": "choose-err-no-match",
       "template": "{0:choose(1|2):1|2}",
       "args": [
@@ -13360,6 +13572,17 @@
     {
       "id": "choose-err-too-many-formats",
       "template": "{0:choose(1|2):1|2|3|4}",
+      "args": [
+        1
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "choose-err-short-name",
+      "template": "{0:c(1|2):a|b}",
       "args": [
         1
       ],
@@ -14277,6 +14500,87 @@
       }
     },
     {
+      "id": "cond-sliced-unicode-escape",
+      "template": "{0:cond:\\u00|41|c}",
+      "args": [
+        0
+      ],
+      "culture": "",
+      "expected": {
+        "result": "\u0000"
+      }
+    },
+    {
+      "id": "cond-sliced-unicode-escape-second",
+      "template": "{0:cond:\\u00|41|c}",
+      "args": [
+        1
+      ],
+      "culture": "",
+      "expected": {
+        "result": "41"
+      }
+    },
+    {
+      "id": "cond-sliced-unicode-escape-last",
+      "template": "{0:cond:z|\\u00|41}",
+      "args": [
+        1
+      ],
+      "culture": "",
+      "expected": {
+        "result": "\u0000"
+      }
+    },
+    {
+      "id": "cond-alignment-right",
+      "template": "[{0,10:cond:a|b}]",
+      "args": [
+        0
+      ],
+      "culture": "",
+      "expected": {
+        "result": "[         a]"
+      }
+    },
+    {
+      "id": "cond-alignment-left",
+      "template": "[{0,-10:cond:a|b}]",
+      "args": [
+        1
+      ],
+      "culture": "",
+      "expected": {
+        "result": "[b         ]"
+      }
+    },
+    {
+      "id": "cond-ulong-max-overflow",
+      "template": "{0:cond:a|b}",
+      "args": [
+        {
+          "$u64": "18446744073709551615"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "cond-ulong-max-condition",
+      "template": "{0:cond:>1?a|b}",
+      "args": [
+        {
+          "$u64": "18446744073709551615"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "a"
+      }
+    },
+    {
       "id": "cond-err-one-part",
       "template": "{0:cond:Yes}",
       "args": [
@@ -14720,6 +15024,20 @@
       "culture": "en-US",
       "expected": {
         "result": "zero"
+      }
+    },
+    {
+      "id": "autodetect-list",
+      "template": "{0:one|many}",
+      "args": [
+        [
+          "x",
+          "y"
+        ]
+      ],
+      "culture": "en-US",
+      "expected": {
+        "result": "xmanyy"
       }
     },
     {
@@ -21758,6 +22076,34 @@
       }
     },
     {
+      "id": "errtext-choose-no-match-astral-offset",
+      "template": "\uD83D\uDE00{0:choose(1|2):1|2}",
+      "args": [
+        99
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "\uD83D\uDE00Error parsing format string: \"99\" is not a valid choice, and a \"default\" choice was not supplied at 17\n\uD83D\uDE00{0:choose(1|2):1|2}\n-----------------^"
+      }
+    },
+    {
+      "id": "errtext-choose-unknown-name",
+      "template": "{0:c(1|2):a|b}",
+      "args": [
+        1
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "Error parsing format string: No suitable Formatter could be found at 0\n{0:c(1|2):a|b}\n^"
+      }
+    },
+    {
       "id": "errtext-choose-one-format",
       "template": "{0:choose(1|2):single}",
       "args": [
@@ -21884,6 +22230,22 @@
       }
     },
     {
+      "id": "errtext-cond-ulong-overflow",
+      "template": "{0:cond:a|b}",
+      "args": [
+        {
+          "$u64": "18446744073709551615"
+        }
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "Value was either too large or too small for an Int32."
+      }
+    },
+    {
       "id": "errtext-plural-one-word",
       "template": "{0:plural:One}",
       "args": [
@@ -21979,6 +22341,34 @@
       },
       "expected": {
         "result": "IsoLangToDelegate not found for xx (Parameter 'twoLetterIsoLanguageName')"
+      }
+    },
+    {
+      "id": "errtext-plural-invalid-culture-name",
+      "template": "{0:plural(en-):a|b}",
+      "args": [
+        1
+      ],
+      "culture": "en-US",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "Error parsing format string: Culture is not supported. (Parameter 'name')\nen- is an invalid culture identifier. at 0\n{0:plural(en-):a|b}\n^"
+      }
+    },
+    {
+      "id": "errtext-plural-invalid-culture-name-upper",
+      "template": "{0:plural(EN--US):a|b}",
+      "args": [
+        1
+      ],
+      "culture": "en-US",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "Error parsing format string: Culture is not supported. (Parameter 'name')\nen--us is an invalid culture identifier. at 0\n{0:plural(EN--US):a|b}\n^"
       }
     },
     {

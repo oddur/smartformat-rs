@@ -209,14 +209,38 @@ answer is not reproducible.
   *Pins:* the ten `culture-date*-ar-sa-*` cases and
   `fmt::date::tests::cultures::ar_sa_dates_diverge_because_its_calendar_is_not_gregorian`.
 - **Pluralization runs on `f64`, .NET's on `decimal`.** `PluralRule` takes an
-  `f64`, so an integer above 2^53 loses the low digits the rules look at:
-  `{0:plural(ru):a|b|c}` with `10000000000000001` is `a` in .NET (its exact
-  decimal ends in 1) and `c` here. Values a `decimal` cannot hold at all —
-  non-finite, or `|v| >= 2^96` — fail on both sides, and `to_decimal` reproduces
-  `Convert.ToDecimal`'s 15-significant-digit rounding, so the ordinary cases
-  agree.
-  *Pins:* `plural-i64-beyond-double` and
-  `extensions::plural::tests::an_integer_beyond_the_precision_of_a_double_is_a_known_divergence`.
+  `f64`, so *any* value above 2^53 loses the low digits the rules look at —
+  an integer or a double alike, because `to_decimal` rounds to the 15
+  significant digits `Convert.ToDecimal` keeps but puts the result back into an
+  `f64`, which cannot hold that decimal exactly. `{0:plural(ru):a|b|c}` with
+  `10000000000000001` is `a` in .NET (its exact decimal ends in 1) and `c`
+  here; with the double `1e28` it is `c` in .NET (10^28 ends in 0) and `b` here
+  (the double is 10000000000000000905969664, whose last digit is 4). Below
+  ~3.9e17 every double still round-trips, so the ordinary cases agree, and
+  values a `decimal` cannot hold at all — non-finite, or `|v| >= 2^96` — fail on
+  both sides.
+  *Pins:* `plural-i64-beyond-double`, `plural-f64-beyond-double`,
+  `extensions::plural::tests::an_integer_beyond_the_precision_of_a_double_is_a_known_divergence`
+  and `…::a_large_double_is_the_same_known_divergence`.
+- **A `plural(…)` culture name is validated, not resolved.** .NET hands the
+  name to `CultureInfo.GetCultureInfo` and reads `TwoLetterISOLanguageName` off
+  the result; we validate the name the way ICU does (ASCII alphanumerics, `-`,
+  at most one `_`, no empty subtag, a language subtag of 1–11 characters and at
+  least 2 when it is the whole name) and take its primary subtag, which is the
+  `TwoLetterISOLanguageName` of every culture .NET knows. A rejected name
+  reproduces the `CultureNotFoundException` message .NET wraps at index 0 —
+  text that belongs to the *runtime*, not to SmartFormat, so a .NET version
+  that rewords it moves the pin. Three ICU behaviors are out of reach: a
+  three-letter ISO 639-2 code with a two-letter equivalent (`eng` is English in
+  .NET, unknown here), `und` (the invariant culture, whose language is `iv`),
+  and a name with an underscore and more than two subtags (`en_US_POSIX`, which
+  .NET rejects and we read as `en`).
+  *Pins:* `plural-option-underscore-ru`, `plural-option-underscore-en`,
+  `plural-option-long-name`, the ten `plural-err-culture-name-*` cases,
+  `errtext-plural-invalid-culture-name`,
+  `errtext-plural-invalid-culture-name-upper`, `plural-option-iso-639-2` (the
+  divergence, skipped) and
+  `extensions::plural::tests::a_malformed_culture_name_is_the_dotnet_culture_error`.
 - **`choose` compares its options ordinally.** .NET uses
   `culture.CompareInfo.Compare`, which ignores collation-ignorable characters:
   the value `a\u{ad}b` (soft hyphen) matches the option `ab`, and the empty
@@ -226,10 +250,18 @@ answer is not reproducible.
   `culture-fmt-choose-soft-hyphen-option`.
 - **`choose` stringifies the value with the culture of the call.** .NET calls
   `CurrentValue.ToString()`, which ignores the `IFormatProvider` passed to
-  `Format()` and uses the *thread* culture, so `{0:choose(1.5|2.5):a|b}` in .NET
-  depends on the machine's locale. We use the culture of the call. There is no
-  golden, because .NET's own answer is not reproducible across machines; the
-  goldens deliberately hold no float or decimal `choose` options.
+  `Format()` and uses the *thread* culture, so what an option is compared
+  against depends on the machine's locale. We use the culture of the call.
+  This covers *any* value whose `ToString` reads culture data, not just floats:
+  a negative integer does too, because the negative sign is culture data —
+  `{0:choose(-42):yes|no}` on `-42` under `sv` is `no` here (sv renders
+  `−42` with U+2212) and, on a machine whose thread culture uses a plain
+  hyphen, `yes` in .NET. It bites the invariant call culture as well: with a
+  German thread culture `{0:choose(1.5|2):a|b|c}` on `1.5` is `c` in .NET and
+  `a` here. There is no golden, because .NET's own answer is not reproducible
+  across machines; the goldens deliberately hold only `choose` options whose
+  value renders the same under every culture — strings, bools, null and
+  non-negative integers.
 - **`cond` has no `TimeSpan`, enum or `char` branch.** `Value` has no duration
   or enum variant, so .NET's `case TimeSpan` (Negative/Zero/Positive) and its
   enum-name conditions have no counterpart and their .NET tests are not ported.
@@ -281,6 +313,16 @@ version the goldens are generated with.
 
 ## Deferred, not divergent
 
+- **`ListFormatter`'s place in the registry.** .NET's
+  `CreateDefaultSmartFormat` sorts to `list, plural, cond, ismatch, isnull,
+  choose, substr, d`, and `ListFormatter.CanAutoDetect` is `true`, so it claims
+  a `|`-separated format on an `IEnumerable` before the plural formatter sees
+  it: `{0:one|many}` on `["x","y"]` is `xmanyy` in .NET (the first part formats
+  each item, the second is the spacer) and `many` here. M3 adds the formatter
+  **at index 0**, which restores .NET's answer; the auto-detection tests in
+  `extensions::plural::tests` run with a stripped registry and pin this
+  formatter rather than the default order.
+  *Pin:* `autodetect-list` (skipped until M3).
 - **The `{Index}` selector.** In .NET this is `ListFormatter`'s `ISource` role
   (`Extensions/ListFormatter.cs`, `selectorIsIndex` plus the static
   `CollectionIndex`), not `DefaultSource`, so it lands with the `list` formatter

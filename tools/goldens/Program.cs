@@ -1001,14 +1001,41 @@ static void PluralCases(List<GoldenCase> cases)
     cases.Add(new GoldenCase("plural-err-bool", "{0:plural:One|Two}", "[false]", Culture: "en-US"));
     cases.Add(new GoldenCase("plural-err-null", "{0:plural:One|Two}", "[null]", Culture: "en-US"));
     cases.Add(new GoldenCase("plural-err-map", "{0:plural:One|Two}", """{"a":1}""", Culture: "en-US"));
+    // A culture name goes through CultureInfo.GetCultureInfo, so `_` separates
+    // subtags just like `-`, and a malformed name is a CultureNotFoundException
+    // wrapped in a FormattingException at index 0.
+    cases.Add(new GoldenCase("plural-option-underscore-ru", "{0:plural(ru_RU):a|b|c}", "[1]"));
+    cases.Add(new GoldenCase("plural-option-underscore-en", "{0:plural(en_US):one|many}", "[2]", Culture: "ru"));
+    cases.Add(new GoldenCase("plural-option-long-name", "{0:plural(en-us-x-private):one|many}", "[2]", Culture: "ru"));
+    foreach (var (slug, name) in new (string, string)[]
+             {
+                 ("trailing-dash", "en-"), ("double-dash", "en--US"), ("leading-dash", "-en"),
+                 ("trailing-underscore", "EN_"), ("two-underscores", "aa_bb_cc"),
+                 ("punctuation", "@@"), ("space", "e n"), ("non-ascii", "ру"),
+                 ("one-character", "a"), ("long-language", "aaaaaaaaaaaa"),
+             })
+        cases.Add(new GoldenCase(
+            $"plural-err-culture-name-{slug}", "{0:plural(" + name + "):a|b}", "[1]", Culture: "en-US"));
+
     cases.Add(new GoldenCase("plural-err-unknown-language", "{0:plural(xx):a|b}", "[1]", Culture: "en-US"));
     cases.Add(new GoldenCase("plural-err-language-without-rule", "{0:plural(hy):a|b}", "[1]", Culture: "en-US"));
     cases.Add(new GoldenCase("plural-err-short-name", "{0:p:one|many}", "[2]", Culture: "en-US"));
     cases.Add(new GoldenCase("plural-err-upper-name", "{0:PLURAL:one|many}", "[2]", Culture: "en-US"));
 
+    // A split character among the hex digits of a `\uXXXX` sequence: .NET
+    // resolves each piece of the split afresh, so the truncated `\u00` is a
+    // NUL character and the stray `4` joins the `1` after the separator.
+    cases.Add(new GoldenCase("plural-sliced-unicode-escape", @"{0:plural:\u00|41}", "[1]", Culture: "en-US"));
+
     // Divergences, held here with .NET's answer and skipped by the Rust runner.
     cases.Add(new GoldenCase(
         "plural-i64-beyond-double", "{0:plural(ru):a|b|c}", "[10000000000000001]", Culture: "en-US"));
+    // The same loss of precision for a double: 1e28 is not 10^28 as an f64.
+    cases.Add(new GoldenCase(
+        "plural-f64-beyond-double", "{0:plural(ru):a|b|c}", "[1e28]", Culture: "en-US"));
+    // ICU maps a three-letter ISO 639-2 code to its two-letter equivalent, so
+    // this is English in .NET; we take the name as written and have no rule.
+    cases.Add(new GoldenCase("plural-option-iso-639-2", "{0:plural(eng):one|many}", "[2]", Culture: "ru"));
     cases.Add(new GoldenCase("plural-bare-name", "{0:plural}", "[2]", Culture: "en-US"));
 }
 
@@ -1093,6 +1120,16 @@ static void ChooseCases(List<GoldenCase> cases)
     Add("alignment-right", "[{0,10:choose(1|2):one|two}]", "[1]");
     Add("alignment-left", "[{0,-6:choose(1|2):one|two}]", "[2]");
 
+    // A split character among the hex digits of a `\uXXXX` sequence.
+    Add("sliced-unicode-escape", @"{0:choose(1|2):\u00|41}", "[1]");
+    Add("sliced-unicode-escape-second", @"{0:choose(1|2):\u00|41}", "[2]");
+
+    // The formatter's own case sensitivity wins over the settings: .NET picks
+    // `settings == CaseSensitivity ? settings : CaseSensitivity`, which is
+    // always the formatter's own, so this stays case-sensitive.
+    Add("case-insensitive-settings", "{0:choose(string|STRING):one|two|default}", @"[""String""]",
+        new CaseSettings(CaseSensitivity: CaseSensitivityType.CaseInsensitive));
+
     // Errors.
     Add("err-no-match", "{0:choose(1|2):1|2}", "[99]");
     Add("err-one-format", "{0:choose(1|2):1}", "[1]");
@@ -1100,6 +1137,9 @@ static void ChooseCases(List<GoldenCase> cases)
     Add("err-too-few-formats", "{0:choose(1|2|3):1|2}", "[1]");
     Add("err-too-many-formats-one-choice", "{0:choose(1):1|2|3}", "[1]");
     Add("err-too-many-formats", "{0:choose(1|2):1|2|3|4}", "[1]");
+    // 3.6.1 dropped the aliases the obsolete `Names` property once held, so
+    // no formatter answers to "c".
+    Add("err-short-name", "{0:c(1|2):a|b}", "[1]");
 
     // Error actions that still produce a result.
     Add("err-no-match-ignored", "x{0:choose(1|2):1|2}y", "[99]",
@@ -1224,6 +1264,20 @@ static void ConditionalCases(List<GoldenCase> cases)
     Add("nested-placeholder-one", "{0:cond:{1}|c}", @"[1,""N""]");
     Add("nested-value-in-condition", "{0:cond:>0?[{}]|c}", "[1]");
     Add("escaped-split-char", @"{0:cond:a\|b|c}", "[0]");
+    // A split character among the hex digits of a `\uXXXX` sequence: each
+    // piece resolves what is left of the sequence, so `\u00` is a NUL.
+    Add("sliced-unicode-escape", @"{0:cond:\u00|41|c}", "[0]");
+    Add("sliced-unicode-escape-second", @"{0:cond:\u00|41|c}", "[1]");
+    Add("sliced-unicode-escape-last", @"{0:cond:z|\u00|41}", "[1]");
+
+    // Alignment, as `choose` has.
+    Add("alignment-right", "[{0,10:cond:a|b}]", "[0]");
+    Add("alignment-left", "[{0,-10:cond:a|b}]", "[1]");
+
+    // A 64-bit unsigned value: the bucket index casts to Int32 and overflows,
+    // but a condition is compared as a decimal and returns before the cast.
+    Add("ulong-max-overflow", "{0:cond:a|b}", JsonUlongMax());
+    Add("ulong-max-condition", "{0:cond:>1?a|b}", JsonUlongMax());
 
     // Errors.
     Add("err-one-part", "{0:cond:Yes}", "[1]");
@@ -1272,6 +1326,12 @@ static void AutoDetectCases(List<GoldenCase> cases)
     cases.Add(new GoldenCase("autodetect-empty-name", "{0::a|b}", "[1]", Culture: "en-US"));
     // One part is not enough to auto-detect either formatter.
     cases.Add(new GoldenCase("autodetect-single-part", "{0:zero}", "[0]", Culture: "en-US"));
+
+    // ListFormatter sorts ahead of both and auto-detects as well, so on a list
+    // .NET renders the items with the first part and the second as the spacer.
+    // It lands in M3; until then the Rust runner skips this case.
+    cases.Add(new GoldenCase(
+        "autodetect-list", "{0:one|many}", @"[[""x"",""y""]]", Culture: "en-US"));
 }
 
 // ---------------------------------------------------------------------------
@@ -1444,9 +1504,10 @@ static void CultureFormatterCases(List<GoldenCase> cases)
         "{0:cond:<=0.25?below|above}", "[0.2]", Culture: "de-DE"));
 
     // Choose compares the value's own string form against the options. .NET
-    // renders it with the *thread* culture and compares with the call's
-    // CompareInfo, so only locale-stable values (integers, strings, bools,
-    // null) belong here.
+    // renders it with the *thread* culture, so only a value whose ToString is
+    // the same under every culture belongs here: strings, bools, null, and
+    // non-negative integers — a *negative* integer is not one of them, because
+    // the negative sign is culture data (sv, fi and nb use U+2212).
     cases.Add(new GoldenCase(
         "culture-fmt-choose-int", "{0:choose(1|2):eins|zwei|sonst}", "[2]", Culture: "de-DE"));
     cases.Add(new GoldenCase(
@@ -1493,6 +1554,10 @@ static void FormatterErrorTextCases(List<GoldenCase> cases)
     Add("choose-too-few-formats", "{0:choose(1|2|3):1|2}", "[1]");
     Add("choose-too-many-formats", "{0:choose(1):1|2|3}", "[1]");
     Add("choose-no-format", "{0:choose(1|2)}", "[1]");
+    // A prefix outside the BMP: the index and the caret line count UTF-16 code
+    // units, so the emoji counts twice.
+    Add("choose-no-match-astral-offset", "\U0001F600{0:choose(1|2):1|2}", "[99]");
+    Add("choose-unknown-name", "{0:c(1|2):a|b}", "[1]");
     Add("choose-one-format", "{0:choose(1|2):single}", "[1]");
 
     // ConditionalFormatter.
@@ -1504,6 +1569,7 @@ static void FormatterErrorTextCases(List<GoldenCase> cases)
     Add("cond-bad-condition-value", "{0:cond:>5.5.5?a|b}", "[6]");
     Add("cond-condition-too-large", "{0:cond:>99999999999999999999999999999999?a|b}", "[6]");
     Add("cond-unknown-name", "{0:conditional:a|b}", "[1]");
+    Add("cond-ulong-overflow", "{0:cond:a|b}", JsonUlongMax());
 
     // PluralLocalizationFormatter.
     Add("plural-one-word", "{0:plural:One}", "[1]", "en-US");
@@ -1513,6 +1579,11 @@ static void FormatterErrorTextCases(List<GoldenCase> cases)
     Add("plural-null-value", "{0:plural:One|Two}", "[null]", "en-US");
     Add("plural-bool-value", "{0:plural:One|Two}", "[false]", "en-US");
     Add("plural-unknown-language", "{0:plural(xx):a|b}", "[1]", "en-US");
+    // The text of the CultureNotFoundException the runtime throws. It is the
+    // one golden whose wording belongs to .NET itself rather than to
+    // SmartFormat, so a runtime that rewords it moves this case.
+    Add("plural-invalid-culture-name", "{0:plural(en-):a|b}", "[1]", "en-US");
+    Add("plural-invalid-culture-name-upper", "{0:plural(EN--US):a|b}", "[1]", "en-US");
     Add("plural-unknown-name", "{0:p:one|many}", "[2]", "en-US");
 
     // The same failures under MaintainTokens, which reconstructs the
@@ -1553,6 +1624,9 @@ static object? ToClrValue(JsonNode? node)
                 return double.Parse((string) f!, NumberStyles.Float, CultureInfo.InvariantCulture);
             if (obj.Count == 1 && obj.TryGetPropertyValue("$i32", out var i32))
                 return int.Parse((string) i32!, NumberStyles.Integer, CultureInfo.InvariantCulture);
+            // A value past long.MaxValue, which a JSON number would lose.
+            if (obj.Count == 1 && obj.TryGetPropertyValue("$u64", out var u64))
+                return ulong.Parse((string) u64!, NumberStyles.Integer, CultureInfo.InvariantCulture);
 
             var dict = new Dictionary<string, object?>();
             foreach (var (key, value) in obj) dict[key] = ToClrValue(value);
@@ -1581,6 +1655,9 @@ static object? ToClrValue(JsonNode? node)
 }
 
 static bool IsIntegerLiteral(string rawNumber) => rawNumber.AsSpan().IndexOfAny(".eE") < 0;
+
+// ulong.MaxValue, which is past long.MaxValue, so the "$u64" marker carries it.
+static string JsonUlongMax() => """[{"$u64":"18446744073709551615"}]""";
 
 static string JsonLong(long value) => value.ToString(CultureInfo.InvariantCulture);
 

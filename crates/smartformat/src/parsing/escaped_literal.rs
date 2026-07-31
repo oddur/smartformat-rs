@@ -155,6 +155,31 @@ fn push_code_units(result: &mut String, units: &[u16]) {
     }
 }
 
+/// The text of a literal, .NET `LiteralText.AsSpan()`: the characters as they
+/// are, unless the literal *starts* with the escape character and the parser
+/// resolves character literals, in which case its escape sequences are
+/// resolved. `convert` is
+/// [`ParserSettings::convert_character_string_literals`](super::ParserSettings::convert_character_string_literals).
+///
+/// The parser gives every escape sequence a literal of its own, so this is
+/// applied per sequence — and again to any slice of a literal a formatter's
+/// [`Format::split`](super::Format::split) cuts, as .NET resolves a
+/// `Format.Substring` slice afresh.
+pub(crate) fn resolve_literal(span: &[char], convert: bool) -> Result<String, String> {
+    if span.is_empty() {
+        return Ok(String::new());
+    }
+    if convert && span[0] == CHAR_LITERAL_ESCAPE_CHAR {
+        return unescape(span, false, true);
+    }
+    // Special case: the escape character escaping itself, which .NET resolves
+    // even with the conversion of character literals turned off.
+    if !convert && span.len() == 2 && span[0] == span[1] && span[0] == CHAR_LITERAL_ESCAPE_CHAR {
+        return Ok(CHAR_LITERAL_ESCAPE_CHAR.to_string());
+    }
+    Ok(span.iter().collect())
+}
+
 /// Replaces escape sequences with the characters they stand for.
 ///
 /// A trailing character that cannot start a sequence is copied verbatim, which
