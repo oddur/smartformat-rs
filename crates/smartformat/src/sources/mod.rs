@@ -41,6 +41,16 @@ pub struct SelectorInfo<'a> {
     /// (.NET `FormatDetails.OriginalArgs`).
     pub args: &'a [Value],
     pub settings: &'a SmartSettings,
+    /// The index of the list item being formatted, or
+    /// [`NO_COLLECTION_INDEX`](crate::formatter::NO_COLLECTION_INDEX) outside
+    /// any list (.NET `ListFormatter.CollectionIndex`).
+    ///
+    /// [`ListSource`] answers the `{Index}` selector with it. .NET reads a
+    /// `static` there, which is how a source — created once and shared by every
+    /// call — can see what the `list` *formatter* is doing; here the state
+    /// belongs to the format call and is handed to the source, so two calls at
+    /// once cannot disturb each other.
+    pub collection_index: i32,
 }
 
 impl<'a> SelectorInfo<'a> {

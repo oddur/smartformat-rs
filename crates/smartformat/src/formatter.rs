@@ -9,6 +9,7 @@
 //! to a [`Formatter`] extension, which writes the text.
 
 use std::borrow::Cow;
+use std::cell::Cell;
 
 use crate::error::Error;
 #[cfg(feature = "plural")]
@@ -346,6 +347,7 @@ impl SmartFormatter {
             args: arg_list,
             culture,
             base: &format.raw,
+            collection_index: Cell::new(NO_COLLECTION_INDEX),
         };
         let mut output = String::new();
         engine.write_format(format, &[current], 0, &mut output)?;
@@ -370,6 +372,11 @@ fn culture_by_name(name: &str) -> Result<&'static CultureData, Error> {
 // The evaluator
 // ---------------------------------------------------------------------------
 
+/// The [`collection_index`](FormattingInfo::collection_index) outside any list
+/// iteration, .NET `ListFormatter.CollectionIndex`'s own sentinel: `{Index}` on
+/// an enumerable renders `-1` there.
+pub const NO_COLLECTION_INDEX: i32 = -1;
+
 /// One format call, ported from .NET `Evaluator` plus `FormatDetails`.
 struct Engine<'a> {
     smart: &'a SmartFormatter,
@@ -378,6 +385,18 @@ struct Engine<'a> {
     /// The whole template, quoted by error messages (.NET
     /// `FormatItem.BaseString`).
     base: &'a str,
+    /// The index of the list item being formatted, which the `list` formatter
+    /// keeps up to date and the `{Index}` selector reads
+    /// (.NET `ListFormatter.CollectionIndex`).
+    ///
+    /// .NET holds this in a `static` — an `AsyncLocal` in thread-safe mode —
+    /// because its formatter extensions are stateless singletons shared by
+    /// every call. Here it belongs to the call, which is the same thing seen
+    /// from a template, minus .NET's two hazards: two threads formatting at
+    /// once cannot mix their indexes up, and an index a failed call left behind
+    /// cannot leak into the next one (see
+    /// [`ListFormatter`](crate::extensions::list::ListFormatter)).
+    collection_index: Cell<i32>,
 }
 
 impl<'e> Engine<'e> {
@@ -516,6 +535,7 @@ impl<'e> Engine<'e> {
             placeholder,
             args: self.args,
             settings: &self.smart.settings,
+            collection_index: self.collection_index.get(),
         })
     }
 
@@ -827,6 +847,37 @@ impl<'a> FormattingInfo<'a> {
         write_aligned(self.output, text, self.alignment, fill);
     }
 
+    /// Writes text to the output without applying the placeholder's alignment.
+    ///
+    /// .NET writes the spacers of a list through a `FormattingInfo` of its own
+    /// whose `Alignment` it sets to 0, so `{0,5:list:{}|-}` pads the items and
+    /// not the `-` between them (`ListFormatter.FormatItems`).
+    pub fn write_unaligned(&mut self, text: &str) {
+        self.output.push_str(text);
+    }
+
+    /// The index of the list item being formatted, or
+    /// [`NO_COLLECTION_INDEX`] outside any list
+    /// (.NET `ListFormatter.CollectionIndex`).
+    ///
+    /// This is the ambient state behind the `{Index}` selector, which
+    /// [`ListSource`](crate::sources::ListSource) reads through
+    /// [`SelectorInfo::collection_index`](crate::sources::SelectorInfo::collection_index).
+    pub fn collection_index(&self) -> i32 {
+        self.engine.collection_index.get()
+    }
+
+    /// Sets the [`collection_index`](Self::collection_index) for the rest of
+    /// this format call, until someone sets it again.
+    ///
+    /// It is a formatter's job to save the old value and put it back when it is
+    /// done, the way .NET's `ListFormatter.TryEvaluateFormat` brackets its
+    /// iteration, so that a list nested in a list leaves the enclosing index
+    /// alone.
+    pub fn set_collection_index(&mut self, index: i32) {
+        self.engine.collection_index.set(index);
+    }
+
     /// The whole template being rendered, which every error message quotes
     /// (.NET `FormatItem.BaseString`).
     pub fn base_string(&self) -> &'a str {
@@ -900,6 +951,46 @@ impl<'a> FormattingInfo<'a> {
         scopes.push(value);
         self.engine
             .write_format(format, &scopes, self.alignment, self.output)
+    }
+
+    /// Like [`format_as_child`](Self::format_as_child), but for a value that is
+    /// not the one this placeholder resolved to — an item of a list, say — and
+    /// with an alignment of its own.
+    ///
+    /// The placeholder's own value stays in the scope chain underneath `value`,
+    /// where .NET's chain of parent `FormattingInfo`s keeps it. That only shows
+    /// when the two differ, and then it decides what a selector the item cannot
+    /// answer falls back to: in `{0:list:{}={1.Index}|, }` the `Index` of the
+    /// *second* list is out of range for its last items, and .NET answers those
+    /// from the list being iterated, which sits between the item and the
+    /// enclosing scopes.
+    ///
+    /// `alignment` is what the literals of `format` are written with — the
+    /// placeholder's own for a list item, 0 for a spacer, as .NET's
+    /// `ListFormatter` sets it. Placeholders inside `format` keep the alignment
+    /// the parser gave them either way.
+    pub fn format_as_child_of_current(
+        &mut self,
+        format: &Format,
+        value: &Value,
+        alignment: i32,
+    ) -> Result<(), Error> {
+        let mut scopes = self.scopes.to_vec();
+        scopes.push(self.current);
+        scopes.push(value);
+        self.engine
+            .write_format(format, &scopes, alignment, self.output)
+    }
+
+    /// The value of the outermost scope, which is the argument the format call
+    /// was made against (.NET walks its `FormattingInfo` parents up to the root
+    /// and takes its `CurrentValue`).
+    ///
+    /// The `list` formatter renders its spacers against it, so that
+    /// `{Names:list:{}|{Split}}` finds `Split` on the object the call was made
+    /// with rather than on the list item being formatted.
+    pub fn root_value(&self) -> &'a Value {
+        self.scopes.first().copied().unwrap_or(&NULL)
     }
 }
 
