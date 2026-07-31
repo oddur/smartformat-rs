@@ -60,11 +60,18 @@ impl Parser {
 
     /// Parses a format string.
     ///
-    /// Syntax errors — including escape sequences that resolve to nothing,
-    /// which .NET only rejects when the literal is rendered — are collected
-    /// and then handled according to [`ParserSettings::error_action`]: they
-    /// are returned as [`Error::Parse`] only for [`ErrorAction::Error`]; the
-    /// other actions recover and return a [`Format`].
+    /// Syntax errors are collected and then handled according to
+    /// [`ParserSettings::error_action`]: they are returned as
+    /// [`Error::Parse`] only for [`ErrorAction::Error`]; the other actions
+    /// recover and return a [`Format`].
+    ///
+    /// Escape sequences are not part of that. As in .NET, an escape sequence
+    /// that resolves to nothing is recorded on the item it belongs to
+    /// ([`LiteralText::escape_error`], [`Placeholder::formatter_options_error`])
+    /// and only fails the call when the text is used, as an
+    /// [`Error::Escape`]. The single exception is an escape character at the
+    /// very end of the input, which .NET rejects in the parser itself: that
+    /// one fails here too, whatever the error action.
     ///
     /// The position of an error counts UTF-16 code units, as .NET does.
     pub fn parse(&self, input: &str) -> Result<Format, Error> {
@@ -118,6 +125,11 @@ struct State<'a> {
     current_placeholder: Option<Placeholder>,
     nested_depth: usize,
     issues: Vec<Issue>,
+    /// The error .NET throws from the parser itself, which no
+    /// [`ErrorAction`] can recover from. It wins over every collected issue,
+    /// because .NET throws where it finds it and never reaches the point
+    /// where the issues are raised.
+    fatal: Option<Error>,
 }
 
 impl<'a> State<'a> {
@@ -159,6 +171,7 @@ impl<'a> State<'a> {
             current_placeholder: None,
             nested_depth: 0,
             issues: Vec::new(),
+            fatal: None,
         }
     }
 
@@ -177,6 +190,9 @@ impl<'a> State<'a> {
         self.finalize();
         set_raw(&mut self.result, self.input);
 
+        if let Some(fatal) = self.fatal.take() {
+            return Err(fatal);
+        }
         if self.issues.is_empty() {
             return Ok(self.result);
         }
@@ -249,10 +265,12 @@ impl<'a> State<'a> {
     /// Builds a literal item, resolving an escape sequence if the text is one.
     /// The parser gives every escape sequence a literal item of its own.
     ///
-    /// An escape sequence that resolves to nothing is an issue like any other,
-    /// so [`ParserSettings::error_action`] decides what happens to it; the
-    /// sequence itself stays in the output as written.
-    fn make_literal(&mut self, start: usize, end: usize) -> LiteralText {
+    /// An escape sequence that resolves to nothing is not a parsing issue: as
+    /// in .NET, where `LiteralText.AsSpan()` resolves and rejects it when the
+    /// literal is written, the message is recorded on the item and the
+    /// sequence stays as written. It becomes an [`Error::Escape`] only if the
+    /// literal is rendered.
+    fn make_literal(&self, start: usize, end: usize) -> LiteralText {
         let start = start.min(self.len);
         let end = end.clamp(start, self.len);
         let raw: String = self.chars[start..end].iter().collect();
@@ -276,14 +294,15 @@ impl<'a> State<'a> {
             }
         };
 
-        let text = resolved.unwrap_or_else(|message| {
-            self.add_issue(message, start, end);
-            raw.clone()
-        });
+        let (text, escape_error) = match resolved {
+            Ok(text) => (text, None),
+            Err(message) => (raw.clone(), Some(message)),
+        };
 
         LiteralText {
             text,
             raw,
+            escape_error,
             start: self.byte(start),
             end: self.byte(end),
         }
@@ -326,6 +345,7 @@ impl<'a> State<'a> {
         self.result.items.push(FormatItem::Literal(LiteralText {
             text: brace.clone(),
             raw: brace,
+            escape_error: None,
             start: self.byte(self.current),
             end: self.byte(self.current + 1),
         }));
@@ -342,12 +362,14 @@ impl<'a> State<'a> {
     fn parse_alternative_escaping(&mut self) {
         let index_next_char = self.current + 1;
         if index_next_char >= self.len {
-            // The trailing escape character stays in the output as written.
-            self.add_issue(
-                UNRECOGNIZED_ESCAPE_AT_END.to_owned(),
-                self.current,
-                self.len,
-            );
+            // The one escape sequence .NET rejects in the parser itself, and
+            // it throws rather than collecting a parsing issue, so no error
+            // action applies to it.
+            let position = self.utf16(self.current);
+            self.fatal.get_or_insert(Error::Escape {
+                message: UNRECOGNIZED_ESCAPE_AT_END.to_owned(),
+                position,
+            });
             return;
         }
 
@@ -608,29 +630,32 @@ impl<'a> State<'a> {
 
         self.last_end = self.safe_add(self.current, 1);
 
-        let (name, options_raw, options) = match self.named_formatter_options_start {
+        let (name, options_raw, options, options_error) = match self.named_formatter_options_start {
             None => (
                 self.text(name_start, self.current),
                 String::new(),
                 String::new(),
+                None,
             ),
             Some(options_start) => {
                 let options_end = self.named_formatter_options_end.unwrap_or(options_start);
                 let start = options_start + 1;
                 let end = options_end.max(start);
                 let raw = self.text(start, end);
-                // As in a literal, an unresolvable escape sequence is an issue
-                // and stays in the options as written.
+                // As in a literal, an unresolvable escape sequence is not a
+                // parsing issue: .NET resolves the options in the
+                // `FormatterOptions` getter, so the sequence stays as written
+                // and only a formatter that reads the options ever sees it.
                 let unescaped = unescape(
                     &self.chars[start.min(self.len)..end.min(self.len)],
                     true,
                     self.parser.settings.convert_character_string_literals,
                 );
-                let options = unescaped.unwrap_or_else(|message| {
-                    self.add_issue(message, start, end);
-                    raw.clone()
-                });
-                (self.text(name_start, options_start), raw, options)
+                let (options, error) = match unescaped {
+                    Ok(options) => (options, None),
+                    Err(message) => (raw.clone(), Some(message)),
+                };
+                (self.text(name_start, options_start), raw, options, error)
             }
         };
 
@@ -638,6 +663,7 @@ impl<'a> State<'a> {
             placeholder.formatter_name = name;
             placeholder.formatter_options_raw = options_raw;
             placeholder.formatter_options = options;
+            placeholder.formatter_options_error = options_error;
         }
 
         // The format starts after the formatter name: for {0:default:N2} that
@@ -788,6 +814,7 @@ impl<'a> State<'a> {
                     items: vec![FormatItem::Literal(LiteralText {
                         text: message.clone(),
                         raw: message.clone(),
+                        escape_error: None,
                         start: 0,
                         end,
                     })],
@@ -843,6 +870,7 @@ fn replace_erroneous_placeholders(format: &mut Format, issue_positions: &[usize]
             LiteralText {
                 text: String::new(),
                 raw: String::new(),
+                escape_error: None,
                 start: placeholder.start,
                 end: placeholder.start,
             }
@@ -850,6 +878,7 @@ fn replace_erroneous_placeholders(format: &mut Format, issue_positions: &[usize]
             LiteralText {
                 text: placeholder.raw.clone(),
                 raw: placeholder.raw.clone(),
+                escape_error: None,
                 start: placeholder.start,
                 end: placeholder.end,
             }

@@ -309,18 +309,43 @@ impl<'e> Engine<'e> {
             match item {
                 // Literals respect the alignment of the format they are in,
                 // as in .NET.
-                FormatItem::Literal(literal) => write_aligned(
-                    output,
-                    &literal.text,
-                    alignment,
-                    self.smart.settings.alignment_fill_character,
-                ),
+                FormatItem::Literal(literal) => {
+                    // .NET resolves escape sequences here, in
+                    // `LiteralText.AsSpan()`, and throws if one resolves to
+                    // nothing. A literal that is never written — the format of
+                    // `{0:0.00}` reaches the value as a specifier instead —
+                    // never rejects its escape sequences.
+                    if let Some(message) = &literal.escape_error {
+                        return Err(Error::Escape {
+                            message: message.clone(),
+                            position: self.utf16_position(literal.start),
+                        });
+                    }
+                    write_aligned(
+                        output,
+                        &literal.text,
+                        alignment,
+                        self.smart.settings.alignment_fill_character,
+                    )
+                }
                 FormatItem::Placeholder(placeholder) => {
                     self.write_placeholder(placeholder, scopes, output)?
                 }
             }
         }
         Ok(())
+    }
+
+    /// The position of a byte offset into the template in UTF-16 code units,
+    /// which is the unit .NET reports positions in.
+    fn utf16_position(&self, offset: usize) -> usize {
+        // The offset comes from the tree and always sits on a character
+        // boundary of the template it was parsed from. A `Format` built by
+        // hand can only make the position wrong, never panic.
+        match self.base.get(..offset) {
+            Some(prefix) => prefix.encode_utf16().count(),
+            None => offset,
+        }
     }
 
     /// .NET `Evaluator.EvaluatePlaceholder` plus `InvokeFormatters`.
@@ -499,8 +524,30 @@ impl<'e> Engine<'e> {
         output: &mut String,
     ) -> Result<(), Error> {
         let fill = self.smart.settings.alignment_fill_character;
+
+        // Before it looks at the error action, .NET builds its error event
+        // from `Placeholder.RawText`, which rebuilds the placeholder and so
+        // reads `FormatterOptions`. Options that cannot be resolved throw
+        // there, replacing whatever error was being handled — whatever the
+        // error action is.
+        if let Some(message) = &placeholder.formatter_options_error {
+            return Err(Error::Escape {
+                message: message.clone(),
+                position: error_position(placeholder),
+            });
+        }
+
         match self.smart.settings.format_error_action {
-            ErrorAction::Error => Err(error),
+            // .NET rethrows what it caught as a `FormattingException` unless it
+            // already is one, so an escape sequence that failed inside a
+            // placeholder becomes an ordinary formatting error here.
+            ErrorAction::Error => Err(match error {
+                Error::Escape { message, .. } => Error::Format {
+                    message,
+                    position: error_position(placeholder),
+                },
+                error => error,
+            }),
             ErrorAction::Ignore => Ok(()),
             ErrorAction::OutputErrorInResult => {
                 write_aligned(output, &error_message(&error), placeholder.alignment, fill);
@@ -581,7 +628,9 @@ fn error_position(placeholder: &Placeholder) -> usize {
 /// message, as .NET writes the exception's `Message`.
 fn error_message(error: &Error) -> String {
     match error {
-        Error::Format { message, .. } | Error::UnsupportedSpec { message, .. } => message.clone(),
+        Error::Format { message, .. }
+        | Error::UnsupportedSpec { message, .. }
+        | Error::Escape { message, .. } => message.clone(),
         parse_error => parse_error.to_string(),
     }
 }
@@ -646,8 +695,25 @@ impl<'a> FormattingInfo<'a> {
     }
 
     /// The formatter options in parens: `"m|f"` in `{0:choose(m|f):...}`.
-    pub fn formatter_options(&self) -> &'a str {
-        &self.placeholder.formatter_options
+    ///
+    /// Fails when the options hold an escape sequence that resolves to
+    /// nothing: .NET resolves them in the `Placeholder.FormatterOptions`
+    /// getter, so a formatter that never reads its options — the default one,
+    /// for `{0:d(a\qb)}` — never rejects them.
+    pub fn formatter_options(&self) -> Result<&'a str, Error> {
+        match &self.placeholder.formatter_options_error {
+            None => Ok(&self.placeholder.formatter_options),
+            Some(message) => Err(Error::Escape {
+                message: message.clone(),
+                position: error_position(self.placeholder),
+            }),
+        }
+    }
+
+    /// The formatter options as they appear in the template, with no escape
+    /// sequence resolved (.NET `Placeholder.FormatterOptionsRaw`).
+    pub fn formatter_options_raw(&self) -> &'a str {
+        &self.placeholder.formatter_options_raw
     }
 
     pub fn alignment(&self) -> i32 {

@@ -37,6 +37,30 @@ fn errors(result: Result<Format, Error>) -> Vec<crate::error::ParseError> {
     }
 }
 
+/// The message a template records for an escape sequence that resolves to
+/// nothing. .NET rejects such a sequence when the text is used, not when it is
+/// parsed, so it is on the item it belongs to rather than in a parse error —
+/// except for an escape character at the very end of the input, which .NET
+/// throws from the parser itself.
+fn escape_error(result: Result<Format, Error>) -> String {
+    match result {
+        Err(Error::Escape { message, .. }) => message,
+        Err(other) => panic!("expected an escape error, got {other}"),
+        Ok(format) => recorded_escape_error(&format)
+            .unwrap_or_else(|| panic!("expected an escape error, got {format:?}")),
+    }
+}
+
+fn recorded_escape_error(format: &Format) -> Option<String> {
+    format.items.iter().find_map(|item| match item {
+        FormatItem::Literal(literal) => literal.escape_error.clone(),
+        FormatItem::Placeholder(placeholder) => placeholder
+            .formatter_options_error
+            .clone()
+            .or_else(|| placeholder.format.as_ref().and_then(recorded_escape_error)),
+    })
+}
+
 fn first_placeholder(format: &Format) -> &Placeholder {
     match &format.items[0] {
         FormatItem::Placeholder(placeholder) => placeholder,
@@ -705,10 +729,13 @@ fn parse_unicode() {
         }
     }
 
-    // .NET accepts the illegal sequence while parsing and throws when the
-    // literal is rendered; this port owns its strings, so it fails right here.
+    // An illegal sequence parses; the literal records why it could not be
+    // resolved, and only rendering it is an error.
     for format in [r"\uwxyz", r"\uw"] {
-        assert!(parser().parse(format).is_err(), "{format:?} should fail");
+        assert!(
+            escape_error(parser().parse(format)).contains("Unrecognized escape sequence"),
+            "{format:?} should record an escape error"
+        );
     }
 }
 
@@ -780,8 +807,8 @@ fn unicode_escape_parses_hex_the_way_dotnet_does() {
         "\\u\u{a0}123",
     ] {
         assert!(
-            parser().parse(template).is_err(),
-            "{template:?} should not parse"
+            escape_error(parser().parse(template)).contains("Unrecognized escape sequence"),
+            "{template:?} should not resolve"
         );
     }
 }
@@ -813,37 +840,49 @@ fn placeholder_display_rebuilds_the_placeholder() {
 
 #[test]
 fn escape_sequence_at_the_end_of_the_input_fails() {
-    assert!(parser().parse(r"abc\").is_err());
+    // The one escape sequence .NET rejects in the parser, by throwing, so no
+    // error action recovers from it.
+    for action in [
+        ErrorAction::Error,
+        ErrorAction::Ignore,
+        ErrorAction::MaintainTokens,
+        ErrorAction::OutputErrorInResult,
+    ] {
+        let parsed = parser_with(ParserSettings {
+            error_action: action,
+            ..ParserSettings::default()
+        })
+        .parse(r"abc\");
+        assert!(
+            matches!(parsed, Err(Error::Escape { position: 3, .. })),
+            "a trailing escape character should fail with {action:?}, got {parsed:?}"
+        );
+    }
 }
 
 #[test]
-fn unrecognized_escape_sequence_fails_when_converting() {
-    let issues = errors(parser().parse(r"abc\xyz"));
-    assert_eq!(issues.len(), 1);
-    assert!(issues[0].message.contains(r"\x"));
-    // The position is the escape character, and the caret spans the sequence.
-    assert_eq!(issues[0].position, 3);
+fn unrecognized_escape_sequence_is_recorded_rather_than_raised() {
+    // .NET resolves escape sequences in `LiteralText.AsSpan()`, when the
+    // literal is written, so parsing succeeds and the item carries the reason.
+    let parsed = parse(r"abc\xyz");
+    assert_eq!(parsed.to_string(), r"abc\xyz");
+    assert!(escape_error(Ok(parsed)).contains(r"\x"));
 }
 
 #[test]
-fn unrecognized_escape_sequences_obey_the_error_action() {
-    // Every escape error is an issue like any other, so the error action
-    // decides what happens to it — the parser never fails outright unless the
-    // action says so.
+fn escape_errors_ignore_the_error_action() {
+    // An unresolvable escape sequence is not a parsing issue at all, so no
+    // error action applies to it: the template always parses, and always
+    // keeps the sequence as written.
     let templates = [
         r"abc\xyz",         // unknown sequence in literal text
-        r"abc\",            // escape character at the very end
         r"a\uwxyz",         // unparsable \u sequence
         r"{0:d(a\qb):txt}", // unknown sequence in formatter options
     ];
 
     for template in templates {
-        assert!(
-            parser().parse(template).is_err(),
-            "{template:?} should fail with ErrorAction::Error"
-        );
-
         for action in [
+            ErrorAction::Error,
             ErrorAction::Ignore,
             ErrorAction::MaintainTokens,
             ErrorAction::OutputErrorInResult,
@@ -855,62 +894,33 @@ fn unrecognized_escape_sequences_obey_the_error_action() {
             .parse(template);
             assert!(
                 parsed.is_ok(),
-                "{template:?} should recover with {action:?}, got {:?}",
+                "{template:?} should parse with {action:?}, got {:?}",
                 parsed.err()
+            );
+            assert_eq!(
+                parsed.unwrap().to_string(),
+                template,
+                "{template:?} should keep the sequence as written with {action:?}"
             );
         }
     }
 }
 
 #[test]
-fn recovered_escape_sequences_stay_as_written() {
-    // Outside a placeholder there is nothing to drop, so the sequence itself
-    // is what stays in the output, whichever lenient action is chosen.
-    for action in [ErrorAction::Ignore, ErrorAction::MaintainTokens] {
-        let parser = parser_with(ParserSettings {
-            error_action: action,
-            ..ParserSettings::default()
-        });
-        assert_eq!(parser.parse(r"abc\xyz").unwrap().to_string(), r"abc\xyz");
-        assert_eq!(parser.parse(r"abc\").unwrap().to_string(), r"abc\");
-    }
-
-    // Inside a placeholder the ordinary recovery applies.
-    let template = r"{0:d(a\qb)}";
-    let dropped = parser_with(ParserSettings {
-        error_action: ErrorAction::Ignore,
-        ..ParserSettings::default()
-    })
-    .parse(template)
-    .unwrap();
-    assert_eq!(dropped.to_string(), "");
-
-    let kept = parser_with(ParserSettings {
-        error_action: ErrorAction::MaintainTokens,
-        ..ParserSettings::default()
-    })
-    .parse(template)
-    .unwrap();
-    assert_eq!(kept.to_string(), template);
-}
-
-#[test]
-fn escape_errors_are_reported_like_other_issues() {
-    let parsed = parser_with(ParserSettings {
-        error_action: ErrorAction::OutputErrorInResult,
-        ..ParserSettings::default()
-    })
-    .parse(r"abc\xyz")
-    .unwrap();
-
+fn a_placeholder_with_a_bad_escape_is_kept_whole() {
+    // The placeholder is not erroneous — nothing was dropped or tokenized —
+    // so its parts are the ones the formatter extensions will see.
+    let placeholder = {
+        let parsed = parse(r"{0:d(a\qb):txt}");
+        first_placeholder(&parsed).clone()
+    };
+    assert_eq!(placeholder.formatter_name, "d");
+    assert_eq!(placeholder.formatter_options_raw, r"a\qb");
+    // Unresolved, the options keep the sequence as written.
+    assert_eq!(placeholder.formatter_options, r"a\qb");
     assert_eq!(
-        parsed.to_string(),
-        concat!(
-            "The format string has 1 issue:\n",
-            "Unrecognized escape sequence \"\\x\" in literal.\n",
-            "In: \"abc\\xyz\"\n",
-            "At:  ---^^ "
-        )
+        placeholder.formatter_options_error.as_deref(),
+        Some(r#"Unrecognized escape sequence "\q" in literal."#)
     );
 }
 

@@ -141,7 +141,12 @@ fn goldens_match_smartformat_net() {
                 match (&actual, kind) {
                     // .NET throws ParsingErrors / ArgumentException from the
                     // parser, and FormattingException from the formatter.
+                    // `Error::Escape` is the ArgumentException that escape
+                    // resolution throws: from the parser for a trailing escape
+                    // character, and from `LiteralText.AsSpan()` when a literal
+                    // that cannot be resolved is written.
                     (Err(Error::Parse { .. }), "ParsingErrors" | "ArgumentException") => Ok(()),
+                    (Err(Error::Escape { .. }), "ArgumentException") => Ok(()),
                     (
                         Err(Error::Format { .. } | Error::UnsupportedSpec { .. }),
                         "FormattingException",

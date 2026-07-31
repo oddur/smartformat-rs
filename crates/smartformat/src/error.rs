@@ -8,6 +8,20 @@ pub enum Error {
     Parse { errors: Vec<ParseError> },
     /// A placeholder could not be evaluated against the provided values.
     Format { message: String, position: usize },
+    /// An escape sequence that resolves to nothing was reached while rendering.
+    ///
+    /// This is .NET's `ArgumentException` from `LiteralText.AsSpan()` and
+    /// `Placeholder.FormatterOptions`, which resolve escape sequences lazily:
+    /// the sequence is only rejected when the literal is written or the
+    /// options are read, never when the template is parsed. Kept apart from
+    /// [`Error::Parse`] because it is raised while formatting, and from
+    /// [`Error::Format`] because .NET raises it outside the error handling of
+    /// the evaluator — a literal of the top-level format fails the call
+    /// whatever [`ErrorAction`](crate::ErrorAction) is set. When it does reach
+    /// that error handling — the literal is inside a placeholder's format —
+    /// it turns into an [`Error::Format`], as .NET wraps it in a
+    /// `FormattingException`.
+    Escape { message: String, position: usize },
     /// The format specifier is valid .NET but outside the supported subset,
     /// such as a custom numeric or date pattern. Kept apart from
     /// [`Error::Format`] so compatibility gaps are loud rather than silently
@@ -36,7 +50,7 @@ impl fmt::Display for Error {
                 }
                 Ok(())
             }
-            Error::Format { message, position } => {
+            Error::Format { message, position } | Error::Escape { message, position } => {
                 write!(f, "formatting error at {position}: {message}")
             }
             Error::UnsupportedSpec {

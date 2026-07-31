@@ -46,7 +46,8 @@ impl Format {
     }
 
     /// The literal text of this format with escape sequences resolved,
-    /// excluding the text of any placeholder.
+    /// excluding the text of any placeholder. A sequence that resolves to
+    /// nothing stays as written; see [`LiteralText::escape_error`].
     pub fn literal_text(&self) -> String {
         let mut result = String::new();
         for item in &self.items {
@@ -114,10 +115,18 @@ impl FormatItem {
 /// resolves.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct LiteralText {
-    /// The text with escape sequences resolved.
+    /// The text with escape sequences resolved. An escape sequence that
+    /// resolves to nothing is left as written and reported by
+    /// [`escape_error`](Self::escape_error) instead.
     pub text: String,
     /// The text as it appears in the input.
     pub raw: String,
+    /// Why the escape sequence in [`raw`](Self::raw) could not be resolved,
+    /// if it could not. .NET resolves escape sequences when the literal is
+    /// written, so the message only becomes an error if this literal is ever
+    /// rendered — which a format that a formatter reads as a specifier, such
+    /// as `{0:0.00}`, never is.
+    pub escape_error: Option<String>,
     /// Byte offset of the first character in the input.
     pub start: usize,
     /// Byte offset one past the last character in the input.
@@ -141,10 +150,18 @@ pub struct Placeholder {
     pub alignment: i32,
     /// The formatter name, or empty if the placeholder has none.
     pub formatter_name: String,
-    /// The formatter options with escape sequences resolved.
+    /// The formatter options with escape sequences resolved. An escape
+    /// sequence that resolves to nothing is left as written and reported by
+    /// [`formatter_options_error`](Self::formatter_options_error) instead.
     pub formatter_options: String,
     /// The formatter options as they appear in the input.
     pub formatter_options_raw: String,
+    /// Why the escape sequences in
+    /// [`formatter_options_raw`](Self::formatter_options_raw) could not be
+    /// resolved, if they could not. .NET resolves them in the
+    /// `Placeholder.FormatterOptions` getter, so the message only becomes an
+    /// error if a formatter reads the options.
+    pub formatter_options_error: Option<String>,
     /// The format after the formatter name, if the placeholder has one.
     pub format: Option<Format>,
     /// The nesting level, starting at 1 for a top-level placeholder.

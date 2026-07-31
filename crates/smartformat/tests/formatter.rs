@@ -366,6 +366,123 @@ fn unterminated_formatter_options_are_a_parse_error() {
     }
 }
 
+// ----- escape sequences that resolve to nothing ---------------------------
+//
+// .NET resolves escape sequences when the text is used, not when it is parsed,
+// so which of them ever fail depends on what reads the text. Every expectation
+// below was taken from SmartFormat.NET 3.6.1 with the default extensions.
+
+/// Text that is never written never rejects its escape sequences: the format
+/// of a placeholder without nested placeholders reaches the value as a
+/// specifier (`Format.AsSpan()`), and the default formatter never reads the
+/// formatter options.
+#[test]
+fn unresolvable_escapes_in_unwritten_text_are_not_an_error() {
+    for (template, value, expected) in [
+        (r"{0:d(a\qb)}", Value::Int(7), "7"),
+        (r"{0:d(a\qb):x}", Value::from("S"), "S"),
+        (r"{0:a\qb}", Value::from("X"), "X"),
+        (r"{0:a\uzzzzb}", Value::from("S"), "S"),
+    ] {
+        assert_eq!(format(template, &args([value])), expected, "{template}");
+    }
+}
+
+/// A literal of the top-level format is always written, and .NET throws the
+/// `ArgumentException` where no error action can catch it.
+#[test]
+fn an_unresolvable_escape_in_a_written_literal_always_fails() {
+    for template in [r"a\db", r"a\ b", r"a\uzzzzb", r"abc\"] {
+        for action in [
+            ErrorAction::Error,
+            ErrorAction::Ignore,
+            ErrorAction::MaintainTokens,
+            ErrorAction::OutputErrorInResult,
+        ] {
+            let smart = SmartFormatter::new(SmartSettings {
+                format_error_action: action,
+                parse_error_action: action,
+                ..SmartSettings::default()
+            });
+            let result = smart.format(template, &args([]));
+            assert!(
+                matches!(result, Err(Error::Escape { .. })),
+                "{template:?} with {action:?}: {result:?}"
+            );
+        }
+    }
+}
+
+/// Handling *any* failure of a placeholder needs its raw text, which .NET
+/// rebuilds from the parsed parts — reading the formatter options on the way.
+/// So a placeholder that fails for an unrelated reason still fails on its
+/// options, whatever the error action says.
+#[test]
+fn a_failing_placeholder_resolves_its_formatter_options() {
+    let data = map([("Other", Value::Int(1))]);
+    for action in [
+        ErrorAction::Error,
+        ErrorAction::Ignore,
+        ErrorAction::MaintainTokens,
+        ErrorAction::OutputErrorInResult,
+    ] {
+        let result = with_format_error_action(action).format(r"[{Missing:d(a\qb)}]", &data);
+        assert!(
+            matches!(result, Err(Error::Escape { .. })),
+            "{action:?}: {result:?}"
+        );
+    }
+
+    // The format is written as it stands, so a bad escape sequence there does
+    // not stop the recovery.
+    assert_eq!(
+        with_format_error_action(ErrorAction::MaintainTokens)
+            .format(r"[{Missing:a\qb}]", &data)
+            .unwrap(),
+        r"[{Missing:a\qb}]"
+    );
+}
+
+/// A literal inside a placeholder's format is written by the evaluator, whose
+/// `InvokeFormatters` catches everything, so there the error action applies —
+/// and .NET rethrows the `ArgumentException` as a `FormattingException`.
+#[test]
+fn an_unresolvable_escape_inside_a_placeholder_is_a_formatting_error() {
+    let template = r"{0:{}a\qb}";
+    let message = r#"Unrecognized escape sequence "\q" in literal."#;
+
+    let error = SmartFormatter::default()
+        .format(template, &args([Value::Int(7)]))
+        .unwrap_err();
+    match error {
+        // The position is the start of the placeholder's format, as .NET
+        // positions a `FormattingException`.
+        Error::Format {
+            message: text,
+            position,
+        } => {
+            assert_eq!(text, message);
+            assert_eq!(position, 3);
+        }
+        other => panic!("expected a formatting error, got {other}"),
+    }
+
+    // Whatever was written before the failure stays in the output.
+    for (action, expected) in [
+        (ErrorAction::Ignore, "7a".to_owned()),
+        (ErrorAction::OutputErrorInResult, format!("7a{message}")),
+        (ErrorAction::MaintainTokens, format!("7a{template}")),
+    ] {
+        assert_eq!(
+            with_format_error_action(action)
+                .format(template, &args([Value::Int(7)]))
+                .unwrap(),
+            expected,
+            "{action:?}"
+        );
+    }
+}
+
 /// A deliberate divergence: .NET writes the CLR type name (`System.Object[]`)
 /// here, which is never a useful rendering, so we fail loudly instead.
 #[test]
@@ -499,6 +616,64 @@ impl smartformat::formatter::Formatter for ShoutFormatter {
     ) -> Result<bool, Error> {
         info.write("SHOUT");
         Ok(true)
+    }
+}
+
+/// Writes its own formatter options, which is what makes their escape
+/// sequences resolve — .NET does it in the `FormatterOptions` getter.
+#[derive(Debug)]
+struct OptionsFormatter;
+
+impl smartformat::formatter::Formatter for OptionsFormatter {
+    fn name(&self) -> &str {
+        "opts"
+    }
+
+    fn can_auto_detect(&self) -> bool {
+        false
+    }
+
+    fn try_evaluate_format(
+        &self,
+        info: &mut smartformat::formatter::FormattingInfo<'_>,
+    ) -> Result<bool, Error> {
+        let options = info.formatter_options()?.to_owned();
+        info.write(&options);
+        Ok(true)
+    }
+}
+
+#[test]
+fn reading_formatter_options_resolves_their_escape_sequences() {
+    let mut smart = SmartFormatter::default();
+    smart.formatters_mut().insert(0, Box::new(OptionsFormatter));
+
+    assert_eq!(
+        smart
+            .format(r"{0:opts(a\:b)}", &args([Value::Int(1)]))
+            .unwrap(),
+        "a:b"
+    );
+
+    // Options that cannot be resolved fail the call whatever the error action
+    // is: .NET catches the first throw of the getter inside `InvokeFormatters`
+    // and then hits it again while building the error from the placeholder's
+    // raw text, where nothing catches it.
+    for action in [ErrorAction::Error, ErrorAction::Ignore] {
+        let mut smart = SmartFormatter::new(SmartSettings {
+            format_error_action: action,
+            ..SmartSettings::default()
+        });
+        smart.formatters_mut().insert(0, Box::new(OptionsFormatter));
+        let error = smart
+            .format(r"{0:opts(a\qb)}", &args([Value::Int(1)]))
+            .unwrap_err();
+        match error {
+            Error::Escape { message, .. } => {
+                assert_eq!(message, r#"Unrecognized escape sequence "\q" in literal."#)
+            }
+            other => panic!("expected an escape error with {action:?}, got {other}"),
+        }
     }
 }
 
