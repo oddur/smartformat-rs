@@ -96,7 +96,44 @@ const SKIPPED: &[(&str, &str)] = &[
         "set-fmterr-outputerrorinresult-custom-pattern",
         "a custom numeric pattern renders in .NET and is a documented non-goal here, so the error text written into the result differs",
     ),
+    (
+        "plural-bare-name",
+        "a one-part format is not auto-detected, so .NET reads it as a custom numeric pattern of literals: the documented custom-pattern non-goal",
+    ),
+    (
+        "autodetect-single-part",
+        "a one-part format is not auto-detected, so .NET reads it as a custom numeric pattern of literals: the documented custom-pattern non-goal",
+    ),
+    (
+        "plural-i64-beyond-double",
+        "pluralization runs on f64 where .NET runs on decimal, so an integer above 2^53 loses the last digits the Russian rule looks at",
+    ),
+    // .NET's default calendar for ar-SA is UmAlQura; we render Gregorian
+    // fields through ar-SA's Hijri month names. Every specifier that reads a
+    // date field diverges; the time-only ones (`t`, `T`) do not and are
+    // ordinary cases.
+    ("culture-date-ar-sa-d-lc", AR_SA_CALENDAR),
+    ("culture-date-ar-sa-D", AR_SA_CALENDAR),
+    ("culture-date-ar-sa-f-lc", AR_SA_CALENDAR),
+    ("culture-date-ar-sa-F", AR_SA_CALENDAR),
+    ("culture-date-ar-sa-g-lc", AR_SA_CALENDAR),
+    ("culture-date-ar-sa-G", AR_SA_CALENDAR),
+    ("culture-date-ar-sa-M", AR_SA_CALENDAR),
+    ("culture-date-ar-sa-none", AR_SA_CALENDAR),
+    ("culture-date2-ar-sa-D", AR_SA_CALENDAR),
+    ("culture-date2-ar-sa-y-lc", AR_SA_CALENDAR),
+    (
+        "culture-fmt-choose-soft-hyphen-value",
+        "choose compares its options ordinally; .NET compares them with the culture's CompareInfo, which ignores a soft hyphen",
+    ),
+    (
+        "culture-fmt-choose-soft-hyphen-option",
+        "choose compares its options ordinally; .NET compares them with the culture's CompareInfo, which ignores a soft hyphen",
+    ),
 ];
+
+const AR_SA_CALENDAR: &str =
+    "ar-SA dates: .NET's default calendar for it is UmAlQura, and the port has no Hijri calendar";
 
 #[test]
 fn goldens_match_smartformat_net() {
@@ -119,10 +156,18 @@ fn goldens_match_smartformat_net() {
             continue;
         }
 
-        // The per-case culture is `""` (invariant) for every M1 case; anything
-        // else is skipped above, so this cannot silently format with the wrong
-        // culture.
-        let culture = culture::invariant();
+        // A case names the culture .NET rendered it with; `""` is the
+        // invariant one. A name the generated table does not carry is a
+        // failure, never a skip — otherwise adding a culture to the harness
+        // and forgetting to generate its data would look like a pass.
+        let culture_name = case["culture"].as_str().expect("culture name");
+        let Some(culture) = culture::get(culture_name) else {
+            failures.push(format!(
+                "{id}: culture {culture_name:?} is not in the generated table \
+                 (regenerate crates/smartformat/src/fmt/culture/generated.rs)"
+            ));
+            continue;
+        };
         let args = to_value(&case["args"]);
         let smart = formatter_for(&case["settings"]);
         let actual = smart.format_with_culture(template, &args, culture);
@@ -202,11 +247,16 @@ fn skip_list_has_no_stale_entries() {
 
 /// Why a case is not run, if it is not.
 fn skip_reason(id: &str, case: &Json) -> Option<&'static str> {
+    let _ = case;
     if let Some((_, reason)) = SKIPPED.iter().find(|(name, _)| *name == id) {
         return Some(reason);
     }
-    if case["culture"] != "" {
-        return Some("only the invariant culture is in M1 scope");
+    // Without the plural formatter registered, its cases report "No suitable
+    // Formatter could be found", and the auto-detection cases would be decided
+    // by the conditional formatter alone.
+    #[cfg(not(feature = "plural"))]
+    if id.contains("plural") || id.starts_with("autodetect-") {
+        return Some("pluralization needs the \"plural\" feature");
     }
     #[cfg(not(feature = "time"))]
     if has_datetime(&case["args"]) {

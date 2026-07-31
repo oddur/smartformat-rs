@@ -26,6 +26,14 @@ FormatterOptions(cases);
 ListIndex(cases);
 SettingsCases(cases);
 LazyEscapeCases(cases);
+PluralCases(cases);
+ChooseCases(cases);
+ConditionalCases(cases);
+AutoDetectCases(cases);
+CultureNumberCases(cases);
+CultureDateCases(cases);
+CultureFormatterCases(cases);
+FormatterErrorTextCases(cases);
 
 var duplicates = cases.GroupBy(c => c.Id).Where(g => g.Count() > 1).Select(g => g.Key).ToList();
 if (duplicates.Count > 0)
@@ -40,13 +48,17 @@ foreach (var c in cases)
     if (!formatters.TryGetValue(settings, out var smart))
         formatters[settings] = smart = Smart.CreateDefaultSmartFormat(settings.ToSmartSettings());
 
+    var culture = c.Culture.Length == 0
+        ? CultureInfo.InvariantCulture
+        : CultureInfo.GetCultureInfo(c.Culture);
+
     var expected = new JsonObject();
     try
     {
         var caseArgs = JsonNode.Parse(c.ArgsJson);
         var result = caseArgs is JsonArray array
-            ? smart.Format(CultureInfo.InvariantCulture, c.Template, ToPositionalArgs(array))
-            : smart.Format(CultureInfo.InvariantCulture, c.Template, ToClrValue(caseArgs));
+            ? smart.Format(culture, c.Template, ToPositionalArgs(array))
+            : smart.Format(culture, c.Template, ToClrValue(caseArgs));
         expected["result"] = result;
     }
     catch (Exception ex)
@@ -59,7 +71,7 @@ foreach (var c in cases)
         ["id"] = c.Id,
         ["template"] = c.Template,
         ["args"] = JsonNode.Parse(c.ArgsJson),
-        ["culture"] = "",
+        ["culture"] = c.Culture,
     };
     if (c.Settings is { } custom) node["settings"] = custom.ToJson();
     node["expected"] = expected;
@@ -69,7 +81,7 @@ foreach (var c in cases)
 var document = new JsonObject
 {
     ["smartformat_net_version"] = smartFormatVersion,
-    ["culture"] = "InvariantCulture",
+    ["default_culture"] = "InvariantCulture",
     ["cases"] = caseArray,
 };
 
@@ -820,6 +832,700 @@ static void LazyEscapeCases(List<GoldenCase> cases)
 }
 
 // ---------------------------------------------------------------------------
+// M2: PluralLocalizationFormatter.
+//
+// One block per language, crossed with the counts that separate its rule's
+// arms. The word lists say which arm was taken rather than being real
+// translations, so a diff names the arm directly.
+// ---------------------------------------------------------------------------
+
+static void PluralCases(List<GoldenCase> cases)
+{
+    // The number of words is the one each language's rule expects: two for the
+    // "one/other" languages, three for Russian, four for Polish, five for
+    // Czech, six for Arabic, one for the singular languages.
+    var languages = new (string Slug, string Culture, string Words)[]
+    {
+        ("en", "en-US", "one|other"),
+        ("de", "de-DE", "one|other"),
+        ("fr", "fr-FR", "one|other"),
+        ("es", "es-ES", "one|other"),
+        ("pt-br", "pt-BR", "one|other"),
+        ("is", "is-IS", "one|other"),
+        ("tr", "tr", "one|other"),
+        ("ru", "ru", "one|few|other"),
+        ("pl", "pl", "one|few|many|other"),
+        ("cs", "cs", "zero|one|few|many|other"),
+        ("ja", "ja", "all"),
+        ("ko", "ko", "all"),
+        ("zh", "zh-Hans", "all"),
+        ("ar", "ar", "zero|one|two|few|many|other"),
+    };
+
+    var counts = new (string Slug, string Json)[]
+    {
+        ("0", "0"), ("1", "1"), ("2", "2"), ("3", "3"), ("5", "5"),
+        ("11", "11"), ("21", "21"), ("22", "22"), ("100", "100"), ("101", "101"),
+        ("1_5", "1.5"),
+    };
+
+    foreach (var (langSlug, culture, words) in languages)
+    foreach (var (countSlug, json) in counts)
+        cases.Add(new GoldenCase(
+            $"plural-{langSlug}-{countSlug}",
+            "{0:plural:" + words + "}",
+            "[" + json + "]",
+            Culture: culture));
+
+    // Word counts other than the natural one: the "one/other" rule also serves
+    // three words (zero/one/other) and four (negative/zero/one/other), and
+    // French's rule has its own three- and four-word arms.
+    var wordCountVariants = new (string Slug, string Culture, string Words)[]
+    {
+        ("en-3", "en-US", "zero|one|other"),
+        ("en-4", "en-US", "neg|zero|one|other"),
+        ("de-3", "de-DE", "zero|one|other"),
+        ("fr-2", "fr-FR", "one|other"),
+        ("fr-3", "fr-FR", "zero|one|other"),
+        ("fr-4", "fr-FR", "neg|zero|one|other"),
+    };
+    var signedCounts = new (string Slug, string Json)[]
+    {
+        ("neg-2", "-2"), ("neg-1", "-1"), ("0", "0"), ("1", "1"),
+        ("1_5", "1.5"), ("2", "2"), ("7", "7"),
+    };
+    foreach (var (slug, culture, words) in wordCountVariants)
+    foreach (var (countSlug, json) in signedCounts)
+        cases.Add(new GoldenCase(
+            $"plural-words-{slug}-{countSlug}",
+            "{0:plural:" + words + "}",
+            "[" + json + "]",
+            Culture: culture));
+
+    // The language named in the formatter options wins over the culture of the
+    // call; the culture here is the invariant one, whose language .NET's
+    // PluralLocalizationFormatter defaults to "en".
+    var namedLanguages = new (string Slug, string Option, string Words)[]
+    {
+        ("pl", "pl", "one|few|many|other"),
+        ("ru", "ru", "one|few|other"),
+        ("ar", "ar", "zero|one|two|few|many|other"),
+        ("ja", "ja", "all"),
+        ("upper-pl", "PL", "one|few|many|other"),
+        ("region-pl", "pl-PL", "one|few|many|other"),
+        ("spaced-pl", " pl ", "one|few|many|other"),
+        ("kde", "kde", "all"),
+    };
+    foreach (var (slug, option, words) in namedLanguages)
+    foreach (var count in new[] { "1", "2", "5", "22" })
+        cases.Add(new GoldenCase(
+            $"plural-option-{slug}-{count}",
+            "{0:plural(" + option + "):" + words + "}",
+            "[" + count + "]"));
+
+    // Empty options fall back to the culture of the call.
+    cases.Add(new GoldenCase("plural-option-empty", "{0:plural():one|other}", "[1]", Culture: "fr-FR"));
+    cases.Add(new GoldenCase("plural-option-blank", "{0:plural( ):one|other}", "[2]", Culture: "fr-FR"));
+
+    // The invariant culture pluralizes as English.
+    cases.Add(new GoldenCase("plural-invariant-1", "{0:plural:one|other}", "[1]"));
+    cases.Add(new GoldenCase("plural-invariant-2", "{0:plural:one|other}", "[2]"));
+
+    // A list pluralizes by how many items it has.
+    var lists = new (string Slug, string Json)[]
+    {
+        ("0", "[[]]"), ("1", "[[7]]"), ("2", "[[7,8]]"), ("5", "[[1,2,3,4,5]]"),
+    };
+    foreach (var (slug, json) in lists)
+        cases.Add(new GoldenCase(
+            $"plural-list-{slug}", "{0:plural:zero|one|other}", json, Culture: "en-US"));
+
+    // The count renders through the culture as well, so the same case pins the
+    // number formatting the plural word sits next to.
+    foreach (var (culture, slug) in new[] { ("en-US", "en"), ("fr-FR", "fr"), ("ru", "ru"), ("de-DE", "de") })
+    foreach (var (countSlug, json) in new[] { ("1", "1"), ("1_5", "1.5"), ("21", "21"), ("1234_5", "1234.5") })
+        cases.Add(new GoldenCase(
+            $"plural-with-value-{slug}-{countSlug}",
+            "{0} {0:plural:item|items}",
+            "[" + json + "]",
+            Culture: culture));
+
+    // Nesting, splitting and alignment.
+    cases.Add(new GoldenCase("plural-nested-placeholder", "{0:plural:{0:plural:x|y}|c}", "[1]", Culture: "en-US"));
+    cases.Add(new GoldenCase("plural-nested-placeholder-other", "{0:plural:{0:plural:x|y}|c}", "[2]", Culture: "en-US"));
+    cases.Add(new GoldenCase("plural-escaped-split-char", @"{0:plural:a\|b|c}", "[1]", Culture: "en-US"));
+    cases.Add(new GoldenCase("plural-escaped-split-char-other", @"{0:plural:a\|b|c}", "[2]", Culture: "en-US"));
+    cases.Add(new GoldenCase("plural-escaped-newline", @"{0:plural:a\nb|c}", "[1]", Culture: "en-US"));
+    cases.Add(new GoldenCase("plural-escaped-brace", @"{0:plural:a\{b|c}", "[1]", Culture: "en-US"));
+    cases.Add(new GoldenCase("plural-empty-words", "[{0:plural:|}]", "[1]", Culture: "en-US"));
+    cases.Add(new GoldenCase("plural-empty-first-word", "[{0:plural:|b}]", "[1]", Culture: "en-US"));
+    cases.Add(new GoldenCase("plural-empty-second-word", "[{0:plural:a|}]", "[2]", Culture: "en-US"));
+    cases.Add(new GoldenCase("plural-alignment-right", "[{0,10:plural:one|many}]", "[2]", Culture: "en-US"));
+    cases.Add(new GoldenCase("plural-alignment-left", "[{0,-10:plural:one|many}]", "[1]", Culture: "en-US"));
+    cases.Add(new GoldenCase("plural-other-separators", "{0:plural:a,b|c}", "[2]", Culture: "en-US"));
+
+    // Values at the edge of Convert.ToDecimal.
+    var edgeDoubles = new (string Slug, string Json)[]
+    {
+        ("1e28", "1e28"),
+        ("pow96-minus", "7.922816251426433e28"),
+        ("just-below-one", "0.9999999999999999"),
+        ("just-above-one", "1.0000000000000002"),
+    };
+    foreach (var (slug, json) in edgeDoubles)
+        cases.Add(new GoldenCase(
+            $"plural-edge-{slug}", "{0:plural:one|other}", "[" + json + "]", Culture: "en-US"));
+
+    // Values decimal cannot hold at all: .NET throws before the rule runs.
+    foreach (var (slug, json) in new (string, string)[]
+             {
+                 ("1e29", "1e29"), ("neg-1e29", "-1e29"), ("pow96", "7.922816251426434e28"),
+                 ("nan", """{"$f":"NaN"}"""), ("inf", """{"$f":"Infinity"}"""),
+             })
+        cases.Add(new GoldenCase(
+            $"plural-overflow-{slug}", "{0:plural:one|other}", "[" + json + "]", Culture: "en-US"));
+
+    // French rounds tiny values to zero the way decimal does.
+    foreach (var (slug, json) in new (string, string)[]
+             {
+                 ("1e-30", "1e-30"), ("5e-29", "5e-29"), ("above-5e-29", "5.0000001e-29"), ("0_5", "0.5"),
+             })
+        cases.Add(new GoldenCase(
+            $"plural-tiny-{slug}", "{0:plural:zero|one|other}", "[" + json + "]", Culture: "fr-FR"));
+
+    // Errors.
+    cases.Add(new GoldenCase("plural-err-one-word", "{0:plural:One}", "[1]", Culture: "en-US"));
+    cases.Add(new GoldenCase("plural-err-five-words", "{0:plural:a|b|c|d|e}", "[1]", Culture: "en-US"));
+    cases.Add(new GoldenCase("plural-err-string", "{0:plural:One|Two}", @"[""1234""]", Culture: "en-US"));
+    cases.Add(new GoldenCase("plural-err-empty-string", "{0:plural:One|Two}", @"[""""]", Culture: "en-US"));
+    cases.Add(new GoldenCase("plural-err-bool", "{0:plural:One|Two}", "[false]", Culture: "en-US"));
+    cases.Add(new GoldenCase("plural-err-null", "{0:plural:One|Two}", "[null]", Culture: "en-US"));
+    cases.Add(new GoldenCase("plural-err-map", "{0:plural:One|Two}", """{"a":1}""", Culture: "en-US"));
+    cases.Add(new GoldenCase("plural-err-unknown-language", "{0:plural(xx):a|b}", "[1]", Culture: "en-US"));
+    cases.Add(new GoldenCase("plural-err-language-without-rule", "{0:plural(hy):a|b}", "[1]", Culture: "en-US"));
+    cases.Add(new GoldenCase("plural-err-short-name", "{0:p:one|many}", "[2]", Culture: "en-US"));
+    cases.Add(new GoldenCase("plural-err-upper-name", "{0:PLURAL:one|many}", "[2]", Culture: "en-US"));
+
+    // Divergences, held here with .NET's answer and skipped by the Rust runner.
+    cases.Add(new GoldenCase(
+        "plural-i64-beyond-double", "{0:plural(ru):a|b|c}", "[10000000000000001]", Culture: "en-US"));
+    cases.Add(new GoldenCase("plural-bare-name", "{0:plural}", "[2]", Culture: "en-US"));
+}
+
+// ---------------------------------------------------------------------------
+// M2: ChooseFormatter. Every case runs with the invariant culture, which is
+// also the one .NET compares the options under.
+// ---------------------------------------------------------------------------
+
+static void ChooseCases(List<GoldenCase> cases)
+{
+    void Add(string id, string template, string argsJson, CaseSettings? settings = null) =>
+        cases.Add(new GoldenCase("choose-" + id, template, argsJson, settings));
+
+    // Matching by position, by spelling, and across the string/number divide.
+    Add("int-1", "{0:choose(1|2|3):one|two|three}", "[1]");
+    Add("int-2", "{0:choose(1|2|3):one|two|three}", "[2]");
+    Add("int-3", "{0:choose(1|2|3):one|two|three}", "[3]");
+    Add("int-reordered", "{0:choose(3|2|1):three|two|one}", "[1]");
+    Add("string-digit", "{0:choose(1|2|3):one|two|three}", @"[""1""]");
+    Add("string-letter", "{0:choose(A|B|C):Alpha|Bravo|Charlie}", @"[""B""]");
+
+    // Bools and null match case-insensitively whatever the settings say.
+    Add("bool-true", "{0:choose(True|False):yep|nope}", "[true]");
+    Add("bool-false", "{0:choose(True|False):yep|nope}", "[false]");
+    Add("bool-lowercase-option", "{0:choose(true|false):yep|nope}", "[true]");
+    Add("bool-uppercase-option", "{0:choose(TRUE|FALSE):yep|nope}", "[false]");
+    Add("null", "{0:choose(null):is null|default}", "[null]");
+    Add("null-uppercase-option", "{0:choose(NULL):is null|default}", "[null]");
+
+    // The else branch.
+    Add("else-number", "{0:choose(1|2|3):one|two|three|default}", "[99]");
+    Add("else-null", "{0:choose(1|2|3):one|two|three|default}", "[null]");
+    Add("else-bool", "{0:choose(1|2|3):one|two|three|default}", "[true]");
+    Add("else-string", "{0:choose(1|2|3):one|two|three|default}", @"[""whatever""]");
+    Add("else-renders-value", "{0:choose(null):nothing|{}}", "[5]");
+    Add("else-not-taken", "{0:choose(null):nothing|{}}", "[null]");
+    Add("else-after-two", "{0:choose(null|5):nothing|five|{}}", "[6]");
+    Add("else-after-two-match", "{0:choose(null|5):nothing|five|{}}", "[5]");
+    Add("else-after-two-null", "{0:choose(null|5):nothing|five|{}}", "[null]");
+
+    // Strings compare case-sensitively unless the formatter says otherwise.
+    Add("case-sensitive-second", "{0:choose(string|String):one|two|default}", @"[""String""]");
+    Add("case-sensitive-none", "{0:choose(string|STRING):one|two|default}", @"[""String""]");
+
+    // Empty options.
+    Add("empty-option", "{Input:choose(null|):A|B|{}}", """{"Input":""}""");
+    Add("no-options-empty", "{0:choose():a|b}", @"[""""]");
+    Add("no-options-other", "{0:choose():a|b}", @"[""x""]");
+
+    // Nested placeholders and formats.
+    const string nullable = """{"NullableInt":null,"IntValueIfNull":9999}""";
+    const string nonNull = """{"NullableInt":1234,"IntValueIfNull":9999}""";
+    Add("nested-format-null", "{NullableInt:choose(null):{IntValueIfNull:N2}|{:N2}}", nullable);
+    Add("nested-format-value", "{NullableInt:choose(null):{IntValueIfNull:N2}|{:N2}}", nonNull);
+    Add("nested-choose-1000",
+        "{NullableInt:choose(null):{IntValueIfNull:choose(1000|2000):1k|2k}|{:N2}}",
+        """{"NullableInt":null,"IntValueIfNull":1000}""");
+    Add("nested-choose-2000",
+        "{NullableInt:choose(null):{IntValueIfNull:choose(1000|2000):1k|2k}|{:N2}}",
+        """{"NullableInt":null,"IntValueIfNull":2000}""");
+    Add("nested-split-nine", "{0:choose(1|2):{1:choose(9|8):nine|eight}|other}", "[1,9]");
+    Add("nested-split-eight", "{0:choose(1|2):{1:choose(9|8):nine|eight}|other}", "[1,8]");
+    Add("nested-split-other", "{0:choose(1|2):{1:choose(9|8):nine|eight}|other}", "[2,9]");
+    Add("branch-with-placeholder-1", "{0:choose(1|2):one|{1}two|three}", @"[1,""X""]");
+    Add("branch-with-placeholder-2", "{0:choose(1|2):one|{1}two|three}", @"[2,""X""]");
+    Add("branch-with-placeholder-3", "{0:choose(1|2):one|{1}two|three}", @"[3,""X""]");
+
+    // Escapes: .NET splits the source text, so an escaped split character still
+    // splits and leaves the backslash behind.
+    Add("escaped-split-char-left", @"{0:choose(1|2):a\|b|c}", "[1]");
+    Add("escaped-split-char-right", @"{0:choose(1|2):a\|b|c}", "[2]");
+    Add("escaped-newline", @"{0:choose(1|2):a\nb|c}", "[1]");
+    Add("escaped-brace", @"{0:choose(1|2):a\{b|c}", "[1]");
+    Add("escaped-colon", @"{0:choose(1|2):a\:b|c}", "[1]");
+    Add("escaped-paren-option", @"{0:choose(a\)b|c):one|two|else}", @"[""a)b""]");
+    Add("escaped-paren-option-second", @"{0:choose(a\)b|c):one|two|else}", @"[""c""]");
+    Add("escaped-paren-option-else", @"{0:choose(a\)b|c):one|two|else}", @"[""x""]");
+
+    // Empty branches and alignment.
+    Add("empty-first-branch", "[{0:choose(1|2):|c}]", "[1]");
+    Add("empty-second-branch", "[{0:choose(1|2):a|}]", "[2]");
+    Add("alignment-right", "[{0,10:choose(1|2):one|two}]", "[1]");
+    Add("alignment-left", "[{0,-6:choose(1|2):one|two}]", "[2]");
+
+    // Errors.
+    Add("err-no-match", "{0:choose(1|2):1|2}", "[99]");
+    Add("err-one-format", "{0:choose(1|2):1}", "[1]");
+    Add("err-no-format", "{0:choose(1|2)}", "[1]");
+    Add("err-too-few-formats", "{0:choose(1|2|3):1|2}", "[1]");
+    Add("err-too-many-formats-one-choice", "{0:choose(1):1|2|3}", "[1]");
+    Add("err-too-many-formats", "{0:choose(1|2):1|2|3|4}", "[1]");
+
+    // Error actions that still produce a result.
+    Add("err-no-match-ignored", "x{0:choose(1|2):1|2}y", "[99]",
+        new CaseSettings(FormatErrorAction: FormatErrorAction.Ignore));
+    Add("err-no-match-maintain-tokens", "{0:choose(1|2):1|2}", "[99]",
+        new CaseSettings(FormatErrorAction: FormatErrorAction.MaintainTokens));
+    // The "fewer than 2 formats" path is a plain FormatException, whose bare
+    // message .NET writes into the result — the one choose error whose text we
+    // already reproduce.
+    Add("err-one-format-in-result", "{0:choose(1|2):single}", "[1]",
+        new CaseSettings(FormatErrorAction: FormatErrorAction.OutputErrorInResult));
+}
+
+// ---------------------------------------------------------------------------
+// M2: ConditionalFormatter, named "cond".
+// ---------------------------------------------------------------------------
+
+static void ConditionalCases(List<GoldenCase> cases)
+{
+    void Add(string id, string template, string argsJson, CaseSettings? settings = null) =>
+        cases.Add(new GoldenCase("cond-" + id, template, argsJson, settings));
+
+    // Bucket indexing by the floor of the value: one placeholder per argument,
+    // all with the same parts.
+    const string buckets = "[0,1,2,3,-1,-2]";
+    string SixBuckets(string parts) =>
+        string.Join(" ", Enumerable.Range(0, 6).Select(i => "{" + i + ":cond:" + parts + "}"));
+    Add("buckets-2", SixBuckets("Zero|Other"), buckets);
+    Add("buckets-3", SixBuckets("Zero|One|Other"), buckets);
+    Add("buckets-4", SixBuckets("Zero|One|Two|Other"), buckets);
+
+    foreach (var (slug, json) in new (string, string)[]
+             {
+                 ("0_5", "0.5"), ("1_5", "1.5"), ("2_9", "2.9"), ("neg-0_5", "-0.5"), ("neg-zero", "-0.0"),
+                 ("almost-one", "0.9999999999999999"), ("2_0", "2.0"),
+             })
+        Add($"bucket-fraction-{slug}", "{0:cond:Zero|One|Other}", "[" + json + "]");
+    Add("bucket-four-parts-2_0", "{0:cond:A|B|C|D}", "[2.0]");
+
+    // Bools, strings, null and objects never reach a third part.
+    Add("bool-true", "{0:cond:Yes|No}", "[true]");
+    Add("bool-false", "{0:cond:Yes|No}", "[false]");
+    Add("bool-three-parts-true", "{0:cond:a|b|c}", "[true]");
+    Add("bool-three-parts-false", "{0:cond:a|b|c}", "[false]");
+    Add("string-has-value", "{0:cond:{}|Empty}", @"[""Hello""]");
+    Add("string-empty", "{0:cond:{}|Empty}", @"[""""]");
+    Add("null", "{0:cond:{}|Null}", "[null]");
+    Add("string-three-parts-value", "{0:cond:a|b|c}", @"[""x""]");
+    Add("string-three-parts-empty", "{0:cond:a|b|c}", @"[""""]");
+    Add("string-three-parts-null", "{0:cond:a|b|c}", "[null]");
+    Add("object", "{0:cond:Something|Null}", """{"a":1}""");
+
+    // Complex conditions.
+    foreach (var (slug, json) in new (string, string)[] { ("0", "0"), ("1", "1"), ("2", "2") })
+        Add($"complex-sign-{slug}", "{0:cond:>0?Positive|<0?Negative|=0?Zero}", "[" + json + "]");
+
+    const string ages =
+        "{0:cond:<1?Baby|>=1&<4?Toddler|>=4&<=9?Child|=10/=11/=12?Pre-Teen|<18?Teenager|" +
+        "<20?Young Adult|<20/<=24&<25?Early Twenties|>55&<100?Senior Citizen|>100?Crazy Old|Adult}";
+    foreach (var (slug, json) in new (string, string)[]
+             {
+                 ("neg-5", "-5"), ("0", "0"), ("0_5", "0.5"), ("1_0", "1.0"), ("1_5", "1.5"),
+                 ("5_0", "5.0"), ("11_0", "11.0"), ("14_0", "14.0"), ("18", "18"), ("22", "22"),
+                 ("45", "45"), ("60", "60"), ("101", "101"),
+             })
+        Add($"complex-age-{slug}", ages, "[" + json + "]");
+
+    var comparers = new (string Slug, string Condition, string Json)[]
+    {
+        ("gt", ">5", "6"), ("ge", ">=6", "6"), ("lt", "<6", "6"), ("le", "<=6", "6"),
+        ("eq", "=6", "6"), ("eqeq", "==6", "6"), ("not", "!5", "6"), ("noteq", "!=5", "5"),
+    };
+    foreach (var (slug, condition, json) in comparers)
+        Add($"comparer-{slug}", "{0:cond:" + condition + "?a|b}", "[" + json + "]");
+
+    Add("implicit-and-true", "{0:cond:>1<5?a|b}", "[2]");
+    Add("implicit-and-false", "{0:cond:>1<5?a|b}", "[6]");
+    Add("first-question-mark-ends-condition", "{0:cond:>0?a?b|c}", "[1]");
+    Add("else-branch", "{0:cond:>10?big|else}", "[0]");
+    Add("else-before-condition", "{0:cond:>10?a|else|>20?b}", "[5]");
+    Add("else-before-condition-match", "{0:cond:>10?a|else|>20?b}", "[15]");
+    Add("non-condition-first-part", "{0:cond:else|>10?big}", "[15]");
+    Add("empty-first-part", "{0:cond:|>10?a|b}", "[15]");
+
+    // Near-misses: a part that only looks like a condition.
+    foreach (var (slug, template, json) in new (string, string, string)[]
+             {
+                 ("space-after-comparer", "{0:cond:> 5?a|b}", "6"),
+                 ("space-before-question", "{0:cond:>5 ?a|b}", "6"),
+                 ("plus-sign", "{0:cond:>+5?a|b}", "6"),
+                 ("no-value", "{0:cond:>?a|b}", "6"),
+                 ("no-comparer", "{0:cond:-5?a|b}", "-5"),
+             })
+        Add($"near-miss-{slug}", template, "[" + json + "]");
+
+    Add("condition-needs-a-number-string", "{0:cond:>10?a|b|c}", @"[""text""]");
+    Add("condition-needs-a-number-bool", "{0:cond:>10?a|b}", "[true]");
+
+    foreach (var (slug, template, json) in new (string, string, string)[]
+             {
+                 ("leading-dot", "{0:cond:>.5?a|b}", "0.6"),
+                 ("trailing-dot", "{0:cond:>5.?a|b}", "6"),
+                 ("trailing-sign", "{0:cond:>5.-?a|b}", "-1"),
+                 ("leading-minus", "{0:cond:>-5?a|b}", "-1"),
+                 ("decimal-condition-int-value", "{0:cond:=1.0?a|b}", "1"),
+                 ("int-condition-decimal-value", "{0:cond:=1?a|b}", "1.0"),
+                 ("double-rounds-to-decimal", "{0:cond:=0.3?yes|no}", "0.30000000000000004"),
+                 ("invariant-parsing", "{0:cond:<=0.25?I am less than 0.25|I am over 0.25}", "0.3"),
+                 ("28-digit-condition", "{0:cond:>1.00000000000000000000000000005?a|b}", "1"),
+             })
+        Add($"condition-value-{slug}", template, "[" + json + "]");
+
+    // Every numeric type reaches the same comparison.
+    foreach (var (slug, json) in new (string, string)[]
+             {
+                 ("int", "123"), ("double", "123.0"), ("i32", """{"$i32":"123"}"""),
+             })
+        Add($"numeric-type-{slug}", "{0:cond:=123?yes|no}", "[" + json + "]");
+
+    // A changed split character, nesting and escapes.
+    Add("nested-placeholder-zero", "{0:cond:{1}|c}", @"[0,""N""]");
+    Add("nested-placeholder-one", "{0:cond:{1}|c}", @"[1,""N""]");
+    Add("nested-value-in-condition", "{0:cond:>0?[{}]|c}", "[1]");
+    Add("escaped-split-char", @"{0:cond:a\|b|c}", "[0]");
+
+    // Errors.
+    Add("err-one-part", "{0:cond:Yes}", "[1]");
+    Add("err-empty-format", "{0:cond:}", "[1]");
+    Add("err-all-conditions-fail", "{0:cond:>10?big|>20?huge}", "[0]");
+    Add("err-int32-overflow", "{0:cond:a|b}", "[3000000000]");
+    Add("err-int32-overflow-negative", "{0:cond:a|b}", "[-3000000000]");
+    Add("err-int32-max", "{0:cond:a|b}", "[2147483647]");
+    Add("err-decimal-overflow", "{0:cond:a|b}", "[1e30]");
+    Add("err-decimal-nan", "{0:cond:a|b}", """[{"$f":"NaN"}]""");
+    Add("err-decimal-infinity", "{0:cond:a|b}", """[{"$f":"Infinity"}]""");
+    Add("err-decimal-nan-with-condition", "{0:cond:>1?a|b}", """[{"$f":"NaN"}]""");
+    Add("err-condition-overflow-value", "{0:cond:>1?a|b}", "[3000000000]");
+    foreach (var (slug, condition) in new[]
+             {
+                 ("two-dots", ">5.5.5"), ("lone-minus", ">-"), ("lone-dot", ">."), ("inner-minus", ">5-5"),
+             })
+        Add($"err-condition-format-{slug}", "{0:cond:" + condition + "?a|b}", "[6]");
+    Add("err-condition-too-large", "{0:cond:>99999999999999999999999999999999?a|b}", "[6]");
+    Add("err-long-name", "{0:conditional:a|b}", "[1]");
+}
+
+// ---------------------------------------------------------------------------
+// Auto-detection: which of the two `|`-splitting formatters claims an unnamed
+// format, and what the other one would have said.
+// ---------------------------------------------------------------------------
+
+static void AutoDetectCases(List<GoldenCase> cases)
+{
+    // PluralLocalizationFormatter is consulted first, so a number takes its
+    // rule and not the conditional's bucket index. The values are the ones the
+    // two disagree on: 0 buckets to "a" but pluralizes to "other", and Russian
+    // sends 22 to its "few" arm where the bucket index would be past the end.
+    foreach (var (culture, slug) in new[] { ("en-US", "en"), ("ru", "ru"), ("fr-FR", "fr"), ("ja", "ja") })
+    foreach (var (countSlug, json) in new[] { ("0", "0"), ("1", "1"), ("2", "2"), ("22", "22") })
+        cases.Add(new GoldenCase(
+            $"autodetect-number-{slug}-{countSlug}", "{0:a|b|c}", "[" + json + "]", Culture: culture));
+
+    // A value the plural formatter cannot take falls through to the
+    // conditional one.
+    cases.Add(new GoldenCase("autodetect-bool-true", "{0:part(s)|car}", "[true]", Culture: "en-US"));
+    cases.Add(new GoldenCase("autodetect-bool-false", "{0:part(s)|car}", "[false]", Culture: "en-US"));
+    cases.Add(new GoldenCase("autodetect-string", "{0:has|empty}", @"[""x""]", Culture: "en-US"));
+    cases.Add(new GoldenCase("autodetect-string-empty", "{0:has|empty}", @"[""""]", Culture: "en-US"));
+    cases.Add(new GoldenCase("autodetect-null", "{0:has|null}", "[null]", Culture: "en-US"));
+    cases.Add(new GoldenCase("autodetect-empty-name", "{0::a|b}", "[1]", Culture: "en-US"));
+    // One part is not enough to auto-detect either formatter.
+    cases.Add(new GoldenCase("autodetect-single-part", "{0:zero}", "[0]", Culture: "en-US"));
+}
+
+// ---------------------------------------------------------------------------
+// Culture data, end to end: the generated table in
+// `crates/smartformat/src/fmt/culture` against the .NET it was generated from.
+// ---------------------------------------------------------------------------
+
+/// Every culture the generated table carries, minus the invariant one.
+static string[] GeneratedCultures() =>
+[
+    "ar", "ar-SA", "cs", "da", "de", "de-AT", "de-CH", "de-DE", "en", "en-GB", "en-US",
+    "es", "es-ES", "es-MX", "fi", "fr", "fr-FR", "is", "is-IS", "it", "ja", "ko", "nb",
+    "nl", "pl", "pt", "pt-BR", "pt-PT", "ru", "sv", "tr", "uk", "zh-CN", "zh-Hans",
+];
+
+static string CultureSlug(string culture) => culture.ToLowerInvariant();
+
+static void CultureNumberCases(List<GoldenCase> cases)
+{
+    const string big = "-1234567.891";
+    const string bigPositive = "1234567.891";
+
+    // Four specifiers over every culture: the group and decimal separators and
+    // the negative sign (N), both arms of the 17-entry currency pattern table
+    // (C), and the percent pattern (P1).
+    var specs = new (string Slug, string Spec, string Value)[]
+    {
+        ("N", "N", big),
+        ("C-neg", "C", big),
+        ("C-pos", "C", bigPositive),
+        ("P1", "P1", big),
+    };
+    foreach (var culture in GeneratedCultures())
+    foreach (var (slug, spec, value) in specs)
+        cases.Add(new GoldenCase(
+            $"culture-num-{CultureSlug(culture)}-{slug}",
+            "{0:" + spec + "}",
+            "[" + value + "]",
+            Culture: culture));
+
+    // The default number of decimal digits is culture data too, and is 3 for
+    // most ICU cultures rather than the invariant 2.
+    foreach (var culture in new[] { "en-US", "de-DE", "fr-FR", "is-IS", "ja", "ar-SA" })
+    {
+        cases.Add(new GoldenCase(
+            $"culture-num-{CultureSlug(culture)}-N-default-digits", "{0:N}", "[1234.5]", Culture: culture));
+        cases.Add(new GoldenCase(
+            $"culture-num-{CultureSlug(culture)}-N2", "{0:N2}", "[1234.5]", Culture: culture));
+        cases.Add(new GoldenCase(
+            $"culture-num-{CultureSlug(culture)}-P-default-digits", "{0:P}", "[0.1234]", Culture: culture));
+    }
+
+    // The negative sign is not always a hyphen.
+    foreach (var culture in new[] { "sv", "fi", "nb", "is-IS", "tr", "ar-SA", "de-CH" })
+        cases.Add(new GoldenCase(
+            $"culture-num-{CultureSlug(culture)}-N0-neg", "{0:N0}", "[-42]", Culture: culture));
+
+    // An explicit precision beats the culture's CurrencyDecimalDigits.
+    cases.Add(new GoldenCase("culture-num-is-is-C3", "{0:C3}", "[" + big + "]", Culture: "is-IS"));
+    cases.Add(new GoldenCase("culture-num-ja-C0", "{0:C0}", "[" + big + "]", Culture: "ja"));
+
+    // Exponent notation carries the culture's positive sign.
+    foreach (var culture in new[] { "ar-SA", "de-DE", "sv" })
+    {
+        cases.Add(new GoldenCase(
+            $"culture-num-{CultureSlug(culture)}-E2-pos", "{0:E2}", "[" + bigPositive + "]", Culture: culture));
+        cases.Add(new GoldenCase(
+            $"culture-num-{CultureSlug(culture)}-E2-neg", "{0:E2}", "[" + big + "]", Culture: culture));
+    }
+
+    // NaN and the infinities are culture data as well.
+    foreach (var culture in new[] { "de-DE", "sv", "ru", "ar-SA", "ja" })
+    foreach (var (slug, json) in new (string, string)[]
+             {
+                 ("nan", """{"$f":"NaN"}"""), ("inf", """{"$f":"Infinity"}"""),
+                 ("neg-inf", """{"$f":"-Infinity"}"""),
+             })
+        cases.Add(new GoldenCase(
+            $"culture-num-{CultureSlug(culture)}-{slug}", "{0}", "[" + json + "]", Culture: culture));
+
+    // A plain integer and a plain double still go through the culture.
+    foreach (var culture in new[] { "de-DE", "fr-FR", "ru", "ar-SA", "tr" })
+    {
+        cases.Add(new GoldenCase(
+            $"culture-num-{CultureSlug(culture)}-plain-double", "{0}", "[-1234.5]", Culture: culture));
+        cases.Add(new GoldenCase(
+            $"culture-num-{CultureSlug(culture)}-plain-int", "{0}", "[-1234567]", Culture: culture));
+    }
+}
+
+static void CultureDateCases(List<GoldenCase> cases)
+{
+    // A Monday afternoon, and a Tuesday morning for the AM designator and for
+    // the genitive month names a day-first pattern selects.
+    const string afternoon = """[{"$dt":"2009-06-15T13:45:30.0000000"}]""";
+    const string morning = """[{"$dt":"2024-03-05T09:07:03.0000000"}]""";
+
+    var specs = new (string Slug, string Spec)[]
+    {
+        ("d-lc", "d"), ("D", "D"), ("t-lc", "t"), ("T", "T"), ("f-lc", "f"),
+    };
+    foreach (var culture in GeneratedCultures())
+    foreach (var (slug, spec) in specs)
+        cases.Add(new GoldenCase(
+            $"culture-date-{CultureSlug(culture)}-{slug}",
+            "{0:" + spec + "}",
+            afternoon,
+            Culture: culture));
+
+    // The morning date, whose day number is 5: a one-digit day, a different
+    // month, and the AM designator.
+    foreach (var culture in GeneratedCultures())
+    foreach (var (slug, spec) in new (string, string)[] { ("D", "D"), ("t-lc", "t"), ("y-lc", "y") })
+        cases.Add(new GoldenCase(
+            $"culture-date2-{CultureSlug(culture)}-{slug}",
+            "{0:" + spec + "}",
+            morning,
+            Culture: culture));
+
+    // The remaining standard specifiers over the cultures whose patterns
+    // differ most.
+    foreach (var culture in new[] { "ru", "uk", "cs", "pl", "fi", "ar", "ar-SA", "ja", "ko", "zh-CN", "tr", "es-MX", "de-CH", "en-GB" })
+    foreach (var (slug, spec) in new (string, string)[]
+             {
+                 ("F", "F"), ("g-lc", "g"), ("G", "G"), ("M", "M"), ("none", ""),
+             })
+        cases.Add(new GoldenCase(
+            $"culture-date-{CultureSlug(culture)}-{slug}",
+            spec.Length == 0 ? "{0}" : "{0:" + spec + "}",
+            afternoon,
+            Culture: culture));
+
+    // The culture-invariant specifiers stay invariant whatever the culture.
+    foreach (var culture in new[] { "ru", "ar-SA", "ja", "de-DE" })
+    foreach (var (slug, spec) in new (string, string)[] { ("O", "O"), ("R", "R"), ("s-lc", "s"), ("u-lc", "u") })
+        cases.Add(new GoldenCase(
+            $"culture-date-{CultureSlug(culture)}-{slug}",
+            "{0:" + spec + "}",
+            afternoon,
+            Culture: culture));
+}
+
+// ---------------------------------------------------------------------------
+// Where the M2 formatters meet the culture: what a nested placeholder renders
+// as, and what the option comparison does with a culture that has one.
+// ---------------------------------------------------------------------------
+
+static void CultureFormatterCases(List<GoldenCase> cases)
+{
+    // A nested placeholder inside a branch renders with the culture of the
+    // call, not the invariant one.
+    cases.Add(new GoldenCase(
+        "culture-fmt-choose-nested-n2", "{0:choose(1|2):{1:N2}|other}", "[1,1234.5]", Culture: "de-DE"));
+    cases.Add(new GoldenCase(
+        "culture-fmt-cond-nested-value", "{0:cond:>0?[{}]|c}", "[1234.5]", Culture: "de-DE"));
+    cases.Add(new GoldenCase(
+        "culture-fmt-plural-nested-value", "{0:plural:{} item|{} items}", "[1234.5]", Culture: "fr-FR"));
+    cases.Add(new GoldenCase(
+        "culture-fmt-plural-nested-date", "{0:plural:one|other} {1:D}",
+        """[2,{"$dt":"2009-06-15T13:45:30.0000000"}]""", Culture: "ru"));
+
+    // Condition values are parsed with the invariant culture whatever the
+    // culture of the call, so a comma-decimal culture does not change which
+    // branch a value takes.
+    cases.Add(new GoldenCase(
+        "culture-fmt-cond-invariant-condition",
+        "{0:cond:<=0.25?below|above}", "[0.3]", Culture: "de-DE"));
+    cases.Add(new GoldenCase(
+        "culture-fmt-cond-invariant-condition-below",
+        "{0:cond:<=0.25?below|above}", "[0.2]", Culture: "de-DE"));
+
+    // Choose compares the value's own string form against the options. .NET
+    // renders it with the *thread* culture and compares with the call's
+    // CompareInfo, so only locale-stable values (integers, strings, bools,
+    // null) belong here.
+    cases.Add(new GoldenCase(
+        "culture-fmt-choose-int", "{0:choose(1|2):eins|zwei|sonst}", "[2]", Culture: "de-DE"));
+    cases.Add(new GoldenCase(
+        "culture-fmt-choose-bool", "{0:choose(True|False):ja|nein}", "[true]", Culture: "de-DE"));
+
+    // Case folding under a culture whose casing rules differ from the
+    // invariant one; the formatter's own comparison is ordinal.
+    cases.Add(new GoldenCase(
+        "culture-fmt-choose-umlaut", "{0:choose(Ä|B):a-umlaut|b|else}", "[\"Ä\"]", Culture: "de-DE"));
+    cases.Add(new GoldenCase(
+        "culture-fmt-choose-umlaut-lower", "{0:choose(Ä|B):a-umlaut|b|else}", "[\"ä\"]", Culture: "de-DE"));
+    cases.Add(new GoldenCase(
+        "culture-fmt-choose-dotted-i", "{0:choose(I|i):upper|lower|else}", "[\"i\"]", Culture: "tr"));
+
+    // .NET's option comparison is culture-aware, so a character the collation
+    // ignores compares equal; ours is ordinal. Both pinned as divergences.
+    cases.Add(new GoldenCase(
+        "culture-fmt-choose-soft-hyphen-value", "{0:choose(ab):match|else}", "[\"a­b\"]"));
+    cases.Add(new GoldenCase(
+        "culture-fmt-choose-soft-hyphen-option", "{0:choose(­):match|else}", "[\"\"]"));
+}
+
+// ---------------------------------------------------------------------------
+// The exact text of an M2 formatter's error. A case that throws only records
+// the exception type, so the message is only observable through
+// FormatErrorAction.OutputErrorInResult, which writes it into the result.
+//
+// .NET writes two different things there: a FormattingException's own Message,
+// which quotes the template and points a caret at the failure, and the bare
+// Message of any other exception the evaluator wraps.
+// ---------------------------------------------------------------------------
+
+static void FormatterErrorTextCases(List<GoldenCase> cases)
+{
+    var output = new CaseSettings(FormatErrorAction: FormatErrorAction.OutputErrorInResult);
+    var maintain = new CaseSettings(FormatErrorAction: FormatErrorAction.MaintainTokens);
+
+    void Add(string id, string template, string argsJson, string culture = "") =>
+        cases.Add(new GoldenCase("errtext-" + id, template, argsJson, output, culture));
+
+    // ChooseFormatter.
+    Add("choose-no-match", "{0:choose(1|2):1|2}", "[99]");
+    Add("choose-no-match-offset", "prefix {0:choose(1|2):1|2}", "[99]");
+    Add("choose-too-few-formats", "{0:choose(1|2|3):1|2}", "[1]");
+    Add("choose-too-many-formats", "{0:choose(1):1|2|3}", "[1]");
+    Add("choose-no-format", "{0:choose(1|2)}", "[1]");
+    Add("choose-one-format", "{0:choose(1|2):single}", "[1]");
+
+    // ConditionalFormatter.
+    Add("cond-one-part", "{0:cond:Yes}", "[1]");
+    Add("cond-empty-format", "{0:cond:}", "[1]");
+    Add("cond-all-conditions-fail", "{0:cond:>10?big|>20?huge}", "[0]");
+    Add("cond-int32-overflow", "{0:cond:a|b}", "[3000000000]");
+    Add("cond-decimal-overflow", "{0:cond:a|b}", "[1e30]");
+    Add("cond-bad-condition-value", "{0:cond:>5.5.5?a|b}", "[6]");
+    Add("cond-condition-too-large", "{0:cond:>99999999999999999999999999999999?a|b}", "[6]");
+    Add("cond-unknown-name", "{0:conditional:a|b}", "[1]");
+
+    // PluralLocalizationFormatter.
+    Add("plural-one-word", "{0:plural:One}", "[1]", "en-US");
+    Add("plural-five-words", "{0:plural:a|b|c|d|e}", "[1]", "en-US");
+    Add("plural-five-words-offset", "prefix {0:plural:a|b|c|d|e}", "[1]", "en-US");
+    Add("plural-string-value", "{0:plural:One|Two}", @"[""1234""]", "en-US");
+    Add("plural-null-value", "{0:plural:One|Two}", "[null]", "en-US");
+    Add("plural-bool-value", "{0:plural:One|Two}", "[false]", "en-US");
+    Add("plural-unknown-language", "{0:plural(xx):a|b}", "[1]", "en-US");
+    Add("plural-unknown-name", "{0:p:one|many}", "[2]", "en-US");
+
+    // The same failures under MaintainTokens, which reconstructs the
+    // placeholder from the template instead of reporting anything.
+    cases.Add(new GoldenCase(
+        "errtext-maintain-choose-no-match", "{0:choose(1|2):1|2}", "[99]", maintain));
+    cases.Add(new GoldenCase(
+        "errtext-maintain-cond-one-part", "{0:cond:Yes}", "[1]", maintain));
+    cases.Add(new GoldenCase(
+        "errtext-maintain-plural-one-word", "{0:plural:One}", "[1]", maintain, "en-US"));
+}
+
+// ---------------------------------------------------------------------------
 // JSON -> CLR argument mapping (mirrored by the Rust golden runner)
 // ---------------------------------------------------------------------------
 
@@ -895,7 +1601,8 @@ static string JsonDouble(double value)
 }
 
 internal readonly record struct GoldenCase(
-    string Id, string Template, string ArgsJson, CaseSettings? Settings = null);
+    string Id, string Template, string ArgsJson, CaseSettings? Settings = null,
+    string Culture = "");
 
 /// <summary>
 /// The non-default <see cref="SmartSettings"/> a case runs with. A case without

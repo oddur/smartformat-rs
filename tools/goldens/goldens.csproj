@@ -8,6 +8,10 @@
     <!-- `dotnet run` writes build diagnostics to stdout, which would corrupt
          the generated JSON, so no warning may survive a build. -->
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!-- Culture cases need the real ICU data. The default is already false,
+         but an environment that turned it on would silently render every
+         culture as the invariant one instead of failing. -->
+    <InvariantGlobalization>false</InvariantGlobalization>
   </PropertyGroup>
 
   <ItemGroup>

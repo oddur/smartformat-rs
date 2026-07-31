@@ -20,8 +20,9 @@ Everything in SmartFormat's core plus the built-in extensions, in this order:
   custom patterns like `#,##0.00`; those hard-error so gaps are loud, not
   silently wrong.
   Golden-test harness (below) lands here too.
-- **M2 — value-dense formatters:** `PluralLocalizationFormatter`, `ChooseFormatter`,
-  `ConditionalFormatter` (pulls in ICU4X).
+- **M2 — value-dense formatters (done):** `PluralLocalizationFormatter`,
+  `ChooseFormatter`, `ConditionalFormatter`, plus the culture data all three and
+  `DefaultFormatter` render through, generated from .NET by `tools/culturegen`.
 - **M3 — breadth:** `ListFormatter`, `SubStringFormatter`, `NullFormatter`,
   `IsMatchFormatter` (regex), `TemplateFormatter`.
 - **M4 — the .NET-heavy tail:** `LocalizationFormatter`, `TimeFormatter`,
@@ -33,7 +34,8 @@ Everything in SmartFormat's core plus the built-in extensions, in this order:
 |---|---|
 | Data model | Own `Value` enum (no forced serde dep) + `#[derive(ToSmartValue)]` proc macro replacing .NET reflection |
 | Format specifiers | Full .NET *standard* specifiers; custom patterns are a hard error |
-| Culture data | ICU4X (`icu` crates) — matches modern ICU-backed .NET closely |
+| Culture data | Read out of .NET itself by `tools/culturegen` into `fmt::culture::generated`, for a fixed list of cultures. No ICU4X, no CLDR: mapped data would be *close*, and the goal is byte-identical. A culture outside the list is `None` from `culture::get`, never a guess |
+| Pluralization | A port of SmartFormat.NET's own `PluralRules.cs` table, not CLDR. SmartFormat does not consult CLDR at runtime either, and its table disagrees with CLDR in places (Icelandic is `one`/`other`); agreeing with .NET is the requirement |
 | Date/time | `jiff`, with a .NET-pattern → strtime translator for standard date specifiers |
 | Errors | `format() -> Result<String, Error>`; SmartFormat's `ErrorAction` settings honored (`Error` ⇒ `Err`, lenient modes recover and return `Ok`) |
 | API | Parse-once `Format` object for caching + one-shot convenience function |
@@ -48,8 +50,12 @@ Everything in SmartFormat's core plus the built-in extensions, in this order:
   combinations beyond the standard specifiers' output)
 - resx parsing
 - XML/JSON source extensions (`SmartFormat.Extensions.Xml` / `*.Json`)
-- Byte-compat for locales where .NET diverges from CLDR — we follow ICU4X and
-  document divergences as goldens expose them
+- Cultures outside the generated list. `fmt::culture::get` answers `None` rather
+  than resolving a parent the way .NET's CLDR tree would; the caller decides
+  whether to error or fall back. Adding one is a line in `tools/culturegen` plus
+  a regeneration. Where .NET disagrees with CLDR for a culture that *is* in the
+  list, .NET is what we follow — the data came from .NET, so there is nothing to
+  reconcile.
 
 ## Known divergences
 
@@ -183,6 +189,76 @@ answer is not reproducible.
   `sel-default-format-map`, plus `default_formatting_of_a_list_is_an_error`,
   `default_formatting_of_a_map_is_an_error` and
   `an_empty_argument_list_is_its_own_scope`.
+- **A format no formatter claims is a custom pattern in .NET.** `{0:plural}` and
+  `{0:zero}` against a number hold one part, which is too few for either
+  auto-detecting formatter, so `DefaultFormatter` hands the whole format to
+  `long.ToString(format, culture)` — which reads it as a *custom* numeric
+  pattern whose characters are all literals and renders `plural` / `zero`. A
+  custom pattern is the non-goal above, so both are `UnsupportedSpec` here. The
+  cases exist to show what the auto-detection *not* firing looks like.
+  *Pins:* `plural-bare-name`, `autodetect-single-part`.
+- **`ar-SA` dates use the Hijri calendar in .NET.** `ar-SA`'s default calendar
+  is `UmAlQuraCalendar`, so .NET renders 2024-03-05 as
+  `24 شعبان، 1445 بعد الهجرة` — Hijri year, month and day. `fmt::date` has only
+  a Gregorian calendar, so it feeds Gregorian fields through `ar-SA`'s Hijri
+  month names and era and answers `5 ربيع الأول، 2024 بعد الهجرة`. Every
+  specifier that reads a *date* field diverges; the time-only ones (`t`, `T`)
+  agree, and `ar-SA` *numbers* match byte for byte. Closing this means porting
+  the Umm al-Qura calendar, which is its own decision. Every other culture in
+  the generated list is Gregorian in .NET, `ja` and `ko` included.
+  *Pins:* the ten `culture-date*-ar-sa-*` cases and
+  `fmt::date::tests::cultures::ar_sa_dates_diverge_because_its_calendar_is_not_gregorian`.
+- **Pluralization runs on `f64`, .NET's on `decimal`.** `PluralRule` takes an
+  `f64`, so an integer above 2^53 loses the low digits the rules look at:
+  `{0:plural(ru):a|b|c}` with `10000000000000001` is `a` in .NET (its exact
+  decimal ends in 1) and `c` here. Values a `decimal` cannot hold at all —
+  non-finite, or `|v| >= 2^96` — fail on both sides, and `to_decimal` reproduces
+  `Convert.ToDecimal`'s 15-significant-digit rounding, so the ordinary cases
+  agree.
+  *Pins:* `plural-i64-beyond-double` and
+  `extensions::plural::tests::an_integer_beyond_the_precision_of_a_double_is_a_known_divergence`.
+- **`choose` compares its options ordinally.** .NET uses
+  `culture.CompareInfo.Compare`, which ignores collation-ignorable characters:
+  the value `a\u{ad}b` (soft hyphen) matches the option `ab`, and the empty
+  string matches the option `\u{ad}`. `CaseSensitivity::eq` is `Ordinal` /
+  `OrdinalIgnoreCase`, so neither matches here. Ordinary case folding agrees.
+  *Pins:* `culture-fmt-choose-soft-hyphen-value`,
+  `culture-fmt-choose-soft-hyphen-option`.
+- **`choose` stringifies the value with the culture of the call.** .NET calls
+  `CurrentValue.ToString()`, which ignores the `IFormatProvider` passed to
+  `Format()` and uses the *thread* culture, so `{0:choose(1.5|2.5):a|b}` in .NET
+  depends on the machine's locale. We use the culture of the call. There is no
+  golden, because .NET's own answer is not reproducible across machines; the
+  goldens deliberately hold no float or decimal `choose` options.
+- **`cond` has no `TimeSpan`, enum or `char` branch.** `Value` has no duration
+  or enum variant, so .NET's `case TimeSpan` (Negative/Zero/Positive) and its
+  enum-name conditions have no counterpart and their .NET tests are not ported.
+  A `char` reaches .NET as `Invalid cast from 'Char' to 'Decimal'`, where a
+  `Value` holds it as a one-character string and takes the string branch —
+  unreachable through `Value`, so it is not pinned.
+
+## Deliberate policy differences
+
+Not gaps: places where the port takes something .NET reads from ambient state
+as an explicit input instead.
+
+- **`cond`'s "now".** .NET compares `value.ToUniversalTime()` against
+  `DateTime.UtcNow`. `Value::DateTime` is a zone-less `jiff::civil::DateTime`
+  and the crate has no clock-access policy, so the caller supplies the
+  comparison point: `ConditionalFormatter::with_now(now)`, and a date condition
+  without one is an error rather than a guess. Both sides are read as UTC, which
+  is exactly .NET for a `Kind=Utc` value; a local-time value has to be converted
+  by the caller, so .NET's `DateTime.Today` (local midnight) renders `Past` in a
+  UTC+2 process where the same civil value is `Present` here. Date conditions
+  therefore have no goldens — one would have to pin a wall clock.
+  *Pins:* `extensions::conditional::tests::dates::*`, including
+  `a_date_without_a_now_is_an_error`.
+- **The pluralization rule is a field of the formatter.** .NET hangs a
+  `CustomPluralRuleProvider` off the `IFormatProvider` of the call and lets
+  `PluralRules.IsoLangToDelegate` be mutated globally. There is no provider
+  here, so a custom rule is `PluralLocalizationFormatter::with_custom_rule` and
+  the language table is read-only. .NET's precedence is kept: a language named
+  in the formatter options still wins over the custom rule.
 
 ## Pinned to SmartFormat.NET 3.6.1
 
