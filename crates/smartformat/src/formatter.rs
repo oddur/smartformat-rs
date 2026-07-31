@@ -11,6 +11,9 @@
 use std::borrow::Cow;
 
 use crate::error::Error;
+#[cfg(feature = "plural")]
+use crate::extensions::PluralLocalizationFormatter;
+use crate::extensions::{ChooseFormatter, ConditionalFormatter};
 use crate::fmt::culture::{self, CultureData};
 #[cfg(feature = "time")]
 use crate::fmt::date;
@@ -70,11 +73,29 @@ impl FormatterRegistry {
         }
     }
 
-    /// The M1 formatters: [`DefaultFormatter`] only.
+    /// The default formatters, in the order .NET's `CreateDefaultSmartFormat`
+    /// ends up with.
+    ///
+    /// .NET adds its extensions in one call and lets `WellKnownExtensionTypes`
+    /// sort them by a fixed rank, which for the ones ported so far comes out as
+    /// `PluralLocalizationFormatter` (2000), [`ConditionalFormatter`] (3000),
+    /// [`ChooseFormatter`] (10000), [`DefaultFormatter`] (12000). The gaps —
+    /// `ListFormatter` (1000), `IsMatchFormatter` (6000), `NullFormatter`
+    /// (7000) and `SubStringFormatter` (11000) — land in milestone M3 and slot
+    /// in between without moving anything.
+    ///
+    /// The order is observable: `PluralLocalizationFormatter` and
+    /// `ConditionalFormatter` both auto-detect a `|`-separated format, so the
+    /// first of the two decides what `{0:a|b}` means for a number.
     pub fn new() -> Self {
-        Self {
-            formatters: vec![Box::new(DefaultFormatter)],
-        }
+        let formatters: Vec<Box<dyn Formatter>> = vec![
+            #[cfg(feature = "plural")]
+            Box::new(PluralLocalizationFormatter::new()),
+            Box::new(ConditionalFormatter::new()),
+            Box::new(ChooseFormatter::new()),
+            Box::new(DefaultFormatter),
+        ];
+        Self { formatters }
     }
 
     /// Adds a formatter, which is consulted before the always-last
@@ -93,6 +114,11 @@ impl FormatterRegistry {
 
     pub fn is_empty(&self) -> bool {
         self.formatters.is_empty()
+    }
+
+    /// The registered formatters, in the order they are consulted.
+    pub fn iter(&self) -> impl ExactSizeIterator<Item = &dyn Formatter> {
+        self.formatters.iter().map(AsRef::as_ref)
     }
 
     fn find(&self, name: &str, case_sensitivity: CaseSensitivity) -> Option<&dyn Formatter> {
@@ -234,6 +260,45 @@ impl SmartFormatter {
         self.format_parsed_with_culture(&format, args, culture)
     }
 
+    /// Renders `template` with the culture of that name — `""` for the
+    /// invariant culture, `"de-DE"`, `"is"`, … — matched case-insensitively as
+    /// .NET's `GetCultureInfo` does.
+    ///
+    /// Fails with [`Error::UnknownCulture`] when no data is shipped for the
+    /// name; [`fmt::culture::get`](crate::fmt::culture::get) is the same lookup
+    /// without the error, for a caller that would rather fall back.
+    ///
+    /// ```
+    /// use smartformat::{SmartFormatter, Value};
+    ///
+    /// let smart = SmartFormatter::default();
+    /// let args = Value::List(vec![Value::Float(1234.5)]);
+    /// assert_eq!(
+    ///     smart.format_with_culture_name("{0:N2}", &args, "de-DE").unwrap(),
+    ///     "1.234,50"
+    /// );
+    /// assert!(smart.format_with_culture_name("{0}", &args, "xx-XX").is_err());
+    /// ```
+    pub fn format_with_culture_name(
+        &self,
+        template: &str,
+        args: &Value,
+        culture: &str,
+    ) -> Result<String, Error> {
+        self.format_with_culture(template, args, culture_by_name(culture)?)
+    }
+
+    /// Renders a template parsed by [`parse`](Self::parse), with the culture of
+    /// that name. See [`format_with_culture_name`](Self::format_with_culture_name).
+    pub fn format_parsed_with_culture_name(
+        &self,
+        format: &Format,
+        args: &Value,
+        culture: &str,
+    ) -> Result<String, Error> {
+        self.format_parsed_with_culture(format, args, culture_by_name(culture)?)
+    }
+
     /// Renders a template parsed by [`parse`](Self::parse), with the invariant
     /// culture.
     pub fn format_parsed(&self, format: &Format, args: &Value) -> Result<String, Error> {
@@ -276,6 +341,13 @@ impl Default for SmartFormatter {
     fn default() -> Self {
         Self::new(SmartSettings::default())
     }
+}
+
+/// The culture of that name, or [`Error::UnknownCulture`].
+fn culture_by_name(name: &str) -> Result<&'static CultureData, Error> {
+    culture::get(name).ok_or_else(|| Error::UnknownCulture {
+        name: name.to_owned(),
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -576,7 +648,7 @@ impl<'e> Engine<'e> {
                 "No source extension could handle the selector named \"{}\"",
                 selector.text
             ),
-            selector.start,
+            self.utf16_position(selector.start),
         )
     }
 
@@ -595,6 +667,11 @@ impl<'e> Engine<'e> {
 
     /// A .NET `FormattingException`, whose `Message` quotes the template and
     /// points at `index` (`FormattingException.Message`).
+    ///
+    /// `index` is already in the unit .NET counts in — UTF-16 code units of
+    /// the template — because a couple of call sites pass .NET something that
+    /// is not an offset at all; see
+    /// [`FormattingInfo::formatting_error_at_utf16`].
     fn formatting_error(&self, issue: &str, index: usize) -> Error {
         Error::Format {
             message: format!(
@@ -734,6 +811,72 @@ impl<'a> FormattingInfo<'a> {
         write_aligned(self.output, text, self.alignment, fill);
     }
 
+    /// The whole template being rendered, which every error message quotes
+    /// (.NET `FormatItem.BaseString`).
+    pub fn base_string(&self) -> &'a str {
+        self.engine.base
+    }
+
+    /// The byte offset into [`base_string`](Self::base_string) that .NET
+    /// reports an error from this placeholder at: the start of its format, or
+    /// the end of its last selector when it has none
+    /// (.NET `Evaluator.InvokeFormatters`).
+    pub fn error_position(&self) -> usize {
+        error_position(self.placeholder)
+    }
+
+    /// A .NET `FormattingException` raised by this formatter
+    /// (`IFormattingInfo.FormattingException`).
+    ///
+    /// The message is .NET's `FormattingException.Message` verbatim: the issue,
+    /// the index it is reported at, then the whole template and a caret line.
+    /// [`ErrorAction::OutputErrorInResult`] writes that message into the
+    /// result, so it has to match byte for byte.
+    ///
+    /// `index` is a byte offset into [`base_string`](Self::base_string) —
+    /// usually [`error_position`](Self::error_position) — and is converted to
+    /// the UTF-16 code-unit index .NET counts in.
+    ///
+    /// Use this only where .NET throws a `FormattingException` itself. Where it
+    /// throws something else — a `FormatException`, an `ArgumentException` —
+    /// the envelope is added by the evaluator, and only when the error is
+    /// thrown on: `OutputErrorInResult` writes the inner exception's bare
+    /// message. Such a formatter returns a plain [`Error::Format`] instead.
+    pub fn formatting_error(&self, issue: &str, index: usize) -> Error {
+        self.engine
+            .formatting_error(issue, self.engine.utf16_position(index))
+    }
+
+    /// Like [`formatting_error`](Self::formatting_error), but with the index
+    /// taken verbatim instead of converted from a byte offset.
+    ///
+    /// A few .NET call sites pass a number that is not an offset into the
+    /// template at all — `PluralLocalizationFormatter` reports the number of
+    /// plural words it was given — and the caret then lands wherever that
+    /// number happens to point. Reproducing the message means reproducing the
+    /// index.
+    pub fn formatting_error_at_utf16(&self, issue: &str, index: usize) -> Error {
+        self.engine.formatting_error(issue, index)
+    }
+
+    /// The error .NET raises as a plain exception — a `FormatException`, an
+    /// `ArgumentException`, an `OverflowException` — rather than as a
+    /// `FormattingException`.
+    ///
+    /// Its message is the bare issue, with none of the
+    /// [`formatting_error`](Self::formatting_error) envelope, because .NET only
+    /// wraps such an exception while rethrowing it:
+    /// [`ErrorAction::OutputErrorInResult`] writes the *inner* exception's
+    /// message, which is the bare text. `index` is a byte offset into
+    /// [`base_string`](Self::base_string), reported in UTF-16 code units as
+    /// .NET counts them.
+    pub fn plain_error(&self, issue: &str, index: usize) -> Error {
+        Error::Format {
+            message: issue.to_owned(),
+            position: self.engine.utf16_position(index),
+        }
+    }
+
     /// Renders `format` with `value` as the current scope, appending to the
     /// same output (.NET `IFormattingInfo.FormatAsChild`).
     pub fn format_as_child(&mut self, format: &Format, value: &Value) -> Result<(), Error> {
@@ -780,7 +923,8 @@ impl Formatter for DefaultFormatter {
         // .NET hands `ISpanFormattable` values the *raw* source text of the
         // format as the specifier, not the escape-resolved `Format.ToString()`.
         let spec = format.map(|format| format.raw.as_str()).unwrap_or_default();
-        let position = error_position(info.placeholder());
+        // .NET reports the index in UTF-16 code units, as everywhere else.
+        let position = info.engine.utf16_position(info.error_position());
         // Borrowed wherever the text already exists, so the common
         // string / null / bool cases allocate nothing per placeholder.
         let text: Cow<'_, str> = match current {

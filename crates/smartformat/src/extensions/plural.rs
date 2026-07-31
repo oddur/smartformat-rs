@@ -7,13 +7,10 @@
 //! format, picked by the pluralization rule of the language and by the value:
 //!
 //! ```
-//! use smartformat::extensions::plural::PluralLocalizationFormatter;
 //! use smartformat::{SmartFormatter, Value};
 //!
-//! let mut smart = SmartFormatter::default();
-//! smart
-//!     .formatters_mut()
-//!     .insert(0, Box::new(PluralLocalizationFormatter::new()));
+//! // Registered by default, ahead of `cond` and `choose`.
+//! let smart = SmartFormatter::default();
 //!
 //! let template = "There {0:plural:is|are} {0} {0:plural:item|items} remaining";
 //! let one = Value::List(vec![Value::Int(1)]);
@@ -30,9 +27,10 @@ use std::fmt;
 
 use crate::extensions::plural_rules::{get_plural_rule, PluralRule};
 use crate::formatter::{Formatter, FormattingInfo};
-use crate::parsing::{Format, FormatItem, LiteralText, Placeholder};
 use crate::value::Value;
 use crate::Error;
+
+use super::{InvalidSplitChar, DEFAULT_SPLIT_CHAR};
 
 /// The default formatter name, .NET `PluralLocalizationFormatter.Name`.
 ///
@@ -40,13 +38,6 @@ use crate::Error;
 /// held `"plural"`, `"p"` and `""`, but only `"plural"` selects the formatter
 /// in 3.6.1.
 const NAME: &str = "plural";
-
-/// The characters .NET accepts as a split character
-/// (`Utilities.Validation.GetValidSplitCharOrThrow`).
-pub const VALID_SPLIT_CHARS: [char; 3] = ['|', ',', '~'];
-
-/// The .NET default split character.
-const DEFAULT_SPLIT_CHAR: char = VALID_SPLIT_CHARS[0];
 
 /// The language used when the culture is the invariant one, .NET
 /// `PluralLocalizationFormatter.DefaultTwoLetterISOLanguageName`. .NET has no
@@ -100,6 +91,7 @@ impl PluralLocalizationFormatter {
     /// let formatter = PluralLocalizationFormatter::with_custom_rule(german);
     ///
     /// let mut smart = SmartFormatter::default();
+    /// // Ahead of the default `plural`, which would otherwise answer first.
     /// smart.formatters_mut().insert(0, Box::new(formatter));
     ///
     /// let args = Value::List(vec![Value::List(vec![Value::Null, Value::Null])]);
@@ -126,13 +118,10 @@ impl PluralLocalizationFormatter {
     /// Changes the split character, so that the character it replaces can be
     /// used in the output — `{0:plural:|is a person|.~|are {} people|.}`.
     ///
-    /// Only the characters in [`VALID_SPLIT_CHARS`] are accepted; .NET throws
-    /// an `ArgumentException` for anything else.
+    /// Only the characters in [`VALID_SPLIT_CHARS`](super::VALID_SPLIT_CHARS)
+    /// are accepted; .NET throws an `ArgumentException` for anything else.
     pub fn set_split_char(&mut self, split_char: char) -> Result<(), InvalidSplitChar> {
-        if !VALID_SPLIT_CHARS.contains(&split_char) {
-            return Err(InvalidSplitChar(split_char));
-        }
-        self.split_char = split_char;
+        self.split_char = super::valid_split_char(split_char)?;
         Ok(())
     }
 
@@ -214,7 +203,7 @@ impl Formatter for PluralLocalizationFormatter {
         let current = info.current();
 
         // Extract the plural words from the format string.
-        let plural_words = split(format, self.split_char);
+        let plural_words = format.split(self.split_char);
 
         let use_auto_detection = info.placeholder().formatter_name.is_empty();
 
@@ -235,8 +224,10 @@ impl Formatter for PluralLocalizationFormatter {
                 if use_auto_detection {
                     return Ok(false);
                 }
-                // The formatter was called by name, so this is an error.
-                return Err(formatting_error(
+                // The formatter was called by name, so this is an error. .NET
+                // reports it at index 0 literally, so the caret sits at the
+                // start of the template whatever the placeholder is.
+                return Err(info.formatting_error_at_utf16(
                     &format!(
                         "Formatter named '{}' can format numbers and IEnumerables, but the argument was of type '{}'",
                         info.placeholder().formatter_name,
@@ -252,7 +243,12 @@ impl Formatter for PluralLocalizationFormatter {
         let plural_index = self.plural_rule(info)?.apply(value, plural_count);
 
         if plural_index < 0 || plural_count <= plural_index as usize {
-            return Err(formatting_error(
+            // .NET passes `pluralWords.Count - 1` as the index, which is a
+            // count and not an offset into the template at all: the caret of
+            // the message lands wherever that count happens to point. Probed:
+            // the index stays 4 for `{0:plural:a|b|c|d|e}` however many
+            // characters precede the placeholder.
+            return Err(info.formatting_error_at_utf16(
                 "Invalid number of plural parameters in PluralLocalizationFormatter",
                 plural_count - 1,
             ));
@@ -264,24 +260,6 @@ impl Formatter for PluralLocalizationFormatter {
         Ok(true)
     }
 }
-
-/// The split character passed to
-/// [`PluralLocalizationFormatter::set_split_char`] was not one of
-/// [`VALID_SPLIT_CHARS`] (.NET `ArgumentException`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct InvalidSplitChar(pub char);
-
-impl fmt::Display for InvalidSplitChar {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "Only '{}', '{}' and '{}' are valid split chars.",
-            VALID_SPLIT_CHARS[0], VALID_SPLIT_CHARS[1], VALID_SPLIT_CHARS[2]
-        )
-    }
-}
-
-impl std::error::Error for InvalidSplitChar {}
 
 /// The rule the formatter ends up using for one placeholder.
 enum ResolvedRule<'a> {
@@ -306,13 +284,16 @@ impl ResolvedRule<'_> {
 fn language_rule(language: &str, info: &FormattingInfo<'_>) -> Result<PluralRule, Error> {
     get_plural_rule(language).ok_or_else(|| {
         // .NET throws a plain `ArgumentException` here, which the evaluator
-        // catches and re-raises at the start of the placeholder's format.
-        Error::Format {
-            message: format!(
+        // catches and re-raises at the start of the placeholder's format. Being
+        // a plain exception rather than a `FormattingException`, it carries no
+        // `Error parsing format string: … at {index}` envelope in the output:
+        // probed, `ErrorAction::OutputErrorInResult` writes the bare message.
+        info.plain_error(
+            &format!(
                 "IsoLangToDelegate not found for {language} (Parameter 'twoLetterIsoLanguageName')"
             ),
-            position: error_position(info.placeholder()),
-        }
+            info.error_position(),
+        )
     })
 }
 
@@ -403,144 +384,6 @@ fn to_decimal(value: f64) -> Option<f64> {
     Some(rounded)
 }
 
-/// The index .NET reports for an error raised while formatting a placeholder
-/// (`Evaluator.EvaluateFormatters`).
-fn error_position(placeholder: &Placeholder) -> usize {
-    if let Some(format) = &placeholder.format {
-        return format.start;
-    }
-    placeholder
-        .selectors
-        .last()
-        .map_or(placeholder.start, |selector| selector.end)
-}
-
-/// A .NET `FormattingException` raised by the formatter itself, which passes
-/// both the message and the index it is reported at.
-///
-/// TODO(m2): .NET's `FormattingException.Message` prefixes the issue with
-/// `Error parsing format string: … at {index}` and appends the whole template
-/// plus a caret line, and `ErrorAction::OutputErrorInResult` writes that
-/// message into the output verbatim. Building it needs the base template,
-/// which `FormattingInfo` does not expose (`Engine::formatting_error` is
-/// private to the engine), so until it does the message here is the bare
-/// issue — the text .NET's `FormattingException.Issue` carries.
-fn formatting_error(issue: &str, index: usize) -> Error {
-    Error::Format {
-        message: issue.to_owned(),
-        position: index,
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Splitting a format
-// ---------------------------------------------------------------------------
-//
-// A private port of .NET `Format.Split` / `Format.IndexOf` / `Format.Substring`
-// (`Core/Parsing/Format.cs`, `Core/Parsing/SplitList.cs`). A later change lifts
-// this into `parsing::Format::split`, where the other formatters that split a
-// format can share it.
-
-/// Splits `format` on `separator`, which is only ever searched for in literal
-/// text: a nested placeholder is never split, and neither is the text in it.
-fn split(format: &Format, separator: char) -> Vec<Format> {
-    let positions = find_all(format, separator);
-    // .NET returns the format itself when it holds no separator.
-    if positions.is_empty() {
-        return vec![format.clone()];
-    }
-
-    let mut pieces = Vec::with_capacity(positions.len() + 1);
-    let mut start = format.start;
-    for position in positions {
-        pieces.push(substring(format, start, position));
-        start = position + separator.len_utf8();
-    }
-    pieces.push(substring(format, start, format.end));
-    pieces
-}
-
-/// Every offset of `separator` in the literal text of `format`, as a byte
-/// offset into the template (.NET `Format.FindAll`).
-fn find_all(format: &Format, separator: char) -> Vec<usize> {
-    let mut positions = Vec::new();
-    for item in &format.items {
-        // .NET searches the *source* text of a literal, so a separator that is
-        // part of an escape sequence — `\|`, which is not a valid sequence and
-        // fails when it is written — splits the format all the same.
-        if let FormatItem::Literal(literal) = item {
-            positions.extend(
-                literal
-                    .raw
-                    .match_indices(separator)
-                    .map(|(offset, _)| literal.start + offset),
-            );
-        }
-    }
-    positions
-}
-
-/// The part of `format` between two byte offsets into the template
-/// (.NET `Format.Substring`).
-fn substring(format: &Format, start: usize, end: usize) -> Format {
-    let mut items = Vec::new();
-    for item in &format.items {
-        if item.end() <= start {
-            continue; // Skip the items before the substring.
-        }
-        if end <= item.start() {
-            break; // Done.
-        }
-
-        match item {
-            FormatItem::Literal(literal) => items.push(FormatItem::Literal(slice_literal(
-                literal,
-                literal.start.max(start),
-                literal.end.min(end),
-            ))),
-            // A placeholder cannot be split, so one that reaches into the
-            // substring is taken whole, as in .NET.
-            placeholder => items.push(placeholder.clone()),
-        }
-    }
-
-    Format {
-        raw: slice(&format.raw, format.start, start, end),
-        items,
-        start,
-        end,
-    }
-}
-
-/// The part of a literal between two byte offsets into the template.
-///
-/// A slice that cuts an escape sequence in half keeps the characters that are
-/// left as they are. .NET resolves the escape sequences of the slice afresh,
-/// which for the only sequence a split character can occur in — `\|`, whose
-/// left half is a lone `\` — has the same result.
-fn slice_literal(literal: &LiteralText, start: usize, end: usize) -> LiteralText {
-    if start == literal.start && end == literal.end {
-        return literal.clone();
-    }
-
-    let raw = slice(&literal.raw, literal.start, start, end);
-    LiteralText {
-        text: raw.clone(),
-        raw,
-        escape_error: None,
-        start,
-        end,
-    }
-}
-
-/// `text[start..end]`, where all three offsets are byte offsets into the
-/// template and `text` is the source text starting at `base`.
-fn slice(text: &str, base: usize, start: usize, end: usize) -> String {
-    text.get(start.saturating_sub(base)..end.saturating_sub(base))
-        .unwrap_or_default()
-        .to_owned()
-}
-
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -551,14 +394,16 @@ mod tests {
     //! `src/SmartFormat.Tests/Extensions/PluralLocalizationFormatterTests.cs`,
     //! plus the cases a differential run against SmartFormat.NET 3.6.1 pinned.
     //!
-    //! The expected error messages are the *issue* text and the index .NET
-    //! reports; the surrounding `Error parsing format string: … at {index}`
-    //! envelope is knowingly missing here (see `formatting_error`).
+    //! Error messages are asserted in full. The two that .NET raises as a
+    //! `FormattingException` carry its `Error parsing format string: … at
+    //! {index}` envelope, built here by `envelope`; the language lookup, which
+    //! .NET raises as a plain `ArgumentException`, carries none.
 
     use std::collections::BTreeMap;
 
     use super::*;
     use crate::fmt::culture::{self, CultureData};
+    use crate::formatter::{DefaultFormatter, FormatterRegistry};
     use crate::settings::{ErrorAction, SmartSettings};
     use crate::SmartFormatter;
 
@@ -580,8 +425,13 @@ mod tests {
             format_error_action: ErrorAction::Error,
             ..SmartSettings::default()
         });
-        // .NET registers the formatter ahead of DefaultFormatter.
-        smart.formatters_mut().insert(0, Box::new(formatter));
+        // Only the formatter under test and the always-last DefaultFormatter,
+        // so these tests pin this formatter rather than the order of the
+        // default registry — which `tests/extensions.rs` pins instead.
+        let formatters = smart.formatters_mut();
+        *formatters = FormatterRegistry::empty();
+        formatters.push(Box::new(formatter));
+        formatters.push(Box::new(DefaultFormatter));
         smart
     }
 
@@ -602,6 +452,17 @@ mod tests {
         smart()
             .format_with_culture(template, &args([value]), &culture(culture_name))
             .unwrap_or_else(|error| panic!("{template:?} failed: {error}"))
+    }
+
+    /// .NET's `FormattingException.Message`, which
+    /// `ErrorAction::OutputErrorInResult` writes into the result verbatim:
+    /// the issue, the index it is reported at, then the template and a caret
+    /// line. Probed against 3.6.1.
+    fn envelope(template: &str, issue: &str, index: usize) -> String {
+        std::format!(
+            "Error parsing format string: {issue} at {index}\n{template}\n{}^",
+            "-".repeat(index)
+        )
     }
 
     fn error_of(template: &str, value: Value) -> (String, usize) {
@@ -974,7 +835,11 @@ mod tests {
         };
         assert_eq!(
             message,
-            "Invalid number of plural parameters in PluralLocalizationFormatter"
+            envelope(
+                "{0:plural:a|b}",
+                "Invalid number of plural parameters in PluralLocalizationFormatter",
+                1
+            )
         );
         assert_eq!(index, 1);
     }
@@ -1088,14 +953,22 @@ mod tests {
         assert_eq!(
             error_of("{0:plural:One}", Value::Int(1)),
             (
-                "Invalid number of plural parameters in PluralLocalizationFormatter".to_owned(),
+                envelope(
+                    "{0:plural:One}",
+                    "Invalid number of plural parameters in PluralLocalizationFormatter",
+                    0
+                ),
                 0
             )
         );
         assert_eq!(
             error_of("{0:plural:a|b|c|d|e}", Value::Int(1)),
             (
-                "Invalid number of plural parameters in PluralLocalizationFormatter".to_owned(),
+                envelope(
+                    "{0:plural:a|b|c|d|e}",
+                    "Invalid number of plural parameters in PluralLocalizationFormatter",
+                    4
+                ),
                 4
             )
         );
@@ -1122,8 +995,12 @@ mod tests {
         ];
 
         for (value, type_name) in cases {
-            let expected = format!(
-                "Formatter named 'plural' can format numbers and IEnumerables, but the argument was of type '{type_name}'"
+            let expected = envelope(
+                "{0:plural:One|Two}",
+                &format!(
+                    "Formatter named 'plural' can format numbers and IEnumerables, but the argument was of type '{type_name}'"
+                ),
+                0,
             );
             // .NET reports this one at index 0.
             assert_eq!(
@@ -1228,7 +1105,11 @@ mod tests {
         let (message, position) = error_of("{0:plural:One|Two}", date);
         assert_eq!(
             message,
-            "Formatter named 'plural' can format numbers and IEnumerables, but the argument was of type 'System.DateTime'"
+            envelope(
+                "{0:plural:One|Two}",
+                "Formatter named 'plural' can format numbers and IEnumerables, but the argument was of type 'System.DateTime'",
+                0
+            )
         );
         assert_eq!(position, 0);
     }

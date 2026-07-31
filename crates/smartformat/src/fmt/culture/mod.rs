@@ -1,7 +1,8 @@
 //! Culture data needed by the standard format specifiers, mirroring the
 //! parts of .NET `NumberFormatInfo` / `DateTimeFormatInfo` we consume.
 //!
-//! Every culture but the invariant one lives in [`generated`], read straight
+//! Every culture but the invariant one lives in the private `generated`
+//! module (`generated.rs`), read straight
 //! out of a real .NET `CultureInfo` by `tools/culturegen` rather than mapped
 //! from CLDR, so a listed culture formats byte-identically to .NET by
 //! construction. Pattern integers (`currency_negative_pattern` etc.) are the

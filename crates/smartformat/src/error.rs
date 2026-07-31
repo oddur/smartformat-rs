@@ -32,6 +32,16 @@ pub enum Error {
         message: String,
         position: usize,
     },
+    /// No culture of that name is in the table
+    /// [`fmt::culture`](crate::fmt::culture) ships.
+    ///
+    /// .NET would resolve any well-formed name against the whole CLDR tree;
+    /// this crate reads its data out of .NET for a fixed list of cultures and
+    /// says so rather than guessing at a parent. Only
+    /// [`SmartFormatter::format_with_culture_name`](crate::SmartFormatter::format_with_culture_name)
+    /// and its parsed twin raise it — passing [`CultureData`](crate::fmt::culture::CultureData)
+    /// directly cannot fail.
+    UnknownCulture { name: String },
 }
 
 #[derive(Debug)]
@@ -57,6 +67,9 @@ impl fmt::Display for Error {
                 message, position, ..
             } => {
                 write!(f, "formatting error at {position}: {message}")
+            }
+            Error::UnknownCulture { name } => {
+                write!(f, "unknown culture {name:?}: no data is shipped for it")
             }
         }
     }

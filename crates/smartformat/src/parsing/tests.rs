@@ -1024,3 +1024,115 @@ fn too_many_closing_braces_stay_in_the_output() {
     assert_eq!(parsed.items.len(), 2);
     assert_eq!(parsed.to_string(), "0}");
 }
+
+// ---------------------------------------------------------------------------
+// Format::split
+// ---------------------------------------------------------------------------
+//
+// Ported from SmartFormat.NET `src/SmartFormat.Tests/Core/FormatTests.cs`
+// (`Format.Split` over `SplitList`). The `choose`, `cond` and `plural`
+// formatters all read their parts through this.
+
+/// The format of the first placeholder of `template`.
+fn format_of(template: &str) -> Format {
+    let parsed = parse(template);
+    let FormatItem::Placeholder(placeholder) = &parsed.items[0] else {
+        panic!("expected {template:?} to start with a placeholder");
+    };
+    placeholder
+        .format
+        .clone()
+        .unwrap_or_else(|| panic!("expected {template:?} to have a format"))
+}
+
+fn raws(pieces: &[Format]) -> Vec<&str> {
+    pieces.iter().map(|piece| piece.raw.as_str()).collect()
+}
+
+#[test]
+fn split_cuts_the_format_at_the_top_nesting_level() {
+    let format = format_of("{0:choose(1|2):one|{1}two|three}");
+
+    let pieces = format.split('|');
+    assert_eq!(raws(&pieces), ["one", "{1}two", "three"]);
+    // The piece with the nested placeholder keeps it whole.
+    assert_eq!(pieces[1].items.len(), 2);
+    assert!(pieces[1].has_nested());
+}
+
+#[test]
+fn split_does_not_look_inside_a_nested_placeholder() {
+    // The `|` of the inner format belongs to the inner placeholder.
+    let format = format_of("{0:cond:a{1:cond:x|y}b|c}");
+
+    assert_eq!(raws(&format.split('|')), ["a{1:cond:x|y}b", "c"]);
+}
+
+#[test]
+fn every_piece_spans_the_template_it_was_cut_from() {
+    let template = "{0:choose(1|2):one|{1}two|three}";
+    let format = format_of(template);
+
+    for piece in format.split('|') {
+        assert_eq!(piece.end - piece.start, piece.raw.len());
+        assert_eq!(&template[piece.start..piece.end], piece.raw);
+    }
+}
+
+#[test]
+fn a_format_without_the_separator_is_one_piece() {
+    let format = format_of("{0:choose(1):one}");
+
+    assert_eq!(format.split('|'), vec![format.clone()]);
+}
+
+#[test]
+fn split_keeps_empty_pieces() {
+    let format = format_of("{0:cond:|a||b|}");
+
+    assert_eq!(raws(&format.split('|')), ["", "a", "", "b", ""]);
+}
+
+#[test]
+fn split_uses_the_separator_it_is_given() {
+    let format = format_of("{0:choose(1~2):a|b~c}");
+
+    assert_eq!(raws(&format.split('~')), ["a|b", "c"]);
+}
+
+#[test]
+fn split_searches_the_source_text_so_an_escaped_separator_still_splits() {
+    // .NET's `Format.IndexOf` searches `BaseString`, not the resolved text, so
+    // the `|` of the invalid escape `\|` splits the format and the left piece
+    // keeps the lone backslash. Probed against 3.6.1.
+    let format = format_of(r"{0:choose(1|2):a\|b|c}");
+
+    assert_eq!(raws(&format.split('|')), [r"a\", "b", "c"]);
+}
+
+#[test]
+fn a_separator_written_as_an_escape_sequence_does_not_split() {
+    // `\u007C` resolves to `|`, but the source text holds no `|`, so the search
+    // .NET runs over that source text does not find it either.
+    let format = format_of(r"{0:cond:a\u007Cb|c}");
+
+    let pieces = format.split('|');
+    assert_eq!(raws(&pieces), [r"a\u007Cb", "c"]);
+    assert_eq!(pieces[0].literal_text(), "a|b");
+}
+
+#[test]
+fn substring_takes_a_placeholder_whole_and_slices_a_literal() {
+    let format = format_of("{0:cond:ab{1}cd}");
+    // Byte offsets into the template: `b{1}c`.
+    let start = format.start + 1;
+    let end = format.end - 1;
+
+    let piece = format.substring(start, end);
+
+    assert_eq!(piece.raw, "b{1}c");
+    assert_eq!(piece.start, start);
+    assert_eq!(piece.end, end);
+    assert_eq!(piece.items.len(), 3);
+    assert_eq!(piece.literal_text(), "bc");
+}

@@ -57,6 +57,129 @@ impl Format {
         }
         result
     }
+
+    /// Splits this format on `separator` at the top nesting level, the way the
+    /// `choose`, `cond` and `plural` formatters read their parts
+    /// (.NET `Format.Split` over `SplitList`).
+    ///
+    /// The separator is only looked for in literal text, so a nested
+    /// placeholder is never cut in half and neither is the text inside it:
+    /// `a|{0:b|c}|d` splits into `a`, `{0:b|c}` and `d`. A format that holds no
+    /// separator splits into itself, so the result is never empty and
+    /// `split(…).len() - 1` is the number of separators found.
+    ///
+    /// Each piece keeps the byte range and the raw source text it covers, so a
+    /// piece can be rendered — and reported on — exactly like the format it
+    /// came from.
+    pub fn split(&self, separator: char) -> Vec<Format> {
+        let positions = self.find_all(separator);
+        // .NET returns the format itself when it holds no separator.
+        if positions.is_empty() {
+            return vec![self.clone()];
+        }
+
+        let mut pieces = Vec::with_capacity(positions.len() + 1);
+        let mut start = self.start;
+        for position in positions {
+            pieces.push(self.substring(start, position));
+            start = position + separator.len_utf8();
+        }
+        pieces.push(self.substring(start, self.end));
+        pieces
+    }
+
+    /// Every offset of `separator` in the literal text of this format, as a
+    /// byte offset into the template (.NET `Format.FindAll` over
+    /// `Format.IndexOf`).
+    fn find_all(&self, separator: char) -> Vec<usize> {
+        let mut positions = Vec::new();
+        for item in &self.items {
+            // .NET searches the *source* text of a literal, so a separator that
+            // is part of an escape sequence — `\|`, which is not a valid
+            // sequence and fails when it is written — splits the format all the
+            // same.
+            if let FormatItem::Literal(literal) = item {
+                positions.extend(
+                    literal
+                        .raw
+                        .match_indices(separator)
+                        .map(|(offset, _)| literal.start + offset),
+                );
+            }
+        }
+        positions
+    }
+
+    /// The part of this format between two byte offsets into the template
+    /// (.NET `Format.Substring`).
+    ///
+    /// A placeholder that reaches into the range is taken whole, since a
+    /// placeholder cannot be split; a literal is sliced. Offsets outside this
+    /// format's range are clamped rather than rejected, where .NET throws
+    /// `ArgumentOutOfRangeException` — no caller can reach that, since the
+    /// offsets always come from [`split`](Self::split) or from a match inside
+    /// the format's own text.
+    pub fn substring(&self, start: usize, end: usize) -> Format {
+        let mut items = Vec::new();
+        for item in &self.items {
+            if item.end() <= start {
+                continue; // Skip the items before the substring.
+            }
+            if end <= item.start() {
+                break; // Done.
+            }
+
+            match item {
+                FormatItem::Literal(literal) => items.push(FormatItem::Literal(slice_literal(
+                    literal,
+                    literal.start.max(start),
+                    literal.end.min(end),
+                ))),
+                // A placeholder cannot be split, so one that reaches into the
+                // substring is taken whole, as in .NET.
+                placeholder => items.push(placeholder.clone()),
+            }
+        }
+
+        Format {
+            raw: slice(&self.raw, self.start, start, end),
+            items,
+            start,
+            end,
+        }
+    }
+}
+
+/// The part of a literal between two byte offsets into the template.
+///
+/// A slice that cuts an escape sequence in half keeps the characters that are
+/// left as they are. .NET resolves the escape sequences of the slice afresh,
+/// which for the sequence a split character normally occurs in — `\|`, whose
+/// left half is a lone `\` — has the same result. The two differ only when the
+/// split character sits among the hex digits of a `\uXXXX` sequence
+/// (`\u12|4`), where .NET resolves the truncated `\u12`; re-resolving here
+/// would need the parser settings, which a [`Format`] does not carry.
+fn slice_literal(literal: &LiteralText, start: usize, end: usize) -> LiteralText {
+    if start == literal.start && end == literal.end {
+        return literal.clone();
+    }
+
+    let raw = slice(&literal.raw, literal.start, start, end);
+    LiteralText {
+        text: raw.clone(),
+        raw,
+        escape_error: None,
+        start,
+        end,
+    }
+}
+
+/// `text[start..end]`, where all three offsets are byte offsets into the
+/// template and `text` is the source text starting at `base`.
+fn slice(text: &str, base: usize, start: usize, end: usize) -> String {
+    text.get(start.saturating_sub(base)..end.saturating_sub(base))
+        .unwrap_or_default()
+        .to_owned()
 }
 
 /// Reconstructs the format string, with escape sequences resolved but

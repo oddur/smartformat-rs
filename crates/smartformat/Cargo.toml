@@ -15,8 +15,9 @@ authors.workspace = true
 default = ["derive", "plural", "time", "regex-formatters"]
 # Re-exports the ToSmartValue derive macro.
 derive = ["dep:smartformat-derive"]
-# PluralLocalizationFormatter and friends, backed by ICU4X CLDR data.
-# Dependencies land with milestone M2.
+# PluralLocalizationFormatter and the pluralization rules it picks words with.
+# The rules are a port of SmartFormat.NET's own table, so this pulls in no
+# dependency and no CLDR data — the point is to agree with .NET, not with CLDR.
 plural = []
 # Value::DateTime and .NET date/time format patterns, backed by jiff.
 time = ["dep:jiff"]

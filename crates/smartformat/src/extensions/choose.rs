@@ -8,37 +8,28 @@
 //! more than there are options makes the last one the "else" branch:
 //!
 //! ```
-//! use smartformat::extensions::choose::ChooseFormatter;
 //! use smartformat::{SmartFormatter, Value};
 //!
-//! let mut smart = SmartFormatter::default();
-//! smart.formatters_mut().insert(0, Box::new(ChooseFormatter::new()));
+//! // Registered by default; a placeholder has to name it.
+//! let smart = SmartFormatter::default();
 //!
 //! let args = Value::List(vec![Value::Int(2)]);
 //! let template = "{0:choose(1|2|3):one|two|three|many}";
 //! assert_eq!(smart.format(template, &args).unwrap(), "two");
 //! ```
 
-use std::fmt;
-
 #[cfg(feature = "time")]
 use crate::fmt::date;
 use crate::fmt::number::{self, Number};
 use crate::formatter::{Formatter, FormattingInfo};
-use crate::parsing::{Format, FormatItem, LiteralText, Placeholder};
 use crate::settings::CaseSensitivity;
 use crate::value::Value;
 use crate::Error;
 
+use super::{InvalidSplitChar, DEFAULT_SPLIT_CHAR};
+
 /// The default formatter name, .NET `ChooseFormatter.Name`.
 const NAME: &str = "choose";
-
-/// The characters .NET accepts as a split character
-/// (`Utilities.Validation.GetValidSplitCharOrThrow`).
-pub const VALID_SPLIT_CHARS: [char; 3] = ['|', ',', '~'];
-
-/// The .NET default split character.
-const DEFAULT_SPLIT_CHAR: char = VALID_SPLIT_CHARS[0];
 
 /// Chooses one of several formats by matching the value against a list of
 /// options, ported from .NET `ChooseFormatter`.
@@ -77,13 +68,10 @@ impl ChooseFormatter {
     /// Changes the split character, so that the character it replaces can be
     /// used in the output — `{0:choose(1~2~3):|one|~|two|~|three|}`.
     ///
-    /// Only the characters in [`VALID_SPLIT_CHARS`] are accepted; .NET throws
-    /// an `ArgumentException` for anything else.
+    /// Only the characters in [`VALID_SPLIT_CHARS`](super::VALID_SPLIT_CHARS)
+    /// are accepted; .NET throws an `ArgumentException` for anything else.
     pub fn set_split_char(&mut self, split_char: char) -> Result<(), InvalidSplitChar> {
-        if !VALID_SPLIT_CHARS.contains(&split_char) {
-            return Err(InvalidSplitChar(split_char));
-        }
-        self.split_char = split_char;
+        self.split_char = super::valid_split_char(split_char)?;
         Ok(())
     }
 
@@ -164,7 +152,7 @@ impl Formatter for ChooseFormatter {
         let options = info.formatter_options()?;
         let options: Vec<&str> = options.split(self.split_char).collect();
 
-        let formats = info.format().map(|format| split(format, self.split_char));
+        let formats = info.format().map(|format| format.split(self.split_char));
 
         // Check whether the arguments can be handled by this formatter.
         let formats = match formats {
@@ -176,13 +164,15 @@ impl Formatter for ChooseFormatter {
                     return Ok(false);
                 }
                 // .NET throws a plain `FormatException` when the formatter was
-                // called explicitly.
-                return Err(Error::Format {
-                    message: format!(
-                        "Formatter named '{name}' requires at least 2 format options."
-                    ),
-                    position: error_position(info.placeholder()),
-                });
+                // called explicitly, and the evaluator only wraps that in a
+                // `FormattingException` on the way out. So, unlike the errors
+                // below, this one carries no `Error parsing format string: …`
+                // envelope: `ErrorAction::OutputErrorInResult` writes the inner
+                // exception's message, which is the bare text (probed).
+                return Err(info.plain_error(
+                    &format!("Formatter named '{name}' requires at least 2 format options."),
+                    info.error_position(),
+                ));
             }
         };
 
@@ -217,23 +207,6 @@ impl Formatter for ChooseFormatter {
         Ok(true)
     }
 }
-
-/// The split character passed to [`ChooseFormatter::set_split_char`] was not
-/// one of [`VALID_SPLIT_CHARS`] (.NET `ArgumentException`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct InvalidSplitChar(pub char);
-
-impl fmt::Display for InvalidSplitChar {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "Only '{}', '{}' and '{}' are valid split chars.",
-            VALID_SPLIT_CHARS[0], VALID_SPLIT_CHARS[1], VALID_SPLIT_CHARS[2]
-        )
-    }
-}
-
-impl std::error::Error for InvalidSplitChar {}
 
 /// The text .NET matches a null value by.
 const NULL_TEXT: &str = "null";
@@ -295,145 +268,11 @@ fn value_text(value: &Value, info: &FormattingInfo<'_>) -> (String, Matchable) {
     }
 }
 
-/// The index .NET reports for an error raised while formatting a placeholder
-/// (`Evaluator.EvaluateFormatters`).
-fn error_position(placeholder: &Placeholder) -> usize {
-    if let Some(format) = &placeholder.format {
-        return format.start;
-    }
-    placeholder
-        .selectors
-        .last()
-        .map_or(placeholder.start, |selector| selector.end)
-}
-
 /// A .NET `FormattingException` raised by the formatter itself
 /// (`IFormattingInfo.FormattingException`), positioned at the start of the
 /// placeholder's format.
-///
-/// TODO(m2): .NET's `FormattingException.Message` prefixes the issue with
-/// `Error parsing format string: … at {index}` and appends the whole template
-/// plus a caret line, and `ErrorAction::OutputErrorInResult` writes that
-/// message into the output verbatim. Building it needs the base template,
-/// which `FormattingInfo` does not expose (`Engine::formatting_error` is
-/// private to the engine), so until it does the message here is the bare
-/// issue — the text .NET's `FormattingException.Issue` carries.
 fn formatting_error(info: &FormattingInfo<'_>, issue: &str) -> Error {
-    Error::Format {
-        message: issue.to_owned(),
-        position: info
-            .format()
-            .map_or_else(|| error_position(info.placeholder()), |format| format.start),
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Splitting a format
-// ---------------------------------------------------------------------------
-//
-// A private port of .NET `Format.Split` / `Format.IndexOf` / `Format.Substring`
-// (`Core/Parsing/Format.cs`, `Core/Parsing/SplitList.cs`). A later change lifts
-// this into `parsing::Format::split`, where the other formatters that split a
-// format can share it.
-
-/// Splits `format` on `separator`, which is only ever searched for in literal
-/// text: a nested placeholder is never split, and neither is the text in it.
-fn split(format: &Format, separator: char) -> Vec<Format> {
-    let positions = find_all(format, separator);
-    // .NET returns the format itself when it holds no separator.
-    if positions.is_empty() {
-        return vec![format.clone()];
-    }
-
-    let mut pieces = Vec::with_capacity(positions.len() + 1);
-    let mut start = format.start;
-    for position in positions {
-        pieces.push(substring(format, start, position));
-        start = position + separator.len_utf8();
-    }
-    pieces.push(substring(format, start, format.end));
-    pieces
-}
-
-/// Every offset of `separator` in the literal text of `format`, as a byte
-/// offset into the template (.NET `Format.FindAll`).
-fn find_all(format: &Format, separator: char) -> Vec<usize> {
-    let mut positions = Vec::new();
-    for item in &format.items {
-        // .NET searches the *source* text of a literal, so a separator that is
-        // part of an escape sequence — `\|`, which is not a valid sequence and
-        // fails when it is written — splits the format all the same.
-        if let FormatItem::Literal(literal) = item {
-            positions.extend(
-                literal
-                    .raw
-                    .match_indices(separator)
-                    .map(|(offset, _)| literal.start + offset),
-            );
-        }
-    }
-    positions
-}
-
-/// The part of `format` between two byte offsets into the template
-/// (.NET `Format.Substring`).
-fn substring(format: &Format, start: usize, end: usize) -> Format {
-    let mut items = Vec::new();
-    for item in &format.items {
-        if item.end() <= start {
-            continue; // Skip the items before the substring.
-        }
-        if end <= item.start() {
-            break; // Done.
-        }
-
-        match item {
-            FormatItem::Literal(literal) => items.push(FormatItem::Literal(slice_literal(
-                literal,
-                literal.start.max(start),
-                literal.end.min(end),
-            ))),
-            // A placeholder cannot be split, so one that reaches into the
-            // substring is taken whole, as in .NET.
-            placeholder => items.push(placeholder.clone()),
-        }
-    }
-
-    Format {
-        raw: slice(&format.raw, format.start, start, end),
-        items,
-        start,
-        end,
-    }
-}
-
-/// The part of a literal between two byte offsets into the template.
-///
-/// A slice that cuts an escape sequence in half keeps the characters that are
-/// left as they are. .NET resolves the escape sequences of the slice afresh,
-/// which for the only sequence a split character can occur in — `\|`, whose
-/// left half is a lone `\` — has the same result.
-fn slice_literal(literal: &LiteralText, start: usize, end: usize) -> LiteralText {
-    if start == literal.start && end == literal.end {
-        return literal.clone();
-    }
-
-    let raw = slice(&literal.raw, literal.start, start, end);
-    LiteralText {
-        text: raw.clone(),
-        raw,
-        escape_error: None,
-        start,
-        end,
-    }
-}
-
-/// `text[start..end]`, where all three offsets are byte offsets into the
-/// template and `text` is the source text starting at `base`.
-fn slice(text: &str, base: usize, start: usize, end: usize) -> String {
-    text.get(start.saturating_sub(base)..end.saturating_sub(base))
-        .unwrap_or_default()
-        .to_owned()
+    info.formatting_error(issue, info.error_position())
 }
 
 // ---------------------------------------------------------------------------
@@ -450,13 +289,19 @@ mod tests {
     use std::collections::BTreeMap;
 
     use super::*;
+    use crate::formatter::{DefaultFormatter, FormatterRegistry};
     use crate::settings::{ErrorAction, SmartSettings};
     use crate::SmartFormatter;
 
     fn smart_with(settings: SmartSettings, formatter: ChooseFormatter) -> SmartFormatter {
         let mut smart = SmartFormatter::new(settings);
-        // .NET registers ChooseFormatter ahead of DefaultFormatter.
-        smart.formatters_mut().insert(0, Box::new(formatter));
+        // Only the formatter under test and the always-last DefaultFormatter,
+        // so these tests pin this formatter rather than the order of the
+        // default registry — which `tests/extensions.rs` pins instead.
+        let formatters = smart.formatters_mut();
+        *formatters = FormatterRegistry::empty();
+        formatters.push(Box::new(formatter));
+        formatters.push(Box::new(DefaultFormatter));
         smart
     }
 
@@ -489,6 +334,17 @@ mod tests {
         smart()
             .format(template, &args([value]))
             .unwrap_or_else(|error| panic!("{template:?} failed: {error}"))
+    }
+
+    /// .NET's `FormattingException.Message`, which
+    /// `ErrorAction::OutputErrorInResult` writes into the result verbatim:
+    /// the issue, the index it is reported at, then the template and a caret
+    /// line. Probed against 3.6.1.
+    fn envelope(template: &str, issue: &str, index: usize) -> String {
+        std::format!(
+            "Error parsing format string: {issue} at {index}\n{template}\n{}^",
+            "-".repeat(index)
+        )
     }
 
     fn error_of(template: &str, value: Value) -> String {
@@ -836,7 +692,11 @@ mod tests {
         for template in ["{0:choose(1|2):1|2}", "{0:choose(1|2):a|b}"] {
             assert_eq!(
                 error_of(template, Value::Int(99)),
-                "\"99\" is not a valid choice, and a \"default\" choice was not supplied",
+                envelope(
+                    template,
+                    "\"99\" is not a valid choice, and a \"default\" choice was not supplied",
+                    15
+                ),
                 "{template}"
             );
         }
@@ -862,15 +722,27 @@ mod tests {
     fn errors_when_choices_are_too_few_or_too_many() {
         assert_eq!(
             error_of("{0:choose(1|2|3):1|2}", Value::Int(1)),
-            "You must specify at least 3 choices"
+            envelope(
+                "{0:choose(1|2|3):1|2}",
+                "You must specify at least 3 choices",
+                17
+            )
         );
         assert_eq!(
             error_of("{0:choose(1):1|2|3}", Value::Int(1)),
-            "You cannot specify more than 2 choices"
+            envelope(
+                "{0:choose(1):1|2|3}",
+                "You cannot specify more than 2 choices",
+                13
+            )
         );
         assert_eq!(
             error_of("{0:choose(1|2):1|2|3|4}", Value::Int(1)),
-            "You cannot specify more than 3 choices"
+            envelope(
+                "{0:choose(1|2):1|2|3|4}",
+                "You cannot specify more than 3 choices",
+                15
+            )
         );
     }
 
@@ -883,9 +755,16 @@ mod tests {
             (Value::Int(-7), "-7"),
         ] {
             let message = error_of("{0:choose(1|2):a|b}", value.clone());
-            assert!(
-                message.starts_with(&std::format!("\"{quoted}\" is not a valid choice")),
-                "{value:?}: {message}"
+            assert_eq!(
+                message,
+                envelope(
+                    "{0:choose(1|2):a|b}",
+                    &std::format!(
+                        "\"{quoted}\" is not a valid choice, and a \"default\" choice was not supplied"
+                    ),
+                    15
+                ),
+                "{value:?}"
             );
         }
     }
@@ -911,37 +790,5 @@ mod tests {
             .format("x{0:choose(1|2):a|b}y", &args([Value::Int(99)]))
             .unwrap();
         assert_eq!(result, "xy");
-    }
-
-    #[test]
-    fn splits_a_format_the_way_dotnet_does() {
-        let smart = SmartFormatter::default();
-        let parsed = smart.parse("{0:choose(1|2):one|{1}two|three}").unwrap();
-        let FormatItem::Placeholder(placeholder) = &parsed.items[0] else {
-            panic!("expected a placeholder");
-        };
-        let format = placeholder.format.as_ref().expect("a format");
-
-        let pieces = split(format, '|');
-        let raws: Vec<&str> = pieces.iter().map(|piece| piece.raw.as_str()).collect();
-        assert_eq!(raws, ["one", "{1}two", "three"]);
-        // The piece with the nested placeholder keeps it whole.
-        assert_eq!(pieces[1].items.len(), 2);
-        assert!(pieces[1].has_nested());
-        // Every piece spans the template it was cut from.
-        for piece in &pieces {
-            assert_eq!(piece.end - piece.start, piece.raw.len());
-        }
-    }
-
-    #[test]
-    fn a_format_without_the_separator_is_one_piece() {
-        let smart = SmartFormatter::default();
-        let parsed = smart.parse("{0:choose(1):one}").unwrap();
-        let FormatItem::Placeholder(placeholder) = &parsed.items[0] else {
-            panic!("expected a placeholder");
-        };
-        let format = placeholder.format.as_ref().expect("a format");
-        assert_eq!(split(format, '|'), vec![format.clone()]);
     }
 }

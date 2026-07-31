@@ -17,6 +17,9 @@ pub mod sources;
 pub mod value;
 
 pub use error::Error;
+#[cfg(feature = "plural")]
+pub use extensions::PluralLocalizationFormatter;
+pub use extensions::{ChooseFormatter, ConditionalFormatter};
 pub use formatter::SmartFormatter;
 pub use settings::{CaseSensitivity, ErrorAction, SmartSettings};
 // `ToSmartValue` is not re-exported at the crate root: the derive macro of the
