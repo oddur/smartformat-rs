@@ -100,9 +100,20 @@ pub fn format_number(
         )),
         // `D`, `X` and `B` are integer-only in .NET.
         ('B' | 'D' | 'X', None) => Err(FormatSpecError::Invalid(spec.to_owned())),
-        // `R` asks for the shortest round-trippable form and ignores any
-        // precision, which is what `G` without one produces.
-        ('R', _) => Ok(format_buffered(n, 'G', 'G', None, info)),
+        // `R` *is* `G` of the same case: .NET rewrites the specifier as
+        // `(char)(format - ('R' - 'G'))`, so `R` behaves like `G` (upper-case
+        // `E` exponent) and `r` like `g` (lower-case `e`). Only a float drops
+        // the precision, asking instead for the shortest round-trippable
+        // form, which is what `G` without a precision produces; an integer
+        // keeps it and formats exactly like `G<precision>`.
+        ('R', _) => {
+            let general = if fmt == 'R' { 'G' } else { 'g' };
+            let precision = match n {
+                Number::Float(_) => None,
+                Number::Int(_) | Number::UInt(_) => precision,
+            };
+            Ok(format_buffered(n, general, 'G', precision, info))
+        }
         (upper, _) => Ok(format_buffered(n, fmt, upper, precision, info)),
     }
 }
@@ -1391,15 +1402,49 @@ mod tests {
     }
 
     #[test]
-    fn round_trip_specifier_matches_the_general_one() {
-        for v in [0.1, 2.675, 1e17, 5e-324, -0.0, 1.0] {
-            let general = float(v, "");
-            assert_eq!(float(v, "R"), general, "value {v}");
-            assert_eq!(float(v, "r"), general, "value {v}");
-            // .NET ignores a precision on `R`.
-            assert_eq!(float(v, "R5"), general, "value {v}");
+    fn round_trip_specifier_on_floats_matches_the_general_one_of_the_same_case() {
+        for v in [0.1, 2.675, 1e17, 5e-324, -0.0, 1.0, 1234.5678, 1e-7] {
+            // `R` is `G` and `r` is `g`, so the exponent keeps the case of the
+            // specifier. A float also ignores any precision on `R`/`r`.
+            let upper = float(v, "G");
+            let lower = float(v, "g");
+            for spec in ["R", "R0", "R5", "R20"] {
+                assert_eq!(float(v, spec), upper, "value {v} spec {spec:?}");
+            }
+            for spec in ["r", "r0", "r5", "r20"] {
+                assert_eq!(float(v, spec), lower, "value {v} spec {spec:?}");
+            }
+        }
+        assert_eq!(float(1e17, "R"), "1E+17");
+        assert_eq!(float(1e17, "r"), "1e+17");
+        assert_eq!(float(1e-7, "R5"), "1E-07");
+        assert_eq!(float(1e-7, "r5"), "1e-07");
+    }
+
+    #[test]
+    fn round_trip_specifier_on_integers_is_the_general_one_of_the_same_case() {
+        // Unlike a float, an integer keeps the precision: `R<n>` is `G<n>`.
+        for v in [42, -42, 0, 1234567890, i64::MIN] {
+            for (r, g) in [("R", "G"), ("r", "g"), ("R5", "G5"), ("r5", "g5")] {
+                assert_eq!(int(v, r), int(v, g), "value {v} spec {r:?}");
+            }
         }
         assert_eq!(int(42, "R"), "42");
+        assert_eq!(int(42, "r"), "42");
+        assert_eq!(int(1234567890, "R"), "1234567890");
+        assert_eq!(int(1234567890, "R0"), "1234567890");
+        assert_eq!(int(1234567890, "R20"), "1234567890");
+        assert_eq!(int(1234567890, "R5"), "1.2346E+09");
+        assert_eq!(int(1234567890, "r5"), "1.2346e+09");
+        assert_eq!(int(i64::MIN, "R5"), "-9.2234E+18");
+        assert_eq!(
+            format_number(Number::UInt(u64::MAX), "R5", invariant()).unwrap(),
+            "1.8447E+19"
+        );
+        assert_eq!(
+            format_number(Number::UInt(u64::MAX), "r", invariant()).unwrap(),
+            "18446744073709551615"
+        );
     }
 
     #[test]
