@@ -111,7 +111,7 @@ pub fn invariant() -> &'static CultureData {
 /// `NumberFormat` and `DateTimeFormat` field this crate carries, as do
 /// `"de-DE_phoneb"` and `"de-DE"`.
 ///
-/// A name .NET itself rejects ([`language_subtag`] says which) is `None`
+/// A name .NET itself rejects (see `language_subtag` in this module) is `None`
 /// rather than a lookup of some prefix of it.
 ///
 /// The data is generated from .NET itself by `tools/culturegen` (not mapped

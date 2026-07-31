@@ -50,7 +50,7 @@ const NEEDS_NESTED: &str = "The format requires a nested placeholder";
 /// Only a `start + length` past the end of the string is caught here. A
 /// negative start index that stays negative after counting from the end, and a
 /// negative length, are out of range under every behavior — .NET's own comment
-/// says as much — and raise [`OUT_OF_RANGE`].
+/// says as much — and are always out of range.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SubStringOutOfRangeBehavior {
     /// Returns the empty string. The .NET default.
@@ -104,7 +104,7 @@ impl SubStringFormatter {
     /// Changes the split character, so that `{0:substr(-4|-1)}` reads its two
     /// options as `-4` and `-1`.
     ///
-    /// Only the characters in [`VALID_SPLIT_CHARS`](super::VALID_SPLIT_CHARS)
+    /// Only the characters in [`VALID_SPLIT_CHARS`]
     /// are accepted; .NET throws an `ArgumentException` for anything else.
     pub fn set_split_char(&mut self, split_char: char) -> Result<(), InvalidSplitChar> {
         self.split_char = super::valid_split_char(split_char)?;

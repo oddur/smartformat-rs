@@ -1,11 +1,32 @@
-//! A Rust port of [SmartFormat.NET](https://github.com/axuno/SmartFormat).
+// The README is the crate documentation, so its examples run as doctests.
+// They use the derive, plural, and time features; without those the README is
+// swapped for a short pointer instead of failing the doctest build.
+#![cfg_attr(
+    all(feature = "derive", feature = "plural", feature = "time"),
+    doc = include_str!("../../../README.md")
+)]
+#![cfg_attr(
+    not(all(feature = "derive", feature = "plural", feature = "time")),
+    doc = "A Rust port of [SmartFormat.NET](https://github.com/axuno/SmartFormat): \
+string templating with named placeholders, pluralization, conditional \
+formatting, and list formatting, byte-compatible with the .NET library. \
+Built without default features; see the repository README for the full \
+documentation."
+)]
 //!
-//! String templating with named placeholders, pluralization, conditional
-//! formatting, and list formatting — compatible with the SmartFormat template
-//! syntax and .NET standard format specifiers, so templates written for the
-//! .NET library render identically here.
+//! # Crate map
 //!
-//! Work in progress; see `DESIGN.md` in the repository for scope and milestones.
+//! - [`SmartFormatter`]: parse and render templates; the entry point.
+//! - [`value`]: the [`Value`] tree templates render against, and
+//!   [`ToSmartValue`](value::ToSmartValue) for converting your types.
+//! - [`extensions`]: the built-in formatters (`list`, `plural`, `choose`, …).
+//! - [`fmt::culture`]: locale data, generated from .NET itself.
+//! - [`settings`]: [`SmartSettings`], error actions, case sensitivity.
+//! - [`parsing`]: the template parser and [`Format`](parsing::Format) AST,
+//!   for parse-once/render-many workflows.
+//!
+//! Compatibility scope and every known divergence from .NET live in
+//! `DESIGN.md` in the repository.
 
 pub mod error;
 pub mod extensions;
