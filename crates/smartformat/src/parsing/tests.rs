@@ -4,7 +4,7 @@ use super::parser::{
     INVALID_CHARACTERS_IN_SELECTOR, MISSING_CLOSING_BRACE, TOO_MANY_CLOSING_BRACES,
     TRAILING_OPERATORS_IN_SELECTOR,
 };
-use super::{Format, FormatItem, Parser, ParserSettings, Placeholder, SelectorFilter};
+use super::{Format, FormatItem, LiteralText, Parser, ParserSettings, Placeholder, SelectorFilter};
 use crate::error::Error;
 use crate::settings::ErrorAction;
 
@@ -1125,8 +1125,9 @@ fn a_separator_written_as_an_escape_sequence_does_not_split() {
 fn a_piece_resolves_the_escape_sequence_the_cut_truncated() {
     // The `|` sits among the hex digits, so the sequence is invalid as parsed
     // and each piece resolves what is left of it: `\u00` is a NUL character
-    // (.NET's `\u` takes fewer than four digits at the end of a slice) and the
-    // stray `4` joins the `1` after the separator. Probed against 3.6.1.
+    // (.NET's `\u` parses however many of the four characters the slice still
+    // holds, so one to three digits are fine) and the stray `4` joins the `1`
+    // after the separator. Probed against 3.6.1.
     let format = format_of(r"{0:cond:\u00|41|c}");
 
     let pieces = format.split('|');
@@ -1172,4 +1173,243 @@ fn substring_takes_a_placeholder_whole_and_slices_a_literal() {
     assert_eq!(piece.end, end);
     assert_eq!(piece.items.len(), 3);
     assert_eq!(piece.literal_text(), "bc");
+}
+
+// ---------------------------------------------------------------------------
+// Unicode escape sequences the parser reads past
+// ---------------------------------------------------------------------------
+//
+// .NET takes six characters for every `\uXXXX` sequence — the escape
+// character, the `u` and four more, whatever they are — but resumes reading
+// right after the escape character, so those four are read as literal text a
+// second time. A `{`, `}` or `\` among them is therefore a real one, and the
+// run of literal text it ends starts at the end of the sequence, which is
+// *past* it: .NET builds a literal whose end is before its start out of that,
+// and trips over it the next time the format is split. Every case here was
+// probed against 3.6.1.
+
+/// The literal at `index` of `format`.
+fn literal_at(format: &Format, index: usize) -> &LiteralText {
+    match &format.items[index] {
+        FormatItem::Literal(literal) => literal,
+        other => panic!("expected a literal at {index}, got {other:?}"),
+    }
+}
+
+/// The byte ranges of the items of `format`, as `(start, end)` pairs. A pair
+/// that runs backwards is a literal whose ends are crossed.
+fn ranges(format: &Format) -> Vec<(usize, usize)> {
+    format
+        .items
+        .iter()
+        .map(|item| (item.start(), item.end()))
+        .collect()
+}
+
+#[test]
+fn a_unicode_escape_takes_four_characters_whatever_they_are() {
+    // `\u12}` is one literal of five characters, closing brace included …
+    let parsed = parse(r"{0:cond:a|\u12}");
+    let format = format_of(r"{0:cond:a|\u12}");
+
+    assert_eq!(literal_at(&format, 1).raw, r"\u12}");
+    // … and the same `}` closes the placeholder all the same, so the template
+    // parses rather than running out of closing braces.
+    assert_eq!(first_placeholder(&parsed).end, 15);
+    assert_eq!(literal_at(&format, 0).raw, "a|");
+    // The literal text between the end of the sequence and the brace that
+    // ended it has its ends crossed.
+    assert_eq!(ranges(&format), [(8, 10), (10, 15), (15, 14)]);
+    assert_eq!(literal_at(&format, 2).raw, "");
+}
+
+#[test]
+fn a_unicode_escape_the_parser_reads_past_is_not_a_parsing_issue() {
+    // No error action is involved: the template parses whatever it is set to,
+    // and the escape sequence is only rejected when a formatter uses it.
+    for action in [
+        ErrorAction::Error,
+        ErrorAction::Ignore,
+        ErrorAction::MaintainTokens,
+        ErrorAction::OutputErrorInResult,
+    ] {
+        let parsed = parser_with(ParserSettings {
+            error_action: action,
+            ..ParserSettings::default()
+        })
+        .parse(r"{0:cond:a|\u12}");
+        let parsed = parsed.unwrap_or_else(|error| {
+            panic!(r"{{0:cond:a|\u12}} should parse with {action:?}: {error}")
+        });
+        assert_eq!(parsed.items.len(), 1, "with {action:?}");
+        assert_eq!(
+            first_placeholder(&parsed).formatter_name,
+            "cond",
+            "with {action:?}"
+        );
+    }
+}
+
+#[test]
+fn a_closing_brace_inside_a_unicode_escape_still_closes() {
+    // Without a placeholder to close, that `}` is one closing brace too many —
+    // which is a parsing issue, where reading past it would have been silence.
+    let issues = errors(parser().parse(r"a\u12}"));
+
+    assert_eq!(issues.len(), 1);
+    assert_eq!(issues[0].message, TOO_MANY_CLOSING_BRACES);
+    assert_eq!(issues[0].position, 5);
+}
+
+#[test]
+fn an_opening_brace_inside_a_unicode_escape_still_opens() {
+    // The `{` among the four characters starts a real placeholder.
+    let parsed = parse(r"{0:\u12{1}}");
+    let format = first_placeholder(&parsed).format.clone().expect("a format");
+
+    assert_eq!(ranges(&format), [(3, 9), (9, 7), (7, 10)]);
+    assert_eq!(literal_at(&format, 0).raw, r"\u12{1");
+    assert!(format.has_nested());
+}
+
+#[test]
+fn a_surrogate_pair_stays_in_one_literal() {
+    // The port's one departure: .NET writes the two halves into two literals
+    // and lets them meet again in its UTF-16 output, which a Rust `String`
+    // cannot do, so both halves go into one literal and the parser resumes
+    // past the second escape character rather than on it.
+    let parsed = parse(r"a\uD83D\uDE00b");
+
+    assert_eq!(ranges(&parsed), [(0, 1), (1, 13), (13, 14)]);
+    assert_eq!(literal_at(&parsed, 1).text, "\u{1f600}");
+    assert_eq!(parsed.to_string(), "a\u{1f600}b");
+}
+
+#[test]
+fn split_poisons_every_piece_when_a_literal_has_crossed_ends() {
+    // .NET asks `string.IndexOf` for a negative count while it is still
+    // looking for the separators and throws, so the whole split fails and
+    // every argument fails with it — the piece it would have chosen is never
+    // reached. Here every piece carries that failure instead.
+    for template in [
+        r"{0:choose(1|2):\u|a\b}",
+        r"{0:cond:\u|a\b}",
+        r"{0:cond:a|\u12}",
+        r"{0:choose(1|2):\uAB\n|x}",
+    ] {
+        let pieces = format_of(template).split('|');
+
+        assert_eq!(pieces.len(), 2, "{template:?}");
+        for (index, piece) in pieces.iter().enumerate() {
+            assert_eq!(
+                literal_at(piece, 0).escape_error.as_deref(),
+                Some(super::SPLIT_COUNT_ERROR),
+                "piece {index} of {template:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn only_the_first_character_decides_whether_a_slice_is_resolved() {
+    // .NET looks at the first character of a slice to decide *whether* to
+    // resolve it, and then resolves the whole of it, a sequence in the middle
+    // included. A slice that starts with anything else keeps every sequence it
+    // holds as written, wherever they are.
+    let resolved = LiteralText::resolved(r"\\a\b".to_owned(), 0, 5, true);
+    assert_eq!(resolved.text, "\\a\u{8}");
+    assert_eq!(resolved.escape_error, None);
+
+    let kept = LiteralText::resolved(r"a\b".to_owned(), 0, 3, true);
+    assert_eq!(kept.text, r"a\b");
+    assert_eq!(kept.escape_error, None);
+}
+
+#[test]
+fn a_zero_digit_unicode_slice_is_an_error_but_only_where_it_is_written() {
+    // Nothing is read past here — `abc` are not special — so there is no
+    // crossed literal and no poisoned split: only the piece that keeps the
+    // `\u` fails, and it fails with .NET's own message.
+    let pieces = format_of(r"{0:choose(1|2):\u|abcd}").split('|');
+
+    assert_eq!(raws(&pieces), [r"\u", "abcd"]);
+    assert_eq!(
+        literal_at(&pieces[0], 0).escape_error.as_deref(),
+        Some(r#"Unrecognized escape sequence in literal: "\u""#)
+    );
+    assert_eq!(literal_at(&pieces[1], 0).escape_error, None);
+    assert_eq!(pieces[1].literal_text(), "abcd");
+}
+
+#[test]
+fn split_skips_a_crossed_literal_it_has_already_passed() {
+    // .NET skips an item whose end is before the position the search has
+    // reached, crossed or not, so this format splits without ever asking for
+    // a negative count — and the piece between the separators is cut out of
+    // two literals that cover the same character.
+    let pieces = format_of(r"{0:choose(1|2):\u1\|2|x}").split('|');
+
+    assert_eq!(raws(&pieces), [r"\u1\", "2", "x"]);
+    assert_eq!(literal_at(&pieces[1], 0).escape_error, None);
+    assert_eq!(pieces[1].literal_text(), "22");
+}
+
+// ---------------------------------------------------------------------------
+// LiteralText::resolved
+// ---------------------------------------------------------------------------
+
+#[test]
+fn resolving_a_literal_reuses_text_that_holds_no_sequence() {
+    // .NET hands back the untouched span unless the literal starts with the
+    // escape character, which is the case worth not allocating for.
+    use super::escaped_literal::resolve_literal;
+
+    assert_eq!(resolve_literal("abc", true), Ok(None));
+    assert_eq!(resolve_literal("", true), Ok(None));
+    // A sequence that does not start the literal is not resolved either.
+    assert_eq!(resolve_literal(r"a\n", true), Ok(None));
+    assert_eq!(resolve_literal(r"\n", true), Ok(Some("\n".to_owned())));
+    // With the conversion off, only the escape character escaping itself is.
+    assert_eq!(resolve_literal(r"\n", false), Ok(None));
+    assert_eq!(resolve_literal(r"\\", false), Ok(Some(r"\".to_owned())));
+    assert_eq!(
+        resolve_literal(r"\q", true),
+        Err(r#"Unrecognized escape sequence "\q" in literal."#.to_owned())
+    );
+}
+
+#[test]
+fn a_maintained_token_carries_the_parsers_escape_setting() {
+    // .NET builds the literal it puts the tokens back as with the parser's
+    // settings, like every other one, so a slice of it resolves its escape
+    // sequences the same way.
+    for (convert, action) in [
+        (true, ErrorAction::MaintainTokens),
+        (false, ErrorAction::MaintainTokens),
+        (true, ErrorAction::Ignore),
+        (false, ErrorAction::Ignore),
+    ] {
+        let parsed = parser_with(ParserSettings {
+            error_action: action,
+            convert_character_string_literals: convert,
+            ..ParserSettings::default()
+        })
+        .parse("{0}{1#}")
+        .expect("the error action recovers");
+
+        let literal = literal_at(&parsed, 1);
+        assert_eq!(
+            literal.convert_character_literals, convert,
+            "with {action:?}"
+        );
+        assert_eq!(
+            literal.raw,
+            if action == ErrorAction::Ignore {
+                ""
+            } else {
+                "{1#}"
+            },
+            "with {action:?}"
+        );
+    }
 }

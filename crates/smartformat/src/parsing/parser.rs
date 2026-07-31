@@ -12,7 +12,7 @@ use super::chars::{
     FORMATTER_OPTIONS_BEGIN_CHAR, FORMATTER_OPTIONS_END_CHAR, FORMAT_OPTIONS_TERMINATOR_CHARS,
     LIST_INDEX_END_CHAR, NULLABLE_OPERATOR, PLACEHOLDER_BEGIN_CHAR, PLACEHOLDER_END_CHAR,
 };
-use super::escaped_literal::{self, resolve_literal, try_get_char, unescape};
+use super::escaped_literal::{self, try_get_char, unescape};
 use super::settings::{CharSet, ParserSettings};
 use super::{Format, FormatItem, LiteralText, Placeholder, Selector};
 use crate::error::{Error, ParseError};
@@ -270,25 +270,26 @@ impl<'a> State<'a> {
     /// literal is written, the message is recorded on the item and the
     /// sequence stays as written. It becomes an [`Error::Escape`] only if the
     /// literal is rendered.
+    ///
+    /// `end` may be *before* `start`, which is what a run of literal text ended
+    /// inside a `\uXXXX` sequence the parser read past comes to. .NET keeps the
+    /// two indices as they are and only fails when it uses them; the port keeps
+    /// them too, with no text between them.
     fn make_literal(&self, start: usize, end: usize) -> LiteralText {
         let start = start.min(self.len);
-        let end = end.clamp(start, self.len);
-        let raw: String = self.chars[start..end].iter().collect();
-        let convert = self.parser.settings.convert_character_string_literals;
-
-        let (text, escape_error) = match resolve_literal(&self.chars[start..end], convert) {
-            Ok(text) => (text, None),
-            Err(message) => (raw.clone(), Some(message)),
+        let end = end.min(self.len);
+        let raw: String = if start <= end {
+            self.chars[start..end].iter().collect()
+        } else {
+            String::new()
         };
 
-        LiteralText {
-            text,
+        LiteralText::resolved(
             raw,
-            escape_error,
-            convert_character_literals: convert,
-            start: self.byte(start),
-            end: self.byte(end),
-        }
+            self.byte(start),
+            self.byte(end),
+            self.parser.settings.convert_character_string_literals,
+        )
     }
 
     fn push_literal(&mut self, start: usize, end: usize) {
@@ -324,16 +325,9 @@ impl<'a> State<'a> {
             return false;
         }
 
-        let brace = PLACEHOLDER_END_CHAR.to_string();
-        self.result.items.push(FormatItem::Literal(LiteralText {
-            text: brace.clone(),
-            raw: brace,
-            escape_error: None,
-            // Text the parser made up rather than read: nothing to resolve.
-            convert_character_literals: false,
-            start: self.byte(self.current),
-            end: self.byte(self.current + 1),
-        }));
+        // .NET builds this one from the input as well, closing brace and all.
+        let brace = self.make_literal(self.current, self.current + 1);
+        self.result.items.push(FormatItem::Literal(brace));
         self.add_issue(
             TOO_MANY_CLOSING_BRACES.to_owned(),
             self.current,
@@ -372,22 +366,33 @@ impl<'a> State<'a> {
                 self.push_literal(self.last_end, self.current);
             }
 
-            self.last_end = if self.chars[index_next_char] == 'u' {
-                // The escape character, the 'u' and 4 hex digits — twice when
-                // the sequence is the high half of a surrogate pair, so both
-                // halves land in one literal and can be joined.
-                self.safe_add(
-                    self.current,
-                    escaped_literal::unicode_escape_len(&self.chars, self.current),
-                )
+            // The escape character, the 'u' and 4 more characters — twice when
+            // the sequence is the high half of a surrogate pair, so both halves
+            // land in one literal and can be joined.
+            let span = if self.chars[index_next_char] == 'u' {
+                escaped_literal::unicode_escape_len(&self.chars, self.current)
             } else {
-                self.safe_add(self.current, 2)
+                2
             };
+            self.last_end = self.safe_add(self.current, span);
 
             self.push_literal(self.current, self.last_end);
-            // Resume at the end of the sequence: a surrogate pair contains a
-            // second escape character, which must not start another sequence.
-            self.current = self.last_end - 1;
+
+            if span == 12 {
+                // A surrogate pair holds a second escape character, which must
+                // not start another sequence — the one place the port has to
+                // resume past the end of the sequence, because it joined two
+                // literals .NET keeps apart.
+                self.current = self.last_end - 1;
+            } else {
+                // .NET resumes right after the escape character, so the four
+                // characters of a `\uXXXX` sequence are read as literal text
+                // again: a `{`, `}` or `\` among them is a real one, and the
+                // run of literal text it ends starts after the sequence, at
+                // `last_end`, which is *past* it. That is where the literals
+                // with crossed ends come from.
+                self.current = self.safe_add(self.current, 1);
+            }
         }
     }
 
@@ -774,6 +779,9 @@ impl<'a> State<'a> {
 
     /// Applies [`ParserSettings::error_action`] to the collected issues.
     fn handle_errors(self) -> Result<Format, Error> {
+        // .NET builds the literals below with the parser's settings, like every
+        // other one, so a slice of them resolves its escape sequences too.
+        let convert = self.parser.settings.convert_character_string_literals;
         match self.parser.settings.error_action {
             ErrorAction::Error => Err(Error::Parse {
                 errors: self.parse_errors(),
@@ -782,28 +790,26 @@ impl<'a> State<'a> {
                 // Erroneous placeholders keep their tokens as literal text.
                 let positions = self.issue_positions();
                 let mut result = self.result;
-                replace_erroneous_placeholders(&mut result, &positions, false);
+                replace_erroneous_placeholders(&mut result, &positions, false, convert);
                 Ok(result)
             }
             ErrorAction::Ignore => {
                 // Erroneous placeholders are dropped.
                 let positions = self.issue_positions();
                 let mut result = self.result;
-                replace_erroneous_placeholders(&mut result, &positions, true);
+                replace_erroneous_placeholders(&mut result, &positions, true, convert);
                 Ok(result)
             }
             ErrorAction::OutputErrorInResult => {
                 let message = self.error_message();
                 let end = message.len();
                 Ok(Format {
-                    items: vec![FormatItem::Literal(LiteralText {
-                        text: message.clone(),
-                        raw: message.clone(),
-                        escape_error: None,
-                        convert_character_literals: false,
-                        start: 0,
+                    items: vec![FormatItem::Literal(LiteralText::resolved(
+                        message.clone(),
+                        0,
                         end,
-                    })],
+                        convert,
+                    ))],
                     raw: message,
                     start: 0,
                     end,
@@ -840,7 +846,17 @@ fn set_raw(format: &mut Format, input: &str) {
 
 /// Replaces every top-level placeholder an issue points into, either with the
 /// text it was parsed from or with nothing at all.
-fn replace_erroneous_placeholders(format: &mut Format, issue_positions: &[usize], drop: bool) {
+///
+/// `convert` is [`ParserSettings::convert_character_string_literals`]: .NET
+/// hands the parser's settings to the literal it puts in place, so a slice of
+/// the tokens — one of the pieces [`Format::split`] cuts — resolves its escape
+/// sequences the way every other literal does.
+fn replace_erroneous_placeholders(
+    format: &mut Format,
+    issue_positions: &[usize],
+    drop: bool,
+    convert: bool,
+) {
     for item in &mut format.items {
         let FormatItem::Placeholder(placeholder) = item else {
             continue;
@@ -853,24 +869,17 @@ fn replace_erroneous_placeholders(format: &mut Format, issue_positions: &[usize]
         }
 
         *item = FormatItem::Literal(if drop {
-            LiteralText {
-                text: String::new(),
-                raw: String::new(),
-                escape_error: None,
-                convert_character_literals: false,
-                start: placeholder.start,
-                end: placeholder.start,
-            }
+            LiteralText::resolved(String::new(), placeholder.start, placeholder.start, convert)
         } else {
-            LiteralText {
-                text: placeholder.raw.clone(),
-                raw: placeholder.raw.clone(),
-                escape_error: None,
-                // The tokens are put back as written, not resolved.
-                convert_character_literals: false,
-                start: placeholder.start,
-                end: placeholder.end,
-            }
+            // The tokens go back in as they were written: they start with the
+            // opening brace, which no escape sequence can start, so nothing is
+            // resolved here — only in a slice of them.
+            LiteralText::resolved(
+                placeholder.raw.clone(),
+                placeholder.start,
+                placeholder.end,
+                convert,
+            )
         });
     }
 }

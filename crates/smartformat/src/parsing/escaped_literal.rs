@@ -132,8 +132,16 @@ fn low_surrogate_escape_at(input: &[char], index: usize) -> Option<u16> {
 /// How many characters the `\uXXXX` sequence at `index` spans: 12 when a high
 /// surrogate is followed by an escaped low surrogate, 6 otherwise.
 ///
-/// The parser uses this to keep both halves of a pair in one literal item, so
-/// it has to agree with the pairing [`unescape`] does.
+/// .NET always takes 6 — the escape character, the `u` and four more
+/// characters, whatever they are, clamped to the end of the input — and never
+/// checks that those four are hex digits: `\u12}` is one literal of five
+/// characters, closing brace included. It gets away with putting the two
+/// halves of a surrogate pair into two literals because its output is UTF-16
+/// and the halves meet again there; a Rust `String` cannot hold half a pair,
+/// so the port keeps both halves in one literal instead and joins them in
+/// [`unescape`]. That is the only place the two differ, and the parser pays
+/// for it by resuming *inside* the sequence — the way .NET does — whenever
+/// this returns 6; see `State::parse_alternative_escaping`.
 pub(crate) fn unicode_escape_len(input: &[char], index: usize) -> usize {
     let is_pair = unicode(input, index + 2).is_ok_and(is_high_surrogate)
         && low_surrogate_escape_at(input, index + 6).is_some();
@@ -161,23 +169,32 @@ fn push_code_units(result: &mut String, units: &[u16]) {
 /// resolved. `convert` is
 /// [`ParserSettings::convert_character_string_literals`](super::ParserSettings::convert_character_string_literals).
 ///
+/// `Ok(None)` means the text is `raw` unchanged — the common case, which .NET
+/// answers with the untouched span and which the caller can answer by reusing
+/// the string it already holds. Only a literal that really starts a sequence
+/// allocates.
+///
 /// The parser gives every escape sequence a literal of its own, so this is
 /// applied per sequence — and again to any slice of a literal a formatter's
 /// [`Format::split`](super::Format::split) cuts, as .NET resolves a
 /// `Format.Substring` slice afresh.
-pub(crate) fn resolve_literal(span: &[char], convert: bool) -> Result<String, String> {
-    if span.is_empty() {
-        return Ok(String::new());
+pub(crate) fn resolve_literal(raw: &str, convert: bool) -> Result<Option<String>, String> {
+    if !raw.starts_with(CHAR_LITERAL_ESCAPE_CHAR) {
+        return Ok(None);
     }
-    if convert && span[0] == CHAR_LITERAL_ESCAPE_CHAR {
-        return unescape(span, false, true);
+    if convert {
+        // Only .NET's `span[0]` is looked at, so a sequence in the middle of a
+        // literal is resolved as well — which is what `Format::split` hands
+        // over when it cuts a literal the parser over-read.
+        let span: Vec<char> = raw.chars().collect();
+        return unescape(&span, false, true).map(Some);
     }
     // Special case: the escape character escaping itself, which .NET resolves
     // even with the conversion of character literals turned off.
-    if !convert && span.len() == 2 && span[0] == span[1] && span[0] == CHAR_LITERAL_ESCAPE_CHAR {
-        return Ok(CHAR_LITERAL_ESCAPE_CHAR.to_string());
+    if raw.len() == 2 && raw.ends_with(CHAR_LITERAL_ESCAPE_CHAR) {
+        return Ok(Some(CHAR_LITERAL_ESCAPE_CHAR.to_string()));
     }
-    Ok(span.iter().collect())
+    Ok(None)
 }
 
 /// Replaces escape sequences with the characters they stand for.

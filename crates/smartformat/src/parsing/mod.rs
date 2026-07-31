@@ -19,6 +19,20 @@ pub use settings::{CustomCharError, ParserSettings, SelectorFilter};
 use std::fmt;
 use std::fmt::Write as _;
 
+/// What .NET's `Format.Split` fails with when it reaches a literal whose ends
+/// are crossed — the ones the parser leaves behind when it reads past the end
+/// of a `\uXXXX` sequence that is not four hex digits, as in `{0:cond:a|\u12}`.
+///
+/// .NET asks `string.IndexOf(char, int, int)` for a negative count there and
+/// the `ArgumentOutOfRangeException` it gets aborts the whole split, so every
+/// argument fails, whichever piece it would have chosen. `Format::split` has
+/// no way to return that, and its callers — the `choose`, `cond` and `plural`
+/// formatters — count the pieces before they write one, so instead every piece
+/// is poisoned with this message and fails as soon as it is written. The
+/// message is .NET's verbatim, since `ErrorAction::OutputErrorInResult` writes
+/// it into the result.
+const SPLIT_COUNT_ERROR: &str = "Count must be positive and count must refer to a location within the string/array/collection. (Parameter 'count')";
+
 /// A parsed format string: literal text interleaved with placeholders.
 ///
 /// A [`Placeholder`] may hold a nested `Format`, which is the part after the
@@ -71,43 +85,96 @@ impl Format {
     /// Each piece keeps the byte range and the raw source text it covers, so a
     /// piece can be rendered — and reported on — exactly like the format it
     /// came from.
+    ///
+    /// A format the parser left with a literal whose ends are crossed — see
+    /// [`LiteralText::end`] — poisons every piece instead: .NET throws out of
+    /// the split rather than returning, so no argument gets a result, and
+    /// every piece here fails with that exception's message as soon as it is
+    /// written.
     pub fn split(&self, separator: char) -> Vec<Format> {
-        let positions = self.find_all(separator);
+        let (positions, crossed) = self.find_all(separator);
         // .NET returns the format itself when it holds no separator.
-        if positions.is_empty() {
-            return vec![self.clone()];
-        }
+        let mut pieces = if positions.is_empty() {
+            vec![self.clone()]
+        } else {
+            let mut pieces = Vec::with_capacity(positions.len() + 1);
+            let mut start = self.start;
+            for position in positions {
+                pieces.push(self.substring(start, position));
+                start = position + separator.len_utf8();
+            }
+            pieces.push(self.substring(start, self.end));
+            pieces
+        };
 
-        let mut pieces = Vec::with_capacity(positions.len() + 1);
-        let mut start = self.start;
-        for position in positions {
-            pieces.push(self.substring(start, position));
-            start = position + separator.len_utf8();
+        if crossed {
+            for piece in &mut pieces {
+                piece.items.insert(
+                    0,
+                    FormatItem::Literal(LiteralText::failing(SPLIT_COUNT_ERROR, self.start)),
+                );
+            }
         }
-        pieces.push(self.substring(start, self.end));
         pieces
     }
 
     /// Every offset of `separator` in the literal text of this format, as a
     /// byte offset into the template (.NET `Format.FindAll` over
-    /// `Format.IndexOf`).
-    fn find_all(&self, separator: char) -> Vec<usize> {
+    /// `Format.IndexOf`), and whether the search reached a crossed literal —
+    /// the point where .NET throws.
+    fn find_all(&self, separator: char) -> (Vec<usize>, bool) {
         let mut positions = Vec::new();
+        let mut crossed = false;
+        let mut from = self.start;
+        while let Some(position) = self.index_of(separator, from, &mut crossed) {
+            positions.push(position);
+            from = position + separator.len_utf8();
+        }
+        (positions, crossed)
+    }
+
+    /// The first offset of `separator` at or after `from` (.NET
+    /// `Format.IndexOf`), searching only literal text: a separator inside a
+    /// nested placeholder never splits the format.
+    ///
+    /// .NET searches the *source* text of a literal, so a separator that is
+    /// part of an escape sequence — `\|`, which is not a valid sequence and
+    /// fails when it is written — splits the format all the same.
+    ///
+    /// `crossed` is set when the search reaches a literal whose end is before
+    /// its start, which is where .NET asks `string.IndexOf` for a negative
+    /// count and throws instead of returning. The search carries on so that
+    /// the caller still gets the number of pieces the formatter expects; the
+    /// caller poisons them all.
+    fn index_of(&self, separator: char, from: usize, crossed: &mut bool) -> Option<usize> {
+        let mut start = from;
         for item in &self.items {
-            // .NET searches the *source* text of a literal, so a separator that
-            // is part of an escape sequence — `\|`, which is not a valid
-            // sequence and fails when it is written — splits the format all the
-            // same.
-            if let FormatItem::Literal(literal) = item {
-                positions.extend(
-                    literal
-                        .raw
-                        .match_indices(separator)
-                        .map(|(offset, _)| literal.start + offset),
-                );
+            // Note the strict `<`: a literal ending exactly where the search
+            // starts is searched, with a count of zero.
+            if item.end() < start {
+                continue;
+            }
+            let FormatItem::Literal(literal) = item else {
+                continue;
+            };
+
+            let search_start = start.max(literal.start);
+            if literal.end < search_start {
+                *crossed = true;
+                continue;
+            }
+            start = search_start;
+
+            let offset = start - literal.start;
+            if let Some(found) = literal
+                .raw
+                .get(offset..)
+                .and_then(|rest| rest.find(separator))
+            {
+                return Some(start + found);
             }
         }
-        positions
+        None
     }
 
     /// The part of this format between two byte offsets into the template
@@ -156,30 +223,22 @@ impl Format {
 /// those of a `Format.Substring` slice: a slice that cuts one in half is
 /// resolved as the truncated sequence it now is, so the left half of
 /// `\u00|41` is `\u00`, which is a NUL character and not four characters of
-/// text. (.NET's `\u` accepts fewer than four hex digits at the end of a
-/// slice.) The common case, a split character inside `\|`, is a lone `\` on
-/// the left, which resolves to itself either way.
+/// text. (.NET's `\u` takes however many of the four characters the slice
+/// still holds and parses those as hex, so one to three digits are fine —
+/// but none at all, the left half of `\u|abcd`, is an error.) The common
+/// case, a split character inside `\|`, is a lone `\` on the left, which
+/// resolves to itself either way.
 fn slice_literal(literal: &LiteralText, start: usize, end: usize) -> LiteralText {
     if start == literal.start && end == literal.end {
         return literal.clone();
     }
 
-    let raw = slice(&literal.raw, literal.start, start, end);
-    let convert = literal.convert_character_literals;
-    let chars: Vec<char> = raw.chars().collect();
-    let (text, escape_error) = match escaped_literal::resolve_literal(&chars, convert) {
-        Ok(text) => (text, None),
-        Err(message) => (raw.clone(), Some(message)),
-    };
-
-    LiteralText {
-        text,
-        raw,
-        escape_error,
-        convert_character_literals: convert,
+    LiteralText::resolved(
+        slice(&literal.raw, literal.start, start, end),
         start,
         end,
-    }
+        literal.convert_character_literals,
+    )
 }
 
 /// `text[start..end]`, where all three offsets are byte offsets into the
@@ -244,7 +303,17 @@ impl FormatItem {
 /// The parser puts every escape sequence into a `LiteralText` of its own, so
 /// [`text`](Self::text) is at most one character longer than the sequence it
 /// resolves.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+///
+/// [`text`](Self::text) and [`escape_error`](Self::escape_error) are derived
+/// from [`raw`](Self::raw) and
+/// [`convert_character_literals`](Self::convert_character_literals), so the
+/// struct is built through [`LiteralText::resolved`] rather than field by
+/// field: there is no default for `convert_character_literals` that is right
+/// on its own, and deriving `Default` would have to pick one that contradicts
+/// [`ParserSettings::convert_character_string_literals`]. `#[non_exhaustive]`
+/// keeps it that way for callers outside the crate.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct LiteralText {
     /// The text with escape sequences resolved. An escape sequence that
     /// resolves to nothing is left as written and reported by
@@ -267,8 +336,59 @@ pub struct LiteralText {
     pub convert_character_literals: bool,
     /// Byte offset of the first character in the input.
     pub start: usize,
-    /// Byte offset one past the last character in the input.
+    /// Byte offset one past the last character in the input. It can be *before*
+    /// [`start`](Self::start): the parser reads past the end of a `\uXXXX`
+    /// sequence whose four characters are not hex digits, and .NET leaves the
+    /// text between there and wherever the literal really ended as a literal
+    /// whose ends are crossed. Such a literal holds no text; it only ever
+    /// shows up as the `Count must be positive …` error
+    /// [`Format::split`](Format::split) raises for it.
     pub end: usize,
+}
+
+impl LiteralText {
+    /// A literal spanning `start..end` of the input, its escape sequences
+    /// resolved (.NET `LiteralText.AsSpan()`, which the port runs once here
+    /// rather than on every write).
+    ///
+    /// `convert` is
+    /// [`ParserSettings::convert_character_string_literals`], which .NET reads
+    /// off the settings the item was created with. A sequence that resolves to
+    /// nothing is not an error yet: it stays as written in
+    /// [`text`](Self::text) and the reason lands in
+    /// [`escape_error`](Self::escape_error), to be raised if the literal is
+    /// ever written.
+    pub fn resolved(raw: String, start: usize, end: usize, convert: bool) -> Self {
+        let (text, escape_error) = match escaped_literal::resolve_literal(&raw, convert) {
+            // Nothing to resolve, which is the common case: one clone.
+            Ok(None) => (raw.clone(), None),
+            Ok(Some(text)) => (text, None),
+            Err(message) => (raw.clone(), Some(message)),
+        };
+
+        LiteralText {
+            text,
+            raw,
+            escape_error,
+            convert_character_literals: convert,
+            start,
+            end,
+        }
+    }
+
+    /// An empty literal that fails with `message` when it is written: how the
+    /// port carries an error .NET raises where no result can be returned.
+    fn failing(message: &str, start: usize) -> Self {
+        LiteralText {
+            text: String::new(),
+            raw: String::new(),
+            escape_error: Some(message.to_owned()),
+            // Nothing to resolve, so the setting cannot be observed.
+            convert_character_literals: false,
+            start,
+            end: start,
+        }
+    }
 }
 
 /// The part of a format string between `{` and `}`.
