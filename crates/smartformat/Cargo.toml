@@ -21,11 +21,13 @@ derive = ["dep:smartformat-derive"]
 plural = []
 # Value::DateTime and .NET date/time format patterns, backed by jiff.
 time = ["dep:jiff"]
-# IsMatchFormatter. Dependencies land with milestone M3.
-regex-formatters = []
+# IsMatchFormatter, backed by fancy-regex: the Rust regex engine closest to
+# .NET's (lookarounds, backreferences). Divergences are documented in DESIGN.md.
+regex-formatters = ["dep:fancy-regex"]
 
 [dependencies]
 smartformat-derive = { version = "0.1.0", path = "../smartformat-derive", optional = true }
+fancy-regex = { version = "0.14", optional = true }
 jiff = { version = "0.2", optional = true }
 
 [dev-dependencies]

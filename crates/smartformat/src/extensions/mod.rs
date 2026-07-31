@@ -5,10 +5,16 @@
 
 pub mod choose;
 pub mod conditional;
+#[cfg(feature = "regex-formatters")]
+pub mod ismatch;
+pub mod list;
+pub mod null;
 #[cfg(feature = "plural")]
 pub mod plural;
 #[cfg(feature = "plural")]
 pub mod plural_rules;
+pub mod substring;
+pub mod template;
 
 use std::fmt;
 
