@@ -158,13 +158,24 @@ impl SmartFormatter {
     }
 
     /// Like [`new`](Self::new), but with parser settings that are not derived
-    /// from [`SmartSettings`], such as `string.Format` compatibility mode.
+    /// from [`SmartSettings`], such as a custom selector character set.
     ///
+    /// The two settings a parser and a formatter share —
     /// [`ParserSettings::error_action`] and
-    /// [`ParserSettings::string_format_compatibility`] are taken from the
-    /// passed parser settings, not from the corresponding
-    /// [`SmartSettings`] fields.
-    pub fn with_parser_settings(settings: SmartSettings, parser_settings: ParserSettings) -> Self {
+    /// [`ParserSettings::string_format_compatibility`] — are taken from the
+    /// passed parser settings and copied back over the corresponding
+    /// [`SmartSettings`] fields, so [`settings()`](Self::settings) and
+    /// [`parser()`](Self::parser)`.settings()` can never disagree.
+    pub fn with_parser_settings(
+        mut settings: SmartSettings,
+        parser_settings: ParserSettings,
+    ) -> Self {
+        // .NET keeps one `SmartSettings` that owns the `ParserSettings`, so
+        // the two views are the same object; here the parser settings win and
+        // are mirrored into the formatter's copy.
+        settings.parse_error_action = parser_settings.error_action;
+        settings.string_format_compatibility = parser_settings.string_format_compatibility;
+
         Self {
             settings,
             parser: Parser::new(parser_settings),
@@ -243,7 +254,10 @@ impl SmartFormatter {
             Value::List(items) => items,
             single => std::slice::from_ref(single),
         };
-        let current = arg_list.first().unwrap_or(&NULL);
+        // .NET `SmartFormatter.ExecuteFormattingAction`:
+        // `var current = args.Count > 0 ? args[0] : args;` — an empty argument
+        // list is its own current value, not null.
+        let current = arg_list.first().unwrap_or(args);
 
         let engine = Engine {
             smart: self,
@@ -432,7 +446,7 @@ impl<'e> Engine<'e> {
 
         // Compatibility mode bypasses every extension but DefaultFormatter,
         // including the auto-detecting ones.
-        if self.smart.parser.settings().string_format_compatibility {
+        if self.smart.settings.string_format_compatibility {
             let handled = match self.smart.formatters.default_formatter() {
                 Some(formatter) => formatter.try_evaluate_format(&mut info)?,
                 None => false,
@@ -700,35 +714,42 @@ impl Formatter for DefaultFormatter {
         // format as the specifier, not the escape-resolved `Format.ToString()`.
         let spec = format.map(|format| format.raw.as_str()).unwrap_or_default();
         let position = error_position(info.placeholder());
-        let text = match current {
-            Value::Null => String::new(),
+        // Borrowed wherever the text already exists, so the common
+        // string / null / bool cases allocate nothing per placeholder.
+        let text: Cow<'_, str> = match current {
+            Value::Null => Cow::Borrowed(""),
             // .NET bool is not IFormattable, so the spec is ignored.
-            Value::Bool(true) => "True".to_owned(),
-            Value::Bool(false) => "False".to_owned(),
-            Value::Int(v) => spec_result(
+            Value::Bool(true) => Cow::Borrowed("True"),
+            Value::Bool(false) => Cow::Borrowed("False"),
+            Value::Int(v) => Cow::Owned(spec_result(
                 number::format_number(Number::Int(*v), spec, info.culture()),
                 position,
                 number::INVALID_SPEC_MESSAGE,
-            )?,
-            Value::UInt(v) => spec_result(
+            )?),
+            Value::UInt(v) => Cow::Owned(spec_result(
                 number::format_number(Number::UInt(*v), spec, info.culture()),
                 position,
                 number::INVALID_SPEC_MESSAGE,
-            )?,
-            Value::Float(v) => spec_result(
+            )?),
+            Value::Float(v) => Cow::Owned(spec_result(
                 number::format_number(Number::Float(*v), spec, info.culture()),
                 position,
                 number::INVALID_SPEC_MESSAGE,
-            )?,
+            )?),
             // .NET string is not IFormattable either: `{0:D5}` on a string
             // writes the string unchanged.
-            Value::String(v) => v.clone(),
+            Value::String(v) => Cow::Borrowed(v.as_str()),
             #[cfg(feature = "time")]
-            Value::DateTime(v) => spec_result(
+            Value::DateTime(v) => Cow::Owned(spec_result(
                 date::format_datetime(v, spec, info.culture()),
                 position,
                 date::INVALID_SPEC_MESSAGE,
-            )?,
+            )?),
+            // A deliberate divergence: .NET falls back to `object.ToString()`
+            // and renders the CLR type name (`System.Object[]`,
+            // `System.Collections.Generic.Dictionary`2[...]`), which is never
+            // what a template author wanted. We fail loudly instead. See
+            // DESIGN.md, "Known divergences".
             Value::List(_) => {
                 return Err(Error::Format {
                     message: "Default formatting of a list is not supported; use a formatter such as \"list\"".to_owned(),

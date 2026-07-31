@@ -121,6 +121,27 @@ fn map_selectors_can_be_case_insensitive() {
 }
 
 #[test]
+fn an_exactly_spelled_key_wins_over_other_case_variants() {
+    let smart = SmartFormatter::new(SmartSettings {
+        case_sensitive: CaseSensitivity::CaseInsensitive,
+        ..SmartSettings::default()
+    });
+    // "NAME" sorts before "Name" in the map, so only the exact-match-first
+    // lookup finds the key the template actually spells.
+    let data = map([
+        ("NAME", Value::from("upper")),
+        ("Name", Value::from("exact")),
+        ("name", Value::from("lower")),
+    ]);
+
+    assert_eq!(smart.format("{Name}", &data).unwrap(), "exact");
+    assert_eq!(smart.format("{name}", &data).unwrap(), "lower");
+    assert_eq!(smart.format("{NAME}", &data).unwrap(), "upper");
+    // No exact spelling: any case-variant answers.
+    assert_eq!(smart.format("{nAmE}", &data).unwrap(), "upper");
+}
+
+#[test]
 fn nested_maps_are_selected_with_dots() {
     let data = map([(
         "Person",
@@ -325,6 +346,26 @@ fn unsupported_format_specs_are_distinguishable() {
     }
 }
 
+/// A deliberate divergence: .NET writes the CLR type name (`System.Object[]`)
+/// here, which is never a useful rendering, so we fail loudly instead.
+#[test]
+fn default_formatting_of_a_list_is_an_error() {
+    let data = map([(
+        "Items",
+        Value::List(vec![Value::from("a"), Value::from("b")]),
+    )]);
+    let error = SmartFormatter::default()
+        .format("{Items}", &data)
+        .unwrap_err();
+    match error {
+        Error::Format { message, .. } => assert_eq!(
+            message,
+            "Default formatting of a list is not supported; use a formatter such as \"list\""
+        ),
+        other => panic!("expected a formatting error, got {other}"),
+    }
+}
+
 #[test]
 fn default_formatting_of_a_map_is_an_error() {
     let data = map([("Person", map([("Name", Value::from("Joe"))]))]);
@@ -349,9 +390,47 @@ fn nullable_operator_short_circuits_to_empty_output() {
 }
 
 #[test]
-fn nullable_operator_covers_a_missing_key() {
+fn nullable_operator_anywhere_in_the_chain_short_circuits() {
+    // .NET 3.6.1 `Source.HasNullableOperator` looks at *every* selector of the
+    // placeholder, so the `?.` on the last selector already covers the null
+    // `City` two selectors earlier.
+    let data = map([("City", Value::Null), ("Name", Value::from("Alice"))]);
+
+    assert_eq!(format("{City.Length?.Nope}", &data), "");
+    assert_eq!(format("{City.Nope?.Deep}", &data), "");
+    // The empty result still takes the placeholder's alignment.
+    assert_eq!(format("[{City.Length?.Nope,6}]", &data), "[      ]");
+
+    // The short circuit only fires on a null value: `Name.Length` is 5, so
+    // `Nope` still has nothing to resolve against.
+    let error = SmartFormatter::default()
+        .format("{Name.Length?.Nope}", &data)
+        .unwrap_err();
+    assert!(matches!(error, Error::Format { .. }), "{error}");
+}
+
+#[test]
+fn nullable_operator_does_not_cover_a_missing_key() {
+    // .NET's `DictionarySource` null-guards a null *value*, not a missing key:
+    // a key that is not in a non-null map is unhandled, and unhandled is an
+    // error even with `?.` in the chain.
     let data = map([("Person", map([("Name", Value::from("Joe"))]))]);
-    assert_eq!(format("{Person?.Nope}", &data), "");
+    let error = SmartFormatter::default()
+        .format("{Person?.Nope}", &data)
+        .unwrap_err();
+    match error {
+        Error::Format { message, .. } => assert!(message.contains("\"Nope\""), "{message}"),
+        other => panic!("expected a formatting error, got {other}"),
+    }
+
+    // Neither a longer chain nor a missing first selector changes that.
+    let smart = SmartFormatter::default();
+    assert!(smart.format("{Person?.Nope?.Deep}", &data).is_err());
+    assert!(smart.format("{Missing?.Name}", &data).is_err());
+
+    // A null map member is covered, though.
+    let nullable = map([("Person", Value::Null)]);
+    assert_eq!(format("{Person?.Nope}", &nullable), "");
 }
 
 #[test]
@@ -430,6 +509,70 @@ fn string_format_compatibility_runs_only_the_default_formatter() {
             .unwrap(),
         "x"
     );
+}
+
+#[test]
+fn parser_settings_and_smart_settings_cannot_disagree() {
+    // The parser settings win, and are mirrored into `SmartSettings`, so the
+    // formatter never reads a stale copy of the two shared settings.
+    let parser_settings = smartformat::parsing::ParserSettings {
+        string_format_compatibility: true,
+        error_action: ErrorAction::MaintainTokens,
+        ..smartformat::parsing::ParserSettings::default()
+    };
+
+    let mut smart = SmartFormatter::with_parser_settings(
+        SmartSettings {
+            string_format_compatibility: false,
+            parse_error_action: ErrorAction::Error,
+            ..SmartSettings::default()
+        },
+        parser_settings,
+    );
+
+    assert!(smart.settings().string_format_compatibility);
+    assert_eq!(
+        smart.settings().parse_error_action,
+        ErrorAction::MaintainTokens
+    );
+    assert!(smart.parser().settings().string_format_compatibility);
+
+    // …and compatibility mode is really in force: only the default formatter
+    // runs, and `{{` escapes a brace.
+    smart.formatters_mut().insert(0, Box::new(ShoutFormatter));
+    assert_eq!(smart.format("{0}", &args([Value::Int(7)])).unwrap(), "7");
+    assert_eq!(
+        smart.format("{{0}}", &args([Value::Int(7)])).unwrap(),
+        "{0}"
+    );
+    // The parse error action came from the parser settings too.
+    assert_eq!(smart.format("{0", &args([Value::Int(7)])).unwrap(), "{0");
+}
+
+#[test]
+fn an_empty_argument_list_is_its_own_scope() {
+    // .NET `ExecuteFormattingAction`: `args.Count > 0 ? args[0] : args`, so
+    // with no arguments the current value is the (empty) argument list itself,
+    // which .NET renders as "System.Object[]" and we refuse to render at all.
+    let smart = SmartFormatter::default();
+
+    assert_eq!(
+        smart.format("literal only", &args([])).unwrap(),
+        "literal only"
+    );
+
+    let error = smart.format("{}", &args([])).unwrap_err();
+    match error {
+        Error::Format { message, .. } => assert!(message.contains("list"), "{message}"),
+        other => panic!("expected a formatting error, got {other}"),
+    }
+
+    // A named or positional selector has nothing to resolve against either.
+    assert!(smart.format("{0}", &args([])).is_err());
+    assert!(smart.format("{Name}", &args([])).is_err());
+
+    // A single null argument is a null scope, not an empty one.
+    assert_eq!(smart.format("{}", &args([Value::Null])).unwrap(), "");
 }
 
 #[test]
