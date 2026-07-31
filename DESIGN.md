@@ -53,40 +53,147 @@ Everything in SmartFormat's core plus the built-in extensions, in this order:
 
 ## Known divergences
 
-Places where we knowingly do not match .NET byte for byte. Each one has a
-golden case pinning .NET's answer, skipped with the reason in
-`crates/smartformat/tests/goldens.rs`, or a unit test pinning ours.
+Places where we knowingly do not match .NET byte for byte. Every entry names
+its pin: a golden case holding .NET's answer, skipped with the reason in
+`crates/smartformat/tests/goldens.rs`, or a test holding ours where .NET's
+answer is not reproducible.
 
 - **Integer width.** `Value` collapses every signed integer to `i64` and every
   unsigned one to `i64`/`u64`, where .NET formats the boxed value's own CLR
   type. `X` and `B` therefore always render a 64-bit two's complement:
   `{0:X}` on `(int)-255` is `FFFFFF01` in .NET and `FFFFFFFFFFFFFF01` here.
   Positive values, `long` and `ulong` are unaffected.
+  *Pins:* `num-int32-X-neg`, `num-int32-B-neg`.
 - **Shortest round-trip digits for exact powers of two.** .NET normalizes the
   significand before deriving `Grisu3`'s rounding boundaries, which loses the
   wider lower boundary a power of two has, so for `2^-25` and `2^-958` (and
   their negatives) .NET emits digits that do not parse back to the value.
   We emit the correctly rounded shortest form. These four values are the only
   ones in the whole `f64` range that differ.
+  *Pins:* the six `num-double-precise-*pow2-neg25*` / `*neg958*` cases.
 - **The `U` date specifier.** .NET converts to UTC, treating an unspecified
-  `DateTime` as local time, so its output depends on the machine's timezone.
-  A `jiff::civil::DateTime` carries no zone, so `U` is `UnsupportedSpec`.
+  `DateTime` as local time, so its output depends on the machine's timezone —
+  which is why it cannot be a golden. A `jiff::civil::DateTime` carries no
+  zone, so `U` is `UnsupportedSpec`.
+  *Pin:* `fmt::date::tests::u_needs_utc_conversion_and_unknown_specs_are_rejected`.
 - **Unterminated formatter options.** `{0:d(` makes .NET index past the end of
   the format string and throw `IndexOutOfRangeException`; we report the
   ordinary "missing a closing brace" parse error instead.
+  *Pins:* `err-unterminated-formatter-options`,
+  `err-unterminated-formatter-options-escape`, and
+  `unterminated_formatter_options_are_a_parse_error` in `tests/formatter.rs`.
 - **Error text for specifiers outside our subset.** With
   `ErrorAction::OutputErrorInResult`, a specifier .NET rejects too writes
   .NET's own `FormatException` message, but a *custom pattern* — which .NET
   renders and we do not — writes our `unsupported format spec: …` instead.
-- **Positions are byte offsets.** Every index in an `Error` and in the
-  `FormattingException` message it carries counts UTF-8 bytes, where .NET
-  counts UTF-16 code units. The two agree for ASCII templates.
+  *Pin:* `set-fmterr-outputerrorinresult-custom-pattern`.
+- **Formatting-error positions are byte offsets.** `Error::Format` and
+  `Error::UnsupportedSpec`, and the `FormattingException` message they carry,
+  take their index from the parse tree's byte ranges, so they count UTF-8 bytes
+  where .NET counts UTF-16 code units. The two agree for ASCII templates.
+  Fixing this means having the tree carry UTF-16 offsets next to the byte ones.
+  Parse errors do *not* diverge: `ParseError::position` and the `At:` caret line
+  of the `ErrorAction::OutputErrorInResult` message count UTF-16 code units like
+  .NET, which the caret line has to, or it stops lining up with the template
+  printed above it. (The `start`/`end` fields of `Format`, `LiteralText`,
+  `Placeholder` and `Selector` count UTF-8 bytes, because they slice the input.)
+  *Pins (of the matching parse-error side):*
+  `set-parseerr-outputerrorinresult-invalid-selector-char-nonascii`,
+  `set-parseerr-outputerrorinresult-invalid-selector-char-astral`,
+  `set-parseerr-outputerrorinresult-too-many-closing-braces-astral`, and
+  `parsing::tests::error_positions_are_utf16_offsets`.
+- **Escapes are validated eagerly.** .NET validates escape sequences lazily and
+  outside the error actions entirely: `LiteralText.AsSpan()` un-escapes when the
+  literal is *rendered* and throws `ArgumentException` there, which
+  `Evaluator.WriteFormat` does not catch, so neither `ParseErrorAction` nor
+  `FormatErrorAction` applies; `Parser.ParseAlternativeEscaping` throws its own
+  eagerly for the same reason. Formatter options are lazier still — `\q` in
+  `{0:d(a\qb)}` only throws if some formatter reads `FormatterOptions`. This
+  port owns its strings and resolves escapes while parsing, so it has to decide
+  during the parse, and records those same messages as ordinary parsing issues.
+  Under `ErrorAction::Error` (the .NET default, and what every default-settings
+  golden uses) the observable behavior is identical — the call fails. Under
+  `Ignore`, `MaintainTokens` and `OutputErrorInResult` we recover where .NET
+  throws: the offending sequence stays in the output as written, a placeholder
+  containing it is dropped or kept as tokens like any other erroneous
+  placeholder, and `OutputErrorInResult` writes the escape message into the
+  `At:` report. We also report a bad escape in formatter options .NET might
+  never have looked at.
+  *Pins:* the default-action goldens `lit-trailing-backslash`,
+  `err-invalid-escape-sequence`, `err-invalid-unicode-escape` and the
+  `err-unicode-escape-*` cases, plus
+  `parsing::tests::unrecognized_escape_sequences_obey_the_error_action` and
+  `escape_errors_are_reported_like_other_issues` for the lenient actions.
 - **Unpaired `\uXXXX` surrogates.** .NET keeps a lone surrogate as a UTF-16
   code unit in the result string; a Rust `String` cannot, so it becomes the
-  replacement character. A surrogate *pair* joins into its character, as it
-  does in .NET.
+  replacement character. A surrogate *pair* joins into its character, as it does
+  in .NET, but only with another *escaped* surrogate — never with a literal
+  astral character that follows. The golden harness serializes with
+  `Utf8JsonWriter`, which transcodes .NET's lone surrogate to U+FFFD on the way
+  into `goldens/m1.json`, the same character we render, so these cases do
+  compare equal and are pinned as ordinary goldens.
+  *Pins:* `lit-escape-unicode-lone-high-then-pair`,
+  `lit-escape-unicode-lone-low-then-pair`,
+  `lit-escape-unicode-high-then-non-surrogate`.
 - **Unicode case mapping.** `ToUpper`/`ToLower` and case-insensitive selector
   matching use Rust's Unicode mappings. Case-insensitive matching restricts
   itself to one-to-one mappings, like .NET's `OrdinalIgnoreCase`, but
-  `{0.ToUpper}` uses the full mapping, so `ß` uppercases to `SS` here and
-  stays `ß` in .NET.
+  `{0.ToUpper}` and `{0.ToLower}` use the full mapping: `ß` uppercases to `SS`
+  where .NET leaves it alone, and a word-final `Σ` lowercases to `ς` where .NET
+  always gives `σ`.
+  *Pins:* `str-to-upper-eszett`, `str-to-upper-invariant-eszett`,
+  `str-to-lower-final-sigma`.
+- **Case-insensitive map lookup order.** .NET's `DictionarySource` walks the
+  dictionary in *insertion* order and takes the first ignore-case match however
+  the selector is spelled: with `{"Name":"exact","NAME":"upper"}` both `{Name}`
+  and `{NAME}` render `exact`. A `BTreeMap` has no insertion order, so we take
+  the exactly spelled key first and otherwise the first ignore-case match in
+  sorted key order. The two agree whenever a map holds one case variant of a key
+  (the normal case) and whenever the exact key was inserted first; they differ
+  when a map holds several variants and the template spells one that was
+  inserted later.
+  *Pins:* `set-case-insensitive-exact-key-wins` (agreeing) and
+  `set-case-insensitive-later-variant` (differing), plus
+  `an_exactly_spelled_key_wins_over_other_case_variants`.
+- **Default formatting of lists and maps.** .NET falls back to
+  `object.ToString()` and renders the CLR type name — `System.Object[]` for a
+  list, ``System.Collections.Generic.Dictionary`2[System.String,System.Object]``
+  for a dictionary. We refuse: `DefaultFormatter` returns `Error::Format`
+  ("Default formatting of a list is not supported; use a formatter such as
+  \"list\"" / "Default formatting of a map is not supported; select a value from
+  it"). A type name is never what a template author wanted, so this gap is loud.
+  It also means `{}` against an *empty* argument list is an error here, where
+  .NET renders `System.Object[]`; the scope itself matches .NET, only the
+  rendering of it differs.
+  *Pins:* `sel-default-format-empty-args`, `sel-default-format-list`,
+  `sel-default-format-map`, plus `default_formatting_of_a_list_is_an_error`,
+  `default_formatting_of_a_map_is_an_error` and
+  `an_empty_argument_list_is_its_own_scope`.
+
+## Pinned to SmartFormat.NET 3.6.1
+
+Not divergences: places where upstream has since changed and we follow the
+version the goldens are generated with.
+
+- **The nullable operator's scan range.** 3.6.1's `Source.HasNullableOperator`
+  scans *all* of a placeholder's selectors, so `{City.Length?.Nope}` with a null
+  `City` renders empty. A later upstream revision restricts the scan to
+  selectors with `SelectorIndex <= ISelectorInfo.SelectorIndex`, which would make
+  that template throw; the same revision also made a missing dictionary key
+  under `?.` evaluate to null, which 3.6.1 (and we) treat as a formatting error.
+  If `tools/goldens` is ever bumped past 3.6.1, both flip, and
+  `SelectorInfo::has_nullable_operator` grows the index check back.
+  *Pins:* `sel-nullable-later-selector-covers-null`,
+  `sel-nullable-later-selector-missing-branch`,
+  `sel-nullable-after-non-null-member`, `sel-nullable-missing-key`,
+  `sel-nullable-missing-key-chained`, `sel-nullable-missing-first-selector`,
+  `sel-nullable-null-member-missing-key`.
+
+## Deferred, not divergent
+
+- **The `{Index}` selector.** In .NET this is `ListFormatter`'s `ISource` role
+  (`Extensions/ListFormatter.cs`, `selectorIsIndex` plus the static
+  `CollectionIndex`), not `DefaultSource`, so it lands with the `list` formatter
+  in M3 rather than with the M1 sources. Two behaviors to port then: inside a
+  `list` format `{Index}` is the current item's index and `{List2[Index]}` syncs
+  a second list; outside one, `{Index}` against an enumerable answers `-1`.
