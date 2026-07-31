@@ -31,7 +31,7 @@
 use crate::error::Error;
 use crate::formatter::{Formatter, FormattingInfo, NO_COLLECTION_INDEX};
 use crate::parsing::chars::NULLABLE_OPERATOR;
-use crate::parsing::{Format, FormatItem, Placeholder, SplitError, SplitPiece};
+use crate::parsing::{Format, FormatItem, Placeholder, SplitPiece};
 use crate::value::Value;
 
 use super::{split_part, InvalidSplitChar, DEFAULT_SPLIT_CHAR};
@@ -183,7 +183,8 @@ impl Formatter for ListFormatter {
         // answer however many parts the formatter wanted.
         let parts = format
             .map(|format| {
-                split_at_most(format, self.split_char, MAX_SEPARATORS)
+                format
+                    .split_max(self.split_char, MAX_SEPARATORS)
                     .map_err(|error| info.plain_error(&error.to_string(), info.error_position()))
             })
             .transpose()?;
@@ -314,90 +315,6 @@ fn as_placeholder(format: &Format, alignment: i32) -> Format {
     }
 }
 
-/// [`Format::split`](crate::parsing::Format::split) with a limit on the number
-/// of separators, which is .NET's `Format.Split(char, maxCount)` — the overload
-/// only `ListFormatter` calls.
-///
-/// The limit is not a formality. .NET stops searching once it has found
-/// `max_count` separators, so a literal whose ends are crossed *after* the last
-/// one it needs is never reached and never fails:
-/// `{0:list:{}|-|+|*|x\u12}` renders `a-b+c` in 3.6.1 (probed), where an
-/// unlimited split fails the placeholder with [`SplitError::Count`]. Whatever
-/// follows the last separator still becomes one final piece, so this returns up
-/// to `max_count + 1` of them, and the caller ignores the ones past the fourth.
-///
-/// This is `Format::split` with a bounded search; it lives here because nothing
-/// else needs the bound. Were a second formatter ever to want it, it belongs
-/// next to `split` in `parsing` instead.
-fn split_at_most(
-    format: &Format,
-    separator: char,
-    max_count: usize,
-) -> Result<Vec<SplitPiece>, SplitError> {
-    let mut positions = Vec::with_capacity(max_count);
-    let mut from = format.start;
-    while positions.len() < max_count {
-        let Some(position) = index_of(format, separator, from)? else {
-            break;
-        };
-        positions.push(position);
-        from = position + separator.len_utf8();
-    }
-
-    // .NET returns the format itself when it holds no separator.
-    if positions.is_empty() {
-        return Ok(vec![Ok(format.clone())]);
-    }
-
-    let mut pieces = Vec::with_capacity(positions.len() + 1);
-    let mut start = format.start;
-    for position in positions {
-        pieces.push(format.substring(start, position));
-        start = position + separator.len_utf8();
-    }
-    // The last piece is "everything left", however far past the end of the
-    // format the last separator was.
-    pieces.push(format.substring(start, format.end));
-    Ok(pieces)
-}
-
-/// The first offset of `separator` at or after `from`, searching only literal
-/// text (.NET `Format.IndexOf`).
-///
-/// A literal that ends before the point the search has reached is where .NET
-/// asks `string.IndexOf` for a negative count; see
-/// [`Format::split`](crate::parsing::Format::split), whose private half this
-/// mirrors, for what that means.
-fn index_of(format: &Format, separator: char, from: usize) -> Result<Option<usize>, SplitError> {
-    let mut start = from;
-    for item in &format.items {
-        // Note the strict `<`: a literal ending exactly where the search starts
-        // is searched, with a count of zero.
-        if item.end() < start {
-            continue;
-        }
-        let FormatItem::Literal(literal) = item else {
-            continue;
-        };
-
-        let search_start = start.max(literal.start);
-        if literal.end < search_start {
-            return Err(SplitError::Count);
-        }
-        start = search_start;
-
-        let offset = start - literal.start;
-        if let Some(found) = literal
-            .raw
-            .get(offset..)
-            .and_then(|rest| rest.find(separator))
-        {
-            return Ok(Some(start + found));
-        }
-    }
-    Ok(None)
-}
-
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -420,6 +337,7 @@ mod tests {
     use super::*;
     use crate::extensions::ConditionalFormatter;
     use crate::formatter::{DefaultFormatter, FormatterRegistry};
+    use crate::parsing::SplitError;
     use crate::settings::{ErrorAction, SmartSettings};
     use crate::SmartFormatter;
 

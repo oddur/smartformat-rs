@@ -147,7 +147,26 @@ impl Format {
     /// [`SplitPiece`] that is `Err`). .NET's `SplitList` cuts lazily, so a
     /// formatter that never picks the bad piece never sees the second kind.
     pub fn split(&self, separator: char) -> Result<Vec<SplitPiece>, SplitError> {
-        let positions = self.find_all(separator)?;
+        self.split_max(separator, usize::MAX)
+    }
+
+    /// [`split`](Self::split) with a limit on the number of separators, which
+    /// is .NET's `Format.Split(char, maxCount)` — the overload only
+    /// `ListFormatter` calls, with a limit of four.
+    ///
+    /// The limit is not a formality. .NET stops searching once it has found
+    /// `max_count` separators, so a literal whose ends are crossed *after* the
+    /// last one it needs is never reached and never fails:
+    /// `{0:list:{}|-|+|*|x\u12}` renders `a-b+c` in 3.6.1 (probed), where an
+    /// unlimited split fails the placeholder with [`SplitError::Count`].
+    /// Whatever follows the last separator still becomes one final piece, so
+    /// this returns up to `max_count + 1` of them.
+    pub fn split_max(
+        &self,
+        separator: char,
+        max_count: usize,
+    ) -> Result<Vec<SplitPiece>, SplitError> {
+        let positions = self.find_all(separator, max_count)?;
         // .NET returns the format itself when it holds no separator.
         if positions.is_empty() {
             return Ok(vec![Ok(self.clone())]);
@@ -165,13 +184,16 @@ impl Format {
         Ok(pieces)
     }
 
-    /// Every offset of `separator` in the literal text of this format, as a
-    /// byte offset into the template (.NET `Format.FindAll` over
+    /// The first `max_count` offsets of `separator` in the literal text of this
+    /// format, as byte offsets into the template (.NET `Format.FindAll` over
     /// `Format.IndexOf`), or the [`SplitError`] the search reached.
-    fn find_all(&self, separator: char) -> Result<Vec<usize>, SplitError> {
+    fn find_all(&self, separator: char, max_count: usize) -> Result<Vec<usize>, SplitError> {
         let mut positions = Vec::new();
         let mut from = self.start;
-        while let Some(position) = self.index_of(separator, from)? {
+        while positions.len() < max_count {
+            let Some(position) = self.index_of(separator, from)? else {
+                break;
+            };
             positions.push(position);
             from = position + separator.len_utf8();
         }
