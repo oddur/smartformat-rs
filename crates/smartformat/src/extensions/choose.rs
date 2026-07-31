@@ -26,7 +26,7 @@ use crate::settings::CaseSensitivity;
 use crate::value::Value;
 use crate::Error;
 
-use super::{split_format, InvalidSplitChar, DEFAULT_SPLIT_CHAR};
+use super::{split_format, split_part, InvalidSplitChar, DEFAULT_SPLIT_CHAR};
 
 /// The default formatter name, .NET `ChooseFormatter.Name`.
 const NAME: &str = "choose";
@@ -225,7 +225,7 @@ impl Formatter for ChooseFormatter {
 
         // Without a match, the one extra format is the "else" branch.
         let chosen = chosen.unwrap_or(formats.len() - 1);
-        info.format_as_child(&formats[chosen], info.current())?;
+        info.format_as_child(split_part(info, &formats[chosen])?, info.current())?;
 
         Ok(true)
     }

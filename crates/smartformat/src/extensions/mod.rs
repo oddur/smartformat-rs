@@ -13,7 +13,7 @@ pub mod plural_rules;
 use std::fmt;
 
 use crate::formatter::FormattingInfo;
-use crate::parsing::Format;
+use crate::parsing::{Format, SplitPiece};
 use crate::Error;
 
 pub use choose::ChooseFormatter;
@@ -58,19 +58,39 @@ pub(crate) fn valid_split_char(split_char: char) -> Result<char, InvalidSplitCha
 }
 
 /// The parts `format` splits into, or the formatting error .NET's
-/// `Format.Split` throws for a crossed literal ([`SplitError`]).
+/// `Format.IndexOf` throws when the search for the separators runs into a
+/// crossed literal ([`SplitError::Count`](crate::parsing::SplitError::Count)).
 ///
 /// All three formatters split *before* they count the parts, and .NET never
-/// reaches the count when the split throws, so this has to be propagated with
+/// reaches the count when the search throws, so this has to be propagated with
 /// `?` rather than folded into "requires at least N parts". Like the count
 /// errors, the exception is one .NET raises inside `TryEvaluateFormat` and the
 /// evaluator only wraps on the way out, so the message carries no envelope.
+///
+/// Cutting a part out of the format is deferred to [`split_part`], because .NET
+/// defers it too.
 pub(crate) fn split_format(
     info: &FormattingInfo<'_>,
     format: &Format,
     separator: char,
-) -> Result<Vec<Format>, Error> {
+) -> Result<Vec<SplitPiece>, Error> {
     format
         .split(separator)
+        .map_err(|error| info.plain_error(&error.to_string(), info.error_position()))
+}
+
+/// The part a formatter picked, or the formatting error .NET's
+/// `Format.Substring` throws while cutting that part out of a format whose
+/// separators a crossed literal put out of bounds.
+///
+/// .NET's `SplitList` only holds the separator offsets and cuts each part when
+/// it is indexed, so a part that is never picked never throws: for
+/// `{0:choose(1|2|3):a|b|\u12}` only the argument 3 fails. Every access to a
+/// part therefore goes through here rather than through the slice directly.
+pub(crate) fn split_part<'a>(
+    info: &FormattingInfo<'_>,
+    part: &'a SplitPiece,
+) -> Result<&'a Format, Error> {
+    part.as_ref()
         .map_err(|error| info.plain_error(&error.to_string(), info.error_position()))
 }

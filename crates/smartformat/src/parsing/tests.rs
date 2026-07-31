@@ -1053,9 +1053,15 @@ fn raws(pieces: &[Format]) -> Vec<&str> {
 }
 
 /// The pieces of a split that does not reach a crossed literal, which is every
-/// split but the ones `split_fails_when_a_literal_has_crossed_ends` covers.
+/// split but the ones `split_fails_when_a_literal_has_crossed_ends` and
+/// `a_piece_outside_the_format_fails_only_when_it_is_asked_for` cover.
 fn split(format: &Format, separator: char) -> Vec<Format> {
-    format.split(separator).expect("a split that does not fail")
+    format
+        .split(separator)
+        .expect("a split that does not fail")
+        .into_iter()
+        .map(|piece| piece.expect("a piece the format covers"))
+        .collect()
 }
 
 #[test]
@@ -1175,7 +1181,7 @@ fn substring_takes_a_placeholder_whole_and_slices_a_literal() {
     let start = format.start + 1;
     let end = format.end - 1;
 
-    let piece = format.substring(start, end);
+    let piece = format.substring(start, end).expect("a piece in range");
 
     assert_eq!(piece.raw, "b{1}c");
     assert_eq!(piece.start, start);
@@ -1312,14 +1318,75 @@ fn split_fails_when_a_literal_has_crossed_ends() {
     ] {
         assert_eq!(
             format_of(template).split('|'),
-            Err(SplitError),
+            Err(SplitError::Count),
             "{template:?}"
         );
     }
     assert_eq!(
-        SplitError.to_string(),
+        SplitError::Count.to_string(),
         "Count must be positive and count must refer to a location within \
          the string/array/collection. (Parameter 'count')"
+    );
+}
+
+#[test]
+fn a_piece_outside_the_format_fails_only_when_it_is_asked_for() {
+    // The `}` that closes the placeholder sits inside the escape window, so
+    // the format ends there while the crossed literal's source text runs on to
+    // the `|` after it. The search reports that `|`, which is past the end of
+    // the format, so the piece before it overruns the end and the piece after
+    // it starts past the end. .NET cuts each piece only when the formatter
+    // indexes it, so neither is the whole split's answer: the format itself is
+    // fine and so is every piece the format does cover.
+    let pieces = format_of(r"{0:cond:\u12}|{1}")
+        .split('|')
+        .expect("a search that does not ask for a negative count");
+
+    assert_eq!(pieces.len(), 2);
+    assert_eq!(pieces[0], Err(SplitError::Length));
+    assert_eq!(pieces[1], Err(SplitError::Start));
+
+    let pieces = format_of(r"{0:choose(1|2|3):a|b|\u12}|{1}")
+        .split('|')
+        .expect("a search that does not ask for a negative count");
+
+    assert_eq!(
+        raws(&[pieces[0].clone().unwrap(), pieces[1].clone().unwrap()]),
+        ["a", "b"]
+    );
+    assert_eq!(pieces[2], Err(SplitError::Length));
+    assert_eq!(pieces[3], Err(SplitError::Start));
+}
+
+#[test]
+fn substring_rejects_offsets_the_format_does_not_cover() {
+    // .NET `Format.ValidateArguments`, which checks `start` before `length`.
+    let format = format_of("{0:cond:abcd}");
+
+    assert_eq!(
+        format.substring(format.start - 1, format.end),
+        Err(SplitError::Start)
+    );
+    assert_eq!(
+        format.substring(format.end + 1, format.end + 1),
+        Err(SplitError::Start)
+    );
+    assert_eq!(
+        format.substring(format.start, format.end + 1),
+        Err(SplitError::Length)
+    );
+    // The ends themselves are in range: an empty piece at either end is what a
+    // template with a leading or trailing separator splits into.
+    assert!(format.substring(format.end, format.end).is_ok());
+    assert!(format.substring(format.start, format.start).is_ok());
+
+    assert_eq!(
+        SplitError::Start.to_string(),
+        "Specified argument was out of the range of valid values. (Parameter 'start')"
+    );
+    assert_eq!(
+        SplitError::Length.to_string(),
+        "Specified argument was out of the range of valid values. (Parameter 'length')"
     );
 }
 

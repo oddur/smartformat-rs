@@ -31,7 +31,7 @@ use crate::formatter::{Formatter, FormattingInfo};
 use crate::value::Value;
 use crate::Error;
 
-use super::{split_format, InvalidSplitChar, DEFAULT_SPLIT_CHAR};
+use super::{split_format, split_part, InvalidSplitChar, DEFAULT_SPLIT_CHAR};
 
 /// The default formatter name, .NET `PluralLocalizationFormatter.Name`.
 ///
@@ -260,7 +260,7 @@ impl Formatter for PluralLocalizationFormatter {
         }
 
         // Output the selected word (allowing for nested formats).
-        let plural_form = &plural_words[plural_index as usize];
+        let plural_form = split_part(info, &plural_words[plural_index as usize])?;
         info.format_as_child(plural_form, current)?;
         Ok(true)
     }

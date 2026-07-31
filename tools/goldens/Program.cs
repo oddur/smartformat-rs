@@ -847,6 +847,11 @@ static void LazyEscapeCases(List<GoldenCase> cases)
 //     `LiteralText` whose `StartIndex` is after its `EndIndex`, and every
 //     `Format.Split` over it asks `string.IndexOf` for a negative count and
 //     throws `ArgumentOutOfRangeException` — for *every* argument;
+//   * the same literal's source text reaches past the end of the format it
+//     belongs to, so `Format.IndexOf` can also report a separator the format
+//     does not cover. `Format.Substring` then throws
+//     `ArgumentOutOfRangeException` for `start` or for `length` — but only when
+//     the formatter asks for that one piece, because `SplitList` cuts lazily;
 //   * a split can also cut a `\uXXXX` apart, and .NET resolves each piece
 //     afresh, so a truncated sequence of one to three digits still resolves
 //     (zero digits does not).
@@ -964,6 +969,41 @@ static void UnicodeEscapeSliceCases(List<GoldenCase> cases)
     Add("crossed-list-split-output", @"{0:\u12}", "[5]", fmtOutput);
     Add("crossed-list-split-nested", @"{0:\u12{1}}", "[5,6]");
     Add("crossed-list-split-nested-output", @"{0:\u12{1}}", "[5,6]", fmtOutput);
+
+    // -- A separator the format does not cover. The `}` that closes the
+    // placeholder is inside the escape window, so the format ends there while
+    // the crossed literal's source text runs on to the `|` after it. The
+    // search finds that `|` and hands `Format.Substring` a piece the format
+    // does not cover: the piece before the separator overruns the end
+    // (`length`), the piece after it starts past the end (`start`). Which one
+    // is reported depends on which piece the formatter picks, since .NET only
+    // cuts the piece it is asked for.
+    Add("out-of-range-cond-true", @"{0:cond:\u12}|{1}", @"[true,""Z""]");
+    Add("out-of-range-cond-false", @"{0:cond:\u12}|{1}", @"[false,""Z""]");
+    Add("out-of-range-cond-true-output", @"{0:cond:\u12}|{1}", @"[true,""Z""]", fmtOutput);
+    Add("out-of-range-cond-false-output", @"{0:cond:\u12}|{1}", @"[false,""Z""]", fmtOutput);
+    Add("out-of-range-cond-leading-true", @"{0:cond:x\u12}|{1}", @"[true,""Z""]");
+    Add("out-of-range-cond-leading-false", @"{0:cond:x\u12}|{1}", @"[false,""Z""]");
+    Add("out-of-range-cond-maintain-true", @"{0:cond:\u12}|b}", "[true]", bothMaintain);
+    Add("out-of-range-cond-maintain-false", @"{0:cond:\u12}|b}", "[false]", bothMaintain);
+    Add("out-of-range-choose-1", @"{0:choose(1|2):\u12}|{1}", @"[1,""Z""]");
+    Add("out-of-range-choose-2", @"{0:choose(1|2):\u12}|{1}", @"[2,""Z""]");
+    Add("out-of-range-choose-1-output", @"{0:choose(1|2):\u12}|{1}", @"[1,""Z""]", fmtOutput);
+    Add("out-of-range-choose-2-output", @"{0:choose(1|2):\u12}|{1}", @"[2,""Z""]", fmtOutput);
+    Add("out-of-range-plural", @"{0:plural:\u12}|{1}", @"[1,""Z""]", culture: "en-US");
+    Add("out-of-range-plural-output", @"{0:plural:\u12}|{1}", @"[1,""Z""]", fmtOutput, "en-US");
+
+    // The pieces the format does cover still render: only the argument that
+    // picks the piece out of bounds fails.
+    Add("out-of-range-choose-in-range-1", @"{0:choose(1|2|3):a|b|\u12}|{1}", @"[1,""Z""]");
+    Add("out-of-range-choose-in-range-2", @"{0:choose(1|2|3):a|b|\u12}|{1}", @"[2,""Z""]");
+    Add("out-of-range-choose-in-range-3", @"{0:choose(1|2|3):a|b|\u12}|{1}", @"[3,""Z""]");
+    Add("out-of-range-choose-in-range-3-output",
+        @"{0:choose(1|2|3):a|b|\u12}|{1}", @"[3,""Z""]", fmtOutput);
+    // A complex condition reads its parameters one at a time, so the piece out
+    // of bounds only throws once the loop reaches it.
+    Add("out-of-range-cond-complex-first", @"{0:cond:<5?a|\u12}|{1}", @"[1,""Z""]");
+    Add("out-of-range-cond-complex-second", @"{0:cond:<5?a|\u12}|{1}", @"[9,""Z""]");
 }
 
 // ---------------------------------------------------------------------------

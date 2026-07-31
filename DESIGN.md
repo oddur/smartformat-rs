@@ -317,14 +317,40 @@ Rust code the quirk forced, so nobody "cleans it up".
   still resolve (`\u00` is a NUL character) while zero digits do not
   (`int.TryParse` fails on the empty slice, giving
   `Unrecognized escape sequence in literal: "\u"`).
-  A crossed literal is why `Format::split` returns `Result`: .NET asks
-  `string.IndexOf` for a negative count and throws
-  `ArgumentOutOfRangeException` out of the whole split, so *no* argument gets a
-  result — not even one whose piece count the formatter would have rejected.
-  `choose`, `cond` and `plural` therefore propagate `SplitError` with `?` before
-  they count anything, `plural` in its auto-detection path included.
+  A crossed literal is why `Format::split` returns `Result<Vec<SplitPiece>, …>`,
+  a `Result` on each of two levels, because .NET throws
+  `ArgumentOutOfRangeException` at two different moments and a template can tell
+  them apart:
+  - **While looking for the separators**, `Format.IndexOf` asks
+    `string.IndexOf` for a negative count. That throws out of the whole split,
+    so *no* argument gets a result — not even one whose piece count the
+    formatter would have rejected. This is the outer `Err`, `SplitError::Count`;
+    `choose`, `cond` and `plural` propagate it with `?` before they count
+    anything, `plural` in its auto-detection path included.
+  - **While cutting one piece out**, `Format.Substring` is handed offsets the
+    format does not cover, because the crossed literal's source text reaches
+    past the end of the format and the separator found in it can lie past that
+    end too. .NET's `SplitList` is *lazy* — `Split` only records the separator
+    offsets and each piece is cut when the formatter indexes it — so this only
+    fails the argument that picks the bad piece:
+    `{0:choose(1|2|3):a|b|\u12}|{1}` renders `a|Z` for 1 and `b|Z` for 2, and
+    only 3 throws. Hence `SplitPiece = Result<Format, SplitError>` per piece
+    rather than one verdict for the split, `Format::substring` returning
+    `Result` with .NET's own two parameter names (`SplitError::Start`,
+    `SplitError::Length`, checked in .NET's order), and `extensions::split_part`
+    as the single door every formatter goes through to reach a piece. Do not
+    "simplify" that by unwrapping the pieces up front: eager cutting fails
+    arguments .NET renders. (Note that upstream `main` is *not* lazy here — it
+    added `SplitList.CreateSplitCache`, which cuts every piece at `Split` time
+    and would report the first bad piece for every argument. 3.6.1 is the
+    ground truth, and it was probed.)
+
   *Pins:* the `uesc-*` goldens (the `-output` ones pin the exact
-  `Count must be positive …` text), `parsing::tests::split_fails_when_a_literal_has_crossed_ends`,
+  `Count must be positive …` and `Specified argument was out of the range …`
+  text, and `uesc-out-of-range-choose-in-range-*` pins that the in-range pieces
+  still render), `parsing::tests::split_fails_when_a_literal_has_crossed_ends`,
+  `…::a_piece_outside_the_format_fails_only_when_it_is_asked_for`,
+  `…::substring_rejects_offsets_the_format_does_not_cover`,
   `…::a_zero_digit_unicode_slice_is_an_error_but_only_where_it_is_written`,
   `…::split_skips_a_crossed_literal_it_has_already_passed`,
   `…::a_piece_resolves_the_escape_sequence_the_cut_truncated`.

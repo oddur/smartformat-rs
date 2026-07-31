@@ -19,34 +19,69 @@ pub use settings::{CustomCharError, ParserSettings, SelectorFilter};
 use std::fmt;
 use std::fmt::Write as _;
 
-/// What [`Format::split`] fails with when it reaches a literal whose ends are
-/// crossed — the ones the parser leaves behind when it reads past the end of a
-/// `\uXXXX` sequence that is not four hex digits, as in `{0:cond:a|\u12}`.
+/// The `ArgumentOutOfRangeException` .NET throws while splitting a format that
+/// holds a literal whose ends are crossed — the ones the parser leaves behind
+/// when it reads past the end of a `\uXXXX` sequence that is not four hex
+/// digits, as in `{0:cond:a|\u12}`.
 ///
-/// .NET asks `string.IndexOf(char, int, int)` for a negative count there and
-/// the `ArgumentOutOfRangeException` it gets aborts the whole split, so no
-/// argument gets a result, whichever piece it would have chosen — not even one
-/// the formatter would have rejected for holding too few pieces. This is the
-/// same abort, and the callers — the `choose`, `cond` and `plural` formatters —
-/// propagate it before they count anything.
+/// Such a literal's source text reaches past the end of the format it belongs
+/// to, so the search for the separators can both ask for a negative count
+/// ([`Count`](Self::Count)) and report a separator the format does not cover,
+/// which then makes `Format.Substring` cut a piece out of bounds
+/// ([`Start`](Self::Start), [`Length`](Self::Length)).
+///
+/// The three differ in *when* they are raised, which a template can see:
+/// [`Count`](Self::Count) comes out of `Format.IndexOf`, which runs before any
+/// piece exists, so it fails the whole split and every argument with it — not
+/// even a piece count the formatter would have rejected is reached. The other
+/// two come out of `Format.Substring`, which .NET defers until a formatter asks
+/// for that one piece, so only the argument that picks the bad piece fails; see
+/// [`Format::split`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct SplitError;
+pub enum SplitError {
+    /// .NET asked `string.IndexOf(char, int, int)` for a negative count while
+    /// it was still looking for the separators (`Format.IndexOf`).
+    Count,
+    /// A piece starts outside the format it is cut from
+    /// (`Format.Substring`'s `nameof(start)`).
+    Start,
+    /// A piece ends past the end of the format it is cut from
+    /// (`Format.Substring`'s `nameof(length)`).
+    Length,
+}
 
 impl SplitError {
     /// The exception message, .NET's verbatim: it is what
     /// [`ErrorAction::OutputErrorInResult`](crate::ErrorAction::OutputErrorInResult)
     /// writes into the result, so a reworded copy would be a rendering
     /// difference.
-    pub const MESSAGE: &'static str = "Count must be positive and count must refer to a location within the string/array/collection. (Parameter 'count')";
+    pub const fn message(self) -> &'static str {
+        match self {
+            SplitError::Count => "Count must be positive and count must refer to a location within the string/array/collection. (Parameter 'count')",
+            SplitError::Start => "Specified argument was out of the range of valid values. (Parameter 'start')",
+            SplitError::Length => "Specified argument was out of the range of valid values. (Parameter 'length')",
+        }
+    }
 }
 
 impl fmt::Display for SplitError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(Self::MESSAGE)
+        f.write_str(self.message())
     }
 }
 
 impl std::error::Error for SplitError {}
+
+/// One piece of a [`Format::split`]: the piece itself, or the
+/// [`SplitError`] .NET's `Format.Substring` throws when it is asked to cut a
+/// piece the format does not cover.
+///
+/// The error is kept per piece rather than failing the split because .NET's
+/// `SplitList` is lazy: it only records where the separators are and cuts each
+/// piece out when the formatter indexes it. So
+/// `{0:choose(1|2|3):a|b|\u12}` renders `a` for 1 and `b` for 2, and only 3 —
+/// the argument that picks the piece cut out of bounds — fails.
+pub type SplitPiece = Result<Format, SplitError>;
 
 /// A parsed format string: literal text interleaved with placeholders.
 ///
@@ -102,13 +137,20 @@ impl Format {
     /// came from.
     ///
     /// A format the parser left with a literal whose ends are crossed — see
-    /// [`LiteralText::end`] — is a [`SplitError`] instead of a list of pieces,
-    /// because .NET throws out of the split rather than returning.
-    pub fn split(&self, separator: char) -> Result<Vec<Format>, SplitError> {
+    /// [`LiteralText::end`] — is where the two halves of the return type come
+    /// in, since .NET throws at either of two moments. Looking for the
+    /// separators can ask for a negative count, which throws out of the whole
+    /// split
+    /// ([`SplitError::Count`], the outer `Err`); or it can report a separator
+    /// past the end of this format, which only throws when the piece it cuts
+    /// is asked for ([`SplitError::Start`] or [`SplitError::Length`], a
+    /// [`SplitPiece`] that is `Err`). .NET's `SplitList` cuts lazily, so a
+    /// formatter that never picks the bad piece never sees the second kind.
+    pub fn split(&self, separator: char) -> Result<Vec<SplitPiece>, SplitError> {
         let positions = self.find_all(separator)?;
         // .NET returns the format itself when it holds no separator.
         if positions.is_empty() {
-            return Ok(vec![self.clone()]);
+            return Ok(vec![Ok(self.clone())]);
         }
 
         let mut pieces = Vec::with_capacity(positions.len() + 1);
@@ -117,6 +159,8 @@ impl Format {
             pieces.push(self.substring(start, position));
             start = position + separator.len_utf8();
         }
+        // .NET cuts the last piece as "everything left", so its end is this
+        // format's end however far past it the last separator was.
         pieces.push(self.substring(start, self.end));
         Ok(pieces)
     }
@@ -161,7 +205,7 @@ impl Format {
 
             let search_start = start.max(literal.start);
             if literal.end < search_start {
-                return Err(SplitError);
+                return Err(SplitError::Count);
             }
             start = search_start;
 
@@ -181,12 +225,23 @@ impl Format {
     /// (.NET `Format.Substring`).
     ///
     /// A placeholder that reaches into the range is taken whole, since a
-    /// placeholder cannot be split; a literal is sliced. Offsets outside this
-    /// format's range are clamped rather than rejected, where .NET throws
-    /// `ArgumentOutOfRangeException` — no caller can reach that, since the
-    /// offsets always come from [`split`](Self::split) or from a match inside
-    /// the format's own text.
-    pub fn substring(&self, start: usize, end: usize) -> Format {
+    /// placeholder cannot be split; a literal is sliced.
+    ///
+    /// Offsets outside this format's range are an error, .NET's
+    /// `Format.Substring` validating its arguments in that order: a `start`
+    /// before the format or past its end is [`SplitError::Start`], and an `end`
+    /// past the format's end is [`SplitError::Length`], after .NET's parameter
+    /// names. [`split`](Self::split) reaches both, because a separator found in
+    /// a literal whose ends are crossed can lie past this format's end.
+    pub fn substring(&self, start: usize, end: usize) -> Result<Format, SplitError> {
+        // .NET `Format.ValidateArguments`, `start` before `length`.
+        if start < self.start || start > self.end {
+            return Err(SplitError::Start);
+        }
+        if end > self.end {
+            return Err(SplitError::Length);
+        }
+
         let mut items = Vec::new();
         for item in &self.items {
             if item.end() <= start {
@@ -208,12 +263,12 @@ impl Format {
             }
         }
 
-        Format {
+        Ok(Format {
             raw: slice(&self.raw, self.start, start, end),
             items,
             start,
             end,
-        }
+        })
     }
 }
 
@@ -341,8 +396,9 @@ pub struct LiteralText {
     /// sequence whose four characters are not hex digits, and .NET leaves the
     /// text between there and wherever the literal really ended as a literal
     /// whose ends are crossed. Such a literal holds no text; it only ever
-    /// shows up as the [`SplitError`] [`Format::split`](Format::split) fails
-    /// with when it reaches one.
+    /// shows up as a [`SplitError`], either the one
+    /// [`Format::split`](Format::split) fails with when it reaches one or the
+    /// one a piece cut past the end of the format carries.
     pub end: usize,
 }
 

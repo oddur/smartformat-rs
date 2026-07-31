@@ -10248,6 +10248,270 @@
       }
     },
     {
+      "id": "uesc-out-of-range-cond-true",
+      "template": "{0:cond:\\u12}|{1}",
+      "args": [
+        true,
+        "Z"
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "uesc-out-of-range-cond-false",
+      "template": "{0:cond:\\u12}|{1}",
+      "args": [
+        false,
+        "Z"
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "uesc-out-of-range-cond-true-output",
+      "template": "{0:cond:\\u12}|{1}",
+      "args": [
+        true,
+        "Z"
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "Specified argument was out of the range of valid values. (Parameter 'length')|Z"
+      }
+    },
+    {
+      "id": "uesc-out-of-range-cond-false-output",
+      "template": "{0:cond:\\u12}|{1}",
+      "args": [
+        false,
+        "Z"
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "Specified argument was out of the range of valid values. (Parameter 'start')|Z"
+      }
+    },
+    {
+      "id": "uesc-out-of-range-cond-leading-true",
+      "template": "{0:cond:x\\u12}|{1}",
+      "args": [
+        true,
+        "Z"
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "uesc-out-of-range-cond-leading-false",
+      "template": "{0:cond:x\\u12}|{1}",
+      "args": [
+        false,
+        "Z"
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "uesc-out-of-range-cond-maintain-true",
+      "template": "{0:cond:\\u12}|b}",
+      "args": [
+        true
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "MaintainTokens",
+        "parseErrorAction": "MaintainTokens"
+      },
+      "expected": {
+        "result": "{0:cond:\\u12}|b}"
+      }
+    },
+    {
+      "id": "uesc-out-of-range-cond-maintain-false",
+      "template": "{0:cond:\\u12}|b}",
+      "args": [
+        false
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "MaintainTokens",
+        "parseErrorAction": "MaintainTokens"
+      },
+      "expected": {
+        "result": "{0:cond:\\u12}|b}"
+      }
+    },
+    {
+      "id": "uesc-out-of-range-choose-1",
+      "template": "{0:choose(1|2):\\u12}|{1}",
+      "args": [
+        1,
+        "Z"
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "uesc-out-of-range-choose-2",
+      "template": "{0:choose(1|2):\\u12}|{1}",
+      "args": [
+        2,
+        "Z"
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "uesc-out-of-range-choose-1-output",
+      "template": "{0:choose(1|2):\\u12}|{1}",
+      "args": [
+        1,
+        "Z"
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "Specified argument was out of the range of valid values. (Parameter 'length')|Z"
+      }
+    },
+    {
+      "id": "uesc-out-of-range-choose-2-output",
+      "template": "{0:choose(1|2):\\u12}|{1}",
+      "args": [
+        2,
+        "Z"
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "Specified argument was out of the range of valid values. (Parameter 'start')|Z"
+      }
+    },
+    {
+      "id": "uesc-out-of-range-plural",
+      "template": "{0:plural:\\u12}|{1}",
+      "args": [
+        1,
+        "Z"
+      ],
+      "culture": "en-US",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "uesc-out-of-range-plural-output",
+      "template": "{0:plural:\\u12}|{1}",
+      "args": [
+        1,
+        "Z"
+      ],
+      "culture": "en-US",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "Specified argument was out of the range of valid values. (Parameter 'length')|Z"
+      }
+    },
+    {
+      "id": "uesc-out-of-range-choose-in-range-1",
+      "template": "{0:choose(1|2|3):a|b|\\u12}|{1}",
+      "args": [
+        1,
+        "Z"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "a|Z"
+      }
+    },
+    {
+      "id": "uesc-out-of-range-choose-in-range-2",
+      "template": "{0:choose(1|2|3):a|b|\\u12}|{1}",
+      "args": [
+        2,
+        "Z"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "b|Z"
+      }
+    },
+    {
+      "id": "uesc-out-of-range-choose-in-range-3",
+      "template": "{0:choose(1|2|3):a|b|\\u12}|{1}",
+      "args": [
+        3,
+        "Z"
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "uesc-out-of-range-choose-in-range-3-output",
+      "template": "{0:choose(1|2|3):a|b|\\u12}|{1}",
+      "args": [
+        3,
+        "Z"
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "Specified argument was out of the range of valid values. (Parameter 'length')|Z"
+      }
+    },
+    {
+      "id": "uesc-out-of-range-cond-complex-first",
+      "template": "{0:cond:<5?a|\\u12}|{1}",
+      "args": [
+        1,
+        "Z"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "a|Z"
+      }
+    },
+    {
+      "id": "uesc-out-of-range-cond-complex-second",
+      "template": "{0:cond:<5?a|\\u12}|{1}",
+      "args": [
+        9,
+        "Z"
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
       "id": "plural-en-0",
       "template": "{0:plural:one|other}",
       "args": [

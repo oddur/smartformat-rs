@@ -30,7 +30,7 @@ use crate::parsing::Format;
 use crate::value::Value;
 use crate::Error;
 
-use super::{split_format, InvalidSplitChar, DEFAULT_SPLIT_CHAR};
+use super::{split_format, split_part, InvalidSplitChar, DEFAULT_SPLIT_CHAR};
 
 /// The .NET `ConditionalFormatter.Name`. .NET 3.6.1 still carries an obsolete
 /// `Names` array holding `conditional` / `cond` / `""`, but only `Name`
@@ -224,7 +224,7 @@ impl Formatter for ConditionalFormatter {
                     return Err(formatting_error(info, INDEX_OUT_OF_RANGE));
                 }
 
-                match try_evaluate_condition(&parameters[index], &number)
+                match try_evaluate_condition(split_part(info, &parameters[index])?, &number)
                     .map_err(|issue| formatting_error(info, &issue))?
                 {
                     Some((condition_was_true, output)) => {
@@ -244,7 +244,7 @@ impl Formatter for ConditionalFormatter {
                             break;
                         }
                         // Otherwise, output the "else" section.
-                        info.format_as_child(&parameters[index], current)?;
+                        info.format_as_child(split_part(info, &parameters[index])?, current)?;
                         return Ok(true);
                     }
                 }
@@ -285,7 +285,7 @@ impl Formatter for ConditionalFormatter {
         };
 
         // Now, output the selected parameter.
-        info.format_as_child(&parameters[param_index], current)?;
+        info.format_as_child(split_part(info, &parameters[param_index])?, current)?;
         Ok(true)
     }
 }
@@ -363,7 +363,14 @@ fn try_evaluate_condition(
     }
 
     // Output the substring that doesn't contain the "complex condition".
-    let output = parameter.substring(parameter.start + conditions.length, parameter.end);
+    // In range by construction — `conditions.length` is the length of a match
+    // in `parameter.raw`, which is this parameter's own text — but .NET would
+    // throw the same `ArgumentOutOfRangeException` here as anywhere else, and
+    // this formatter reports every one of those without an envelope, so the
+    // message travels the same road as the rest.
+    let output = parameter
+        .substring(parameter.start + conditions.length, parameter.end)
+        .map_err(|error| error.to_string())?;
     Ok(Some((result, output)))
 }
 
