@@ -9397,6 +9397,167 @@
       "expected": {
         "result": "[.....<....ab.....>]"
       }
+    },
+    {
+      "id": "fopt-unresolvable-escape",
+      "template": "{0:d(a\\qb)}",
+      "args": [
+        7
+      ],
+      "culture": "",
+      "expected": {
+        "result": "7"
+      }
+    },
+    {
+      "id": "fopt-unresolvable-escape-with-format",
+      "template": "{0:d(a\\qb):x}",
+      "args": [
+        "S"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "S"
+      }
+    },
+    {
+      "id": "lit-unresolvable-escape-in-specifier",
+      "template": "{0:a\\qb}",
+      "args": [
+        "X"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "X"
+      }
+    },
+    {
+      "id": "lit-unresolvable-unicode-escape-in-specifier",
+      "template": "{0:a\\uzzzzb}",
+      "args": [
+        "S"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "S"
+      }
+    },
+    {
+      "id": "set-parseerr-ignore-invalid-escape-sequence",
+      "template": "a\\db",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "parseErrorAction": "Ignore"
+      },
+      "expected": {
+        "error": "ArgumentException"
+      }
+    },
+    {
+      "id": "set-fmterr-ignore-invalid-escape-sequence",
+      "template": "a\\db",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "Ignore"
+      },
+      "expected": {
+        "error": "ArgumentException"
+      }
+    },
+    {
+      "id": "set-parseerr-maintaintokens-trailing-backslash",
+      "template": "abc\\",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "parseErrorAction": "MaintainTokens"
+      },
+      "expected": {
+        "error": "ArgumentException"
+      }
+    },
+    {
+      "id": "nest-invalid-escape-sequence",
+      "template": "{0:{}a\\qb}",
+      "args": [
+        7
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "set-fmterr-ignore-nested-invalid-escape",
+      "template": "{0:{}a\\qb}",
+      "args": [
+        7
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "Ignore"
+      },
+      "expected": {
+        "result": "7a"
+      }
+    },
+    {
+      "id": "set-fmterr-outputerrorinresult-nested-invalid-escape",
+      "template": "{0:{}a\\qb}",
+      "args": [
+        7
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "7aUnrecognized escape sequence \"\\q\" in literal."
+      }
+    },
+    {
+      "id": "set-fmterr-maintaintokens-nested-invalid-escape",
+      "template": "{0:{}a\\qb}",
+      "args": [
+        7
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "MaintainTokens"
+      },
+      "expected": {
+        "result": "7a{0:{}a\\qb}"
+      }
+    },
+    {
+      "id": "set-fmterr-ignore-missing-selector-unresolvable-options",
+      "template": "[{Missing:d(a\\qb)}]",
+      "args": {
+        "Other": 1
+      },
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "Ignore"
+      },
+      "expected": {
+        "error": "ArgumentException"
+      }
+    },
+    {
+      "id": "set-fmterr-maintaintokens-missing-selector-bad-format-escape",
+      "template": "[{Missing:a\\qb}]",
+      "args": {
+        "Other": 1
+      },
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "MaintainTokens"
+      },
+      "expected": {
+        "result": "[{Missing:a\\qb}]"
+      }
     }
   ]
 }

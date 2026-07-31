@@ -102,28 +102,42 @@ answer is not reproducible.
   `set-parseerr-outputerrorinresult-invalid-selector-char-astral`,
   `set-parseerr-outputerrorinresult-too-many-closing-braces-astral`, and
   `parsing::tests::error_positions_are_utf16_offsets`.
-- **Escapes are validated eagerly.** .NET validates escape sequences lazily and
-  outside the error actions entirely: `LiteralText.AsSpan()` un-escapes when the
-  literal is *rendered* and throws `ArgumentException` there, which
-  `Evaluator.WriteFormat` does not catch, so neither `ParseErrorAction` nor
-  `FormatErrorAction` applies; `Parser.ParseAlternativeEscaping` throws its own
-  eagerly for the same reason. Formatter options are lazier still — `\q` in
-  `{0:d(a\qb)}` only throws if some formatter reads `FormatterOptions`. This
-  port owns its strings and resolves escapes while parsing, so it has to decide
-  during the parse, and records those same messages as ordinary parsing issues.
-  Under `ErrorAction::Error` (the .NET default, and what every default-settings
-  golden uses) the observable behavior is identical — the call fails. Under
-  `Ignore`, `MaintainTokens` and `OutputErrorInResult` we recover where .NET
-  throws: the offending sequence stays in the output as written, a placeholder
-  containing it is dropped or kept as tokens like any other erroneous
-  placeholder, and `OutputErrorInResult` writes the escape message into the
-  `At:` report. We also report a bad escape in formatter options .NET might
-  never have looked at.
-  *Pins:* the default-action goldens `lit-trailing-backslash`,
-  `err-invalid-escape-sequence`, `err-invalid-unicode-escape` and the
-  `err-unicode-escape-*` cases, plus
-  `parsing::tests::unrecognized_escape_sequences_obey_the_error_action` and
-  `escape_errors_are_reported_like_other_issues` for the lenient actions.
+- **Escape-resolution error kinds.** Escapes resolve lazily, as .NET does:
+  the parse tree keeps the sequence as written (`LiteralText::escape_error`,
+  `Placeholder::formatter_options_error` carry the reason it cannot resolve),
+  an unresolvable escape in text that is never written renders fine, and one
+  in a *written* literal fails under every error action — rendered output is
+  byte-identical to .NET. What differs is only the error's Rust kind:
+  `Error::Escape` stands for the `ArgumentException` .NET's escape resolution
+  throws, and becomes `Error::Format` when it reaches the evaluator's error
+  handling, mirroring .NET's `FormattingException` wrap. And because
+  `Format::literal_text()`, `Display for Format` and `Display for Placeholder`
+  cannot fail, they write an unresolvable sequence as written where .NET's
+  `Format.ToString()` / `GetLiteralText()` throw — unreachable in rendering
+  with the M1 value set, since numbers, dates and strings all take the
+  raw-specifier path. (An unresolvable escape in a *numeric* specifier,
+  `{0:a\qb}` on `7`, still fails as `UnsupportedSpec`: .NET reads the raw text
+  as a custom numeric pattern, the existing custom-pattern non-goal — the
+  escape is not the cause, `{0:aqb}` behaves identically.)
+  *Pins:* goldens `fopt-unresolvable-escape`,
+  `fopt-unresolvable-escape-with-format`, `lit-unresolvable-escape-in-specifier`,
+  `lit-unresolvable-unicode-escape-in-specifier`,
+  `set-parseerr-ignore-invalid-escape-sequence`,
+  `set-fmterr-ignore-invalid-escape-sequence`,
+  `set-parseerr-maintaintokens-trailing-backslash`,
+  `nest-invalid-escape-sequence` and the three
+  `set-fmterr-*-nested-invalid-escape` cases,
+  `set-fmterr-ignore-missing-selector-unresolvable-options`,
+  `set-fmterr-maintaintokens-missing-selector-bad-format-escape`; unit tests
+  `parsing::tests::escape_sequence_at_the_end_of_the_input_fails`,
+  `unrecognized_escape_sequence_is_recorded_rather_than_raised`,
+  `escape_errors_ignore_the_error_action`,
+  `a_placeholder_with_a_bad_escape_is_kept_whole`, and in `tests/formatter.rs`
+  `unresolvable_escapes_in_unwritten_text_are_not_an_error`,
+  `an_unresolvable_escape_in_a_written_literal_always_fails`,
+  `an_unresolvable_escape_inside_a_placeholder_is_a_formatting_error`,
+  `a_failing_placeholder_resolves_its_formatter_options`,
+  `reading_formatter_options_resolves_their_escape_sequences`.
 - **Unpaired `\uXXXX` surrogates.** .NET keeps a lone surrogate as a UTF-16
   code unit in the result string; a Rust `String` cannot, so it becomes the
   replacement character. A surrogate *pair* joins into its character, as it does

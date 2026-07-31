@@ -25,6 +25,7 @@ StringMethods(cases);
 FormatterOptions(cases);
 ListIndex(cases);
 SettingsCases(cases);
+LazyEscapeCases(cases);
 
 var duplicates = cases.GroupBy(c => c.Id).Where(g => g.Count() > 1).Select(g => g.Key).ToList();
 if (duplicates.Count > 0)
@@ -769,6 +770,53 @@ static void SettingsCases(List<GoldenCase> cases)
     cases.Add(new GoldenCase("set-fill-right", "[{0,6}]", @"[""ab""]", dotFill));
     cases.Add(new GoldenCase("set-fill-left", "[{0,-6}]", @"[""ab""]", dotFill));
     cases.Add(new GoldenCase("set-fill-literal-in-nested", "[{0,6:<{}>}]", @"[""ab""]", dotFill));
+}
+
+// ---------------------------------------------------------------------------
+// Lazy escape resolution: .NET only resolves escape sequences when the text is
+// used — an unresolvable one in never-read formatter options renders fine, one
+// in a written literal throws ArgumentException outside the error actions.
+// ---------------------------------------------------------------------------
+
+static void LazyEscapeCases(List<GoldenCase> cases)
+{
+    const string other = """{"Other":1}""";
+    var parseIgnore = new CaseSettings(ParseErrorAction: ParseErrorAction.Ignore);
+    var parseMaintain = new CaseSettings(ParseErrorAction: ParseErrorAction.MaintainTokens);
+    var fmtIgnore = new CaseSettings(FormatErrorAction: FormatErrorAction.Ignore);
+    var fmtOutput = new CaseSettings(FormatErrorAction: FormatErrorAction.OutputErrorInResult);
+    var fmtMaintain = new CaseSettings(FormatErrorAction: FormatErrorAction.MaintainTokens);
+
+    // Options and specifiers no formatter reads are never resolved.
+    cases.Add(new GoldenCase("fopt-unresolvable-escape", @"{0:d(a\qb)}", "[7]"));
+    cases.Add(new GoldenCase("fopt-unresolvable-escape-with-format", @"{0:d(a\qb):x}", @"[""S""]"));
+    cases.Add(new GoldenCase("lit-unresolvable-escape-in-specifier", @"{0:a\qb}", @"[""X""]"));
+    cases.Add(new GoldenCase("lit-unresolvable-unicode-escape-in-specifier", @"{0:a\uzzzzb}", @"[""S""]"));
+
+    // A bad escape in written literal text throws whatever the error action;
+    // a trailing escape character throws from the parser itself.
+    cases.Add(new GoldenCase("set-parseerr-ignore-invalid-escape-sequence", @"a\db", "[]", parseIgnore));
+    cases.Add(new GoldenCase("set-fmterr-ignore-invalid-escape-sequence", @"a\db", "[]", fmtIgnore));
+    cases.Add(new GoldenCase("set-parseerr-maintaintokens-trailing-backslash", @"abc\", "[]", parseMaintain));
+
+    // Inside a placeholder's format the escape resolves at write time, so the
+    // format error action applies like any other formatting error.
+    cases.Add(new GoldenCase("nest-invalid-escape-sequence", @"{0:{}a\qb}", "[7]"));
+    cases.Add(new GoldenCase("set-fmterr-ignore-nested-invalid-escape", @"{0:{}a\qb}", "[7]", fmtIgnore));
+    cases.Add(new GoldenCase(
+        "set-fmterr-outputerrorinresult-nested-invalid-escape", @"{0:{}a\qb}", "[7]", fmtOutput));
+    cases.Add(new GoldenCase(
+        "set-fmterr-maintaintokens-nested-invalid-escape", @"{0:{}a\qb}", "[7]", fmtMaintain));
+
+    // A failing placeholder resolves its formatter options while building the
+    // error report, so a bad escape there trumps the lenient action...
+    cases.Add(new GoldenCase(
+        "set-fmterr-ignore-missing-selector-unresolvable-options",
+        @"[{Missing:d(a\qb)}]", other, fmtIgnore));
+    // ...but MaintainTokens reconstructs from raw text without resolving.
+    cases.Add(new GoldenCase(
+        "set-fmterr-maintaintokens-missing-selector-bad-format-escape",
+        @"[{Missing:a\qb}]", other, fmtMaintain));
 }
 
 // ---------------------------------------------------------------------------
