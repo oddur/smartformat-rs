@@ -168,9 +168,6 @@ const NEG_PERCENT_PATTERNS: [&str; 12] = [
     "-# %", "-#%", "-%#", "%-#", "%#-", "#-%", "#%-", "-% #", "# %-", "% #-", "% -#", "#- %",
 ];
 const NEG_NUMBER_PATTERNS: [&str; 5] = ["(#)", "-#", "- #", "#-", "# -"];
-/// .NET `NumberNegativePattern`; `CultureData` doesn't carry it yet, so every
-/// culture uses the invariant value (`-n`).
-const NUMBER_NEGATIVE_PATTERN: u8 = 1;
 
 fn pattern_at(patterns: &[&'static str], index: u8) -> &'static str {
     patterns
@@ -662,7 +659,7 @@ fn format_percent(out: &mut String, buf: &NumberBuffer, n_max_digits: i32, info:
 
 fn format_grouped(out: &mut String, buf: &NumberBuffer, n_max_digits: i32, info: &NumberFormat) {
     let pattern = if buf.negative {
-        pattern_at(&NEG_NUMBER_PATTERNS, NUMBER_NEGATIVE_PATTERN)
+        pattern_at(&NEG_NUMBER_PATTERNS, info.number_negative_pattern)
     } else {
         "#"
     };
@@ -1508,5 +1505,215 @@ mod tests {
     fn precision_digits_may_be_zero_padded() {
         assert_eq!(int(1, "F002"), "1.00");
         assert_eq!(int(1, "D005"), "00001");
+    }
+
+    // Every expectation below is the output of .NET 10
+    // `value.ToString(spec, CultureInfo.GetCultureInfo(name))`, transcribed
+    // from a probe that escaped anything outside printable ASCII — which is
+    // the only way to see that `fr-FR` groups with U+202F and `pt-PT` with
+    // U+00A0, or that `sv` negates with U+2212 rather than a hyphen.
+    mod cultures {
+        use super::*;
+        use crate::fmt::culture;
+
+        fn num(name: &str, v: f64, spec: &str) -> String {
+            let culture = culture::get(name).expect("a culture the port ships");
+            format_number(Number::Float(v), spec, culture).expect("standard spec")
+        }
+
+        fn int_num(name: &str, v: i64, spec: &str) -> String {
+            let culture = culture::get(name).expect("a culture the port ships");
+            format_number(Number::Int(v), spec, culture).expect("standard spec")
+        }
+
+        fn nan(name: &str) -> String {
+            num(name, f64::NAN, "")
+        }
+
+        fn infinities(name: &str) -> (String, String) {
+            (
+                num(name, f64::INFINITY, ""),
+                num(name, f64::NEG_INFINITY, ""),
+            )
+        }
+
+        /// Decimal comma, dot groups, currency after the number, percent with
+        /// a space — and `N`/`P` defaulting to *three* decimals, which is ICU
+        /// data rather than the invariant culture's two.
+        #[test]
+        fn de_de() {
+            assert_eq!(num("de-DE", -1234567.891, "N"), "-1.234.567,891");
+            assert_eq!(num("de-DE", -1234567.891, "N0"), "-1.234.568");
+            assert_eq!(num("de-DE", -1234567.891, "N3"), "-1.234.567,891");
+            assert_eq!(num("de-DE", -1234567.891, "C"), "-1.234.567,89 \u{20ac}");
+            assert_eq!(num("de-DE", -1234567.891, "C0"), "-1.234.568 \u{20ac}");
+            assert_eq!(num("de-DE", -1234567.891, "C3"), "-1.234.567,891 \u{20ac}");
+            assert_eq!(num("de-DE", -1234567.891, "P"), "-123.456.789,100 %");
+            assert_eq!(num("de-DE", -1234567.891, "P1"), "-123.456.789,1 %");
+            assert_eq!(num("de-DE", -1234567.891, "F2"), "-1234567,89");
+            assert_eq!(num("de-DE", -1234567.891, "E2"), "-1,23E+006");
+            assert_eq!(num("de-DE", -1234567.891, "G"), "-1234567,891");
+            assert_eq!(num("de-DE", 1234567.891, "N"), "1.234.567,891");
+            assert_eq!(num("de-DE", 1234567.891, "C"), "1.234.567,89 \u{20ac}");
+            assert_eq!(num("de-DE", 1234567.891, "P"), "123.456.789,100 %");
+            assert_eq!(int_num("de-DE", -42, "N0"), "-42");
+            assert_eq!(nan("de-DE"), "NaN");
+            assert_eq!(
+                infinities("de-DE"),
+                ("\u{221e}".to_owned(), "-\u{221e}".to_owned())
+            );
+        }
+
+        /// U+202F NARROW NO-BREAK SPACE between groups — not U+00A0, and not a
+        /// plain space.
+        #[test]
+        fn fr_fr() {
+            assert_eq!(
+                num("fr-FR", -1234567.891, "N"),
+                "-1\u{202f}234\u{202f}567,891"
+            );
+            assert_eq!(num("fr-FR", -1234567.891, "N0"), "-1\u{202f}234\u{202f}568");
+            assert_eq!(
+                num("fr-FR", -1234567.891, "C"),
+                "-1\u{202f}234\u{202f}567,89 \u{20ac}"
+            );
+            assert_eq!(
+                num("fr-FR", -1234567.891, "C3"),
+                "-1\u{202f}234\u{202f}567,891 \u{20ac}"
+            );
+            assert_eq!(
+                num("fr-FR", -1234567.891, "P"),
+                "-123\u{202f}456\u{202f}789,100 %"
+            );
+            assert_eq!(num("fr-FR", -1234567.891, "F2"), "-1234567,89");
+            assert_eq!(num("fr-FR", -1234567.891, "E2"), "-1,23E+006");
+            assert_eq!(
+                num("fr-FR", 1234567.891, "N"),
+                "1\u{202f}234\u{202f}567,891"
+            );
+            assert_eq!(
+                num("fr-FR", 1234567.891, "C"),
+                "1\u{202f}234\u{202f}567,89 \u{20ac}"
+            );
+        }
+
+        /// The other no-break space: `pt-PT` and `ru` group with U+00A0 while
+        /// `fr-FR` uses U+202F, so the two cannot share one "space" symbol.
+        #[test]
+        fn pt_pt_and_ru_group_with_a_plain_no_break_space() {
+            assert_eq!(num("pt-PT", -1234567.891, "N"), "-1\u{a0}234\u{a0}567,891");
+            assert_eq!(
+                num("pt-PT", -1234567.891, "P"),
+                "-123\u{a0}456\u{a0}789,100%"
+            );
+            assert_eq!(num("ru", -1234567.891, "N"), "-1\u{a0}234\u{a0}567,891");
+            assert_eq!(num("ru", -1234567.891, "P"), "-123\u{a0}456\u{a0}789,100 %");
+            assert_eq!(
+                nan("ru"),
+                "\u{43d}\u{435}\u{a0}\u{447}\u{438}\u{441}\u{43b}\u{43e}"
+            );
+        }
+
+        /// Zero currency decimals (króna has no subunit) and a percent sign
+        /// with no space — where `de-DE` puts one.
+        #[test]
+        fn is_is() {
+            assert_eq!(num("is-IS", -1234567.891, "N"), "-1.234.567,891");
+            assert_eq!(num("is-IS", -1234567.891, "N0"), "-1.234.568");
+            assert_eq!(num("is-IS", -1234567.891, "C"), "-1.234.568 kr.");
+            assert_eq!(num("is-IS", -1234567.891, "C0"), "-1.234.568 kr.");
+            // An explicit precision still wins over CurrencyDecimalDigits.
+            assert_eq!(num("is-IS", -1234567.891, "C3"), "-1.234.567,891 kr.");
+            assert_eq!(num("is-IS", -1234567.891, "P"), "-123.456.789,100%");
+            assert_eq!(num("is-IS", -1234567.891, "P1"), "-123.456.789,1%");
+            assert_eq!(num("is-IS", -1234567.891, "E2"), "-1,23E+006");
+            assert_eq!(num("is-IS", 1234567.891, "C"), "1.234.568 kr.");
+            // `is` (the neutral culture) keeps the placeholder currency sign.
+            assert_eq!(num("is", 1234567.891, "C"), "1.234.567,89 \u{a4}");
+        }
+
+        /// Arabic-Indic separators, a currency symbol ending in an RTL mark,
+        /// and a negative sign and exponent sign that carry U+061C ARABIC
+        /// LETTER MARK. Digits stay ASCII: .NET Core never substitutes native
+        /// digits when it formats a number.
+        #[test]
+        fn ar_sa() {
+            assert_eq!(
+                num("ar-SA", -1234567.891, "N"),
+                "\u{61c}-1\u{66c}234\u{66c}567\u{66b}891"
+            );
+            assert_eq!(
+                num("ar-SA", -1234567.891, "N0"),
+                "\u{61c}-1\u{66c}234\u{66c}568"
+            );
+            assert_eq!(
+                num("ar-SA", -1234567.891, "C"),
+                "\u{61c}-1\u{66c}234\u{66c}567\u{66b}89 \u{631}.\u{633}.\u{200f}"
+            );
+            assert_eq!(
+                num("ar-SA", -1234567.891, "P"),
+                "\u{61c}-123\u{66c}456\u{66c}789\u{66b}100\u{66a}\u{61c}"
+            );
+            assert_eq!(
+                num("ar-SA", -1234567.891, "E2"),
+                "\u{61c}-1\u{66b}23E\u{61c}+006"
+            );
+            assert_eq!(num("ar-SA", 0.1234, "E2"), "1\u{66b}23E\u{61c}-001");
+            assert_eq!(
+                num("ar-SA", 1234567.891, "N"),
+                "1\u{66c}234\u{66c}567\u{66b}891"
+            );
+            assert_eq!(int_num("ar-SA", -42, "N0"), "\u{61c}-42");
+            assert_eq!(
+                nan("ar-SA"),
+                "\u{644}\u{64a}\u{633}\u{a0}\u{631}\u{642}\u{645}\u{64b}\u{627}"
+            );
+            assert_eq!(
+                infinities("ar-SA"),
+                ("\u{221e}".to_owned(), "\u{61c}-\u{221e}".to_owned())
+            );
+        }
+
+        /// `sv`, `fi` and `nb` negate with U+2212 MINUS SIGN, so a caller that
+        /// splits on `'-'` sees nothing.
+        #[test]
+        fn nordic_cultures_use_a_real_minus_sign() {
+            assert_eq!(
+                num("sv", -1234567.891, "N"),
+                "\u{2212}1\u{a0}234\u{a0}567,891"
+            );
+            assert_eq!(num("sv", -1234567.891, "F2"), "\u{2212}1234567,89");
+            assert_eq!(num("sv", -1234567.891, "E2"), "\u{2212}1,23E+006");
+            assert_eq!(int_num("sv", -42, "N0"), "\u{2212}42");
+            assert_eq!(
+                infinities("sv"),
+                ("\u{221e}".to_owned(), "\u{2212}\u{221e}".to_owned())
+            );
+            assert_eq!(int_num("fi", -42, "N0"), "\u{2212}42");
+            assert_eq!(int_num("nb", -42, "N0"), "\u{2212}42");
+        }
+
+        /// The pattern indices the .NET enumerations encode, each picked
+        /// because a different culture lands on a different arm of them.
+        #[test]
+        fn currency_and_percent_patterns() {
+            // CurrencyPositivePattern 0 / CurrencyNegativePattern 1: `-$n`.
+            assert_eq!(num("en-US", -1234567.891, "C"), "-$1,234,567.89");
+            assert_eq!(num("en-US", 1234567.891, "C"), "$1,234,567.89");
+            // 2 / 2: `$ n` positive but `$-n` negative — the space vanishes.
+            assert_eq!(num("de-CH", -1234567.891, "C"), "CHF-1'234'567.89");
+            assert_eq!(num("de-CH", 1234567.891, "C"), "CHF 1'234'567.89");
+            // 2 / 12: `$ n` and `$ -n`.
+            assert_eq!(num("nl", -1234567.891, "C"), "\u{a4} -1.234.567,89");
+            assert_eq!(num("nl", 1234567.891, "C"), "\u{a4} 1.234.567,89");
+            // 2 / 9: `$ n` and `-$ n`.
+            assert_eq!(num("de-AT", -1234567.891, "C"), "-\u{20ac} 1.234.567,89");
+            assert_eq!(num("de-AT", 1234567.891, "C"), "\u{20ac} 1.234.567,89");
+            // PercentPositivePattern 2: the sign leads the number.
+            assert_eq!(num("tr", -1234567.891, "P"), "-%123.456.789,100");
+            assert_eq!(num("tr", 1234567.891, "P"), "%123.456.789,100");
+            // de-CH groups with an apostrophe.
+            assert_eq!(num("de-CH", -1234567.891, "N"), "-1'234'567.891");
+        }
     }
 }

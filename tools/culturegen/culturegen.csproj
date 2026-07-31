@@ -1,0 +1,17 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <!-- The whole point of this tool is real ICU-backed culture data, so the
+         invariant-globalization mode that would turn every culture into the
+         invariant one must stay off. -->
+    <InvariantGlobalization>false</InvariantGlobalization>
+    <!-- `dotnet run` writes build diagnostics to stdout, which would corrupt
+         the generated Rust source, so no warning may survive a build. -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+</Project>

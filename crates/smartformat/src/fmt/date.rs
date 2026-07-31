@@ -113,7 +113,7 @@ impl Renderer<'_> {
             match ch {
                 'd' | 'M' | 'y' | 'h' | 'H' | 'm' | 's' | 'f' | 'F' | 't' | 'g' => {
                     let len = repeat_count(chars, i);
-                    self.token(ch, len)?;
+                    self.token(chars, i, ch, len)?;
                     i += len;
                 }
                 // The offset of an unspecified-kind DateTime renders as nothing.
@@ -153,7 +153,16 @@ impl Renderer<'_> {
         Ok(())
     }
 
-    fn token(&mut self, ch: char, len: usize) -> Result<(), FormatSpecError> {
+    /// Renders one repeated pattern token. `chars`/`index` locate it in the
+    /// pattern, which `M` needs: the month's grammatical form depends on what
+    /// surrounds it.
+    fn token(
+        &mut self,
+        chars: &[char],
+        index: usize,
+        ch: char,
+        len: usize,
+    ) -> Result<(), FormatSpecError> {
         let dt = self.dt;
         match ch {
             'd' => {
@@ -174,11 +183,15 @@ impl Renderer<'_> {
                     push_digits(&mut self.out, i64::from(month), len);
                 } else {
                     let idx = month as usize - 1;
-                    self.out.push_str(if len == 3 {
-                        self.df.abbreviated_month_names[idx]
-                    } else {
-                        self.df.month_names[idx]
-                    });
+                    let genitive =
+                        self.df.use_genitive_month && is_use_genitive_form(chars, index, len);
+                    let names = match (len == 3, genitive) {
+                        (true, false) => &self.df.abbreviated_month_names,
+                        (true, true) => &self.df.abbreviated_month_genitive_names,
+                        (false, false) => &self.df.month_names,
+                        (false, true) => &self.df.month_genitive_names,
+                    };
+                    self.out.push_str(names[idx]);
                 }
             }
             'y' => {
@@ -276,6 +289,36 @@ impl Renderer<'_> {
     fn unsupported(&self) -> FormatSpecError {
         FormatSpecError::Unsupported(self.pattern.to_owned())
     }
+}
+
+/// .NET `DateTimeFormat.IsUseGenitiveForm`: an `MMM`/`MMMM` token takes the
+/// genitive month name when a day *number* token (`d` or `dd`, never `ddd`)
+/// stands next to it — first looking back, then, even after a long run like
+/// `dddd`, forward. `dddd, d MMMM yyyy` is genitive because of the lone `d`;
+/// `MMMM yyyy` is not.
+///
+/// Like .NET this scans raw pattern characters, so a `d` inside a quoted
+/// literal counts; the port matches that quirk deliberately.
+fn is_use_genitive_form(chars: &[char], index: usize, token_len: usize) -> bool {
+    if let Some(found) = chars[..index].iter().rposition(|&c| c == 'd') {
+        let repeat = chars[..found]
+            .iter()
+            .rev()
+            .take_while(|&&c| c == 'd')
+            .count();
+        if repeat <= 1 {
+            return true;
+        }
+    }
+    let after = index + token_len;
+    if let Some(offset) = chars[after..].iter().position(|&c| c == 'd') {
+        let found = after + offset;
+        let repeat = chars[found + 1..].iter().take_while(|&&c| c == 'd').count();
+        if repeat <= 1 {
+            return true;
+        }
+    }
+    false
 }
 
 fn repeat_count(chars: &[char], pos: usize) -> usize {
@@ -640,6 +683,171 @@ mod tests {
             render_pattern(&dt, "yyyy g", df),
             Ok("2024 A.D.".to_owned())
         );
+    }
+
+    // Every expectation below is the output of .NET 10
+    // `dt.ToString(spec, CultureInfo.GetCultureInfo(name))` for
+    // 2024-03-05 09:07:03 of unspecified kind, transcribed from a probe that
+    // escaped everything outside printable ASCII.
+    mod cultures {
+        use super::*;
+        use crate::fmt::culture;
+
+        fn dtf(name: &str, spec: &str) -> String {
+            let culture = culture::get(name).expect("a culture the port ships");
+            format_datetime(&morning(), spec, culture).expect("supported spec")
+        }
+
+        #[test]
+        fn de_de() {
+            assert_eq!(dtf("de-DE", "d"), "05.03.2024");
+            assert_eq!(dtf("de-DE", "D"), "Dienstag, 5. März 2024");
+            assert_eq!(dtf("de-DE", "f"), "Dienstag, 5. März 2024 09:07");
+            assert_eq!(dtf("de-DE", "F"), "Dienstag, 5. März 2024 09:07:03");
+            assert_eq!(dtf("de-DE", "g"), "05.03.2024 09:07");
+            assert_eq!(dtf("de-DE", "G"), "05.03.2024 09:07:03");
+            assert_eq!(dtf("de-DE", "m"), "5. März");
+            assert_eq!(dtf("de-DE", "t"), "09:07");
+            assert_eq!(dtf("de-DE", "T"), "09:07:03");
+            assert_eq!(dtf("de-DE", "y"), "März 2024");
+            // Culture-invariant specifiers ignore the culture, as in .NET.
+            assert_eq!(dtf("de-DE", "r"), "Tue, 05 Mar 2024 09:07:03 GMT");
+            assert_eq!(dtf("de-DE", "s"), "2024-03-05T09:07:03");
+        }
+
+        #[test]
+        fn fr_fr_and_is_is() {
+            assert_eq!(dtf("fr-FR", "d"), "05/03/2024");
+            assert_eq!(dtf("fr-FR", "D"), "mardi 5 mars 2024");
+            assert_eq!(dtf("fr-FR", "F"), "mardi 5 mars 2024 09:07:03");
+            assert_eq!(dtf("fr-FR", "m"), "5 mars");
+            assert_eq!(dtf("fr-FR", "y"), "mars 2024");
+
+            assert_eq!(dtf("is-IS", "d"), "5.3.2024");
+            assert_eq!(dtf("is-IS", "D"), "þriðjudagur, 5. mars 2024");
+            assert_eq!(dtf("is-IS", "F"), "þriðjudagur, 5. mars 2024 09:07:03");
+            assert_eq!(dtf("is-IS", "G"), "5.3.2024 09:07:03");
+            assert_eq!(dtf("is-IS", "m"), "5. mars");
+            assert_eq!(dtf("is-IS", "y"), "mars 2024");
+        }
+
+        /// `ru` inflects the month next to a day number and separates the year
+        /// from its "г." with U+202F. `y` has no day token, so it keeps the
+        /// nominative "март".
+        #[test]
+        fn genitive_month_names() {
+            assert_eq!(dtf("ru", "D"), "вторник, 5 марта 2024\u{202f}г.");
+            assert_eq!(dtf("ru", "F"), "вторник, 5 марта 2024\u{202f}г. 09:07:03");
+            assert_eq!(dtf("ru", "m"), "5 марта");
+            assert_eq!(dtf("ru", "y"), "март 2024\u{202f}г.");
+
+            assert_eq!(dtf("cs", "D"), "úterý 5. března 2024");
+            assert_eq!(dtf("cs", "y"), "březen 2024");
+
+            assert_eq!(dtf("pl", "D"), "wtorek, 5 marca 2024");
+            assert_eq!(dtf("pl", "y"), "marzec 2024");
+
+            assert_eq!(dtf("uk", "D"), "вівторок, 5 березня 2024\u{202f}р.");
+            assert_eq!(dtf("uk", "y"), "березень 2024\u{202f}р.");
+
+            assert_eq!(dtf("fi", "D"), "tiistai 5. maaliskuuta 2024");
+            assert_eq!(dtf("fi", "y"), "maaliskuu 2024");
+        }
+
+        /// The `d`/`dd`-only rule from `DateTimeFormat.IsUseGenitiveForm`,
+        /// which reads the pattern's raw characters.
+        #[test]
+        fn genitive_month_names_follow_the_day_number_token() {
+            let ru = &culture::get("ru").expect("ru").datetime;
+            let pat = |pattern: &str| render_pattern(&morning(), pattern, ru).expect("valid");
+            assert_eq!(pat("MMMM"), "март");
+            assert_eq!(pat("MMMM yyyy"), "март 2024");
+            assert_eq!(pat("d MMMM"), "5 марта");
+            assert_eq!(pat("dd MMMM"), "05 марта");
+            assert_eq!(pat("MMMM d"), "марта 5");
+            // `ddd`/`dddd` are day *names*, so they do not trigger it…
+            assert_eq!(pat("ddd MMMM"), "Вт март");
+            assert_eq!(pat("dddd MMMM"), "вторник март");
+            // …but .NET keeps scanning forward past them for a real day number.
+            assert_eq!(pat("dddd, MMMM d, yyyy"), "вторник, марта 5, 2024");
+            // Abbreviated months have their own genitive forms.
+            assert_eq!(pat("MMM"), "март");
+            assert_eq!(pat("d MMM"), "5 марта");
+            // `de` differs only in the abbreviated form.
+            let de = &culture::get("de-DE").expect("de-DE").datetime;
+            let pat = |pattern: &str| render_pattern(&morning(), pattern, de).expect("valid");
+            assert_eq!(pat("MMM"), "Mär");
+            assert_eq!(pat("d MMM"), "5 März");
+            assert_eq!(pat("MMMM"), "März");
+            assert_eq!(pat("d MMMM"), "5 März");
+        }
+
+        /// A culture without the flag never reaches for a genitive name, even
+        /// when the pattern would ask for one.
+        #[test]
+        fn cultures_without_the_flag_keep_the_regular_month_name() {
+            let en = &culture::get("en-US").expect("en-US").datetime;
+            let pat = |pattern: &str| render_pattern(&morning(), pattern, en).expect("valid");
+            assert_eq!(pat("d MMMM"), "5 March");
+            assert_eq!(pat("MMMM"), "March");
+            // `es` quotes a literal "de" whose `d` .NET's raw scan still counts;
+            // harmless here because `es` has no genitive forms.
+            assert_eq!(dtf("es-ES", "D"), "martes, 5 de marzo de 2024");
+            assert_eq!(dtf("es-ES", "y"), "marzo de 2024");
+        }
+
+        /// Patterns that lean on `date_separator` / `time_separator` rather
+        /// than literal punctuation, plus a designator that is not `AM`/`PM`.
+        #[test]
+        fn separators_and_designators() {
+            assert_eq!(dtf("sv", "d"), "2024-03-05");
+            assert_eq!(dtf("da", "T"), "09.07.03");
+            assert_eq!(dtf("fi", "T"), "9.07.03");
+            assert_eq!(dtf("nl", "d"), "05-03-2024");
+            assert_eq!(dtf("ja", "D"), "2024年3月5日 火曜日");
+            assert_eq!(dtf("zh-CN", "D"), "2024年3月5日 星期二");
+            assert_eq!(dtf("ko", "t"), "오전 9:07");
+            assert_eq!(dtf("ko", "D"), "2024년 3월 5일 화요일");
+            // `ar` puts U+200F both in the pattern and in DateSeparator, so
+            // each slash comes out doubled.
+            assert_eq!(dtf("ar", "d"), "5\u{200f}\u{200f}/3\u{200f}\u{200f}/2024");
+            assert_eq!(dtf("ar", "t"), "9:07\u{a0}ص");
+            assert_eq!(dtf("ar", "D"), "الثلاثاء\u{60c} 5 مارس\u{60c} 2024");
+        }
+
+        /// Known divergence: `ar-SA`'s .NET calendar is `UmAlQuraCalendar`, so
+        /// .NET renders 2024-03-05 as `24 شعبان، 1445 بعد الهجرة` — a Hijri
+        /// year, month and day. We render the Gregorian fields through the
+        /// same (Hijri) month names, which is wrong but loud. Number
+        /// formatting for `ar-SA` is unaffected and does match .NET.
+        #[test]
+        fn ar_sa_dates_diverge_because_its_calendar_is_not_gregorian() {
+            assert_eq!(dtf("ar-SA", "d"), "5 ربيع الأول\u{60c} 2024 بعد الهجرة");
+            assert_eq!(
+                dtf("ar-SA", "D"),
+                "الثلاثاء\u{60c} 5 ربيع الأول\u{60c} 2024 بعد الهجرة"
+            );
+            // The time half is Hijri-free, so it does match .NET.
+            assert_eq!(dtf("ar-SA", "T"), "9:07:03\u{a0}ص");
+        }
+
+        /// The era name behind the `g` pattern token, which `ar-SA` and every
+        /// Japanese/Chinese culture render differently from "A.D.".
+        #[test]
+        fn era_names() {
+            let era = |name: &str| {
+                let df = &culture::get(name).expect(name).datetime;
+                render_pattern(&morning(), "yyyy g", df).expect("valid")
+            };
+            assert_eq!(era("en-US"), "2024 AD");
+            assert_eq!(era("de-DE"), "2024 n. Chr.");
+            assert_eq!(era("fr-FR"), "2024 ap. J.-C.");
+            assert_eq!(era("is-IS"), "2024 e.Kr.");
+            assert_eq!(era("ru"), "2024 н. э.");
+            assert_eq!(era("ja"), "2024 西暦");
+            assert_eq!(era("zh-CN"), "2024 公元");
+            assert_eq!(era("ar-SA"), "2024 بعد الهجرة");
+        }
     }
 
     #[test]

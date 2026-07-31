@@ -1,10 +1,14 @@
 //! Culture data needed by the standard format specifiers, mirroring the
 //! parts of .NET `NumberFormatInfo` / `DateTimeFormatInfo` we consume.
 //!
-//! M1 ships the invariant culture only; ICU4X-backed locales land in M2
-//! behind the `plural` feature. Pattern integers (`currency_negative_pattern`
-//! etc.) use the exact .NET enumeration values so ported formatting code can
-//! follow the .NET reference directly.
+//! Every culture but the invariant one lives in [`generated`], read straight
+//! out of a real .NET `CultureInfo` by `tools/culturegen` rather than mapped
+//! from CLDR, so a listed culture formats byte-identically to .NET by
+//! construction. Pattern integers (`currency_negative_pattern` etc.) are the
+//! exact .NET enumeration values, so ported formatting code can follow the
+//! .NET reference directly.
+
+mod generated;
 
 /// Number formatting symbols and patterns (.NET `NumberFormatInfo` subset).
 #[derive(Debug, Clone, PartialEq)]
@@ -18,6 +22,10 @@ pub struct NumberFormat {
     /// Not always `"+"`: every `ar-*` culture prefixes it with a bidi mark.
     pub positive_sign: &'static str,
     pub number_decimal_digits: u8,
+    /// .NET `NumberNegativePattern` (0..=4), which `N` applies to a negative
+    /// value. Every culture we ship uses `1` (`-n`), but the invariant-only
+    /// assumption is exactly the kind that bites later, so it is real data.
+    pub number_negative_pattern: u8,
     pub currency_symbol: &'static str,
     pub currency_decimal_digits: u8,
     pub currency_decimal_separator: &'static str,
@@ -48,6 +56,16 @@ pub struct DateTimeFormat {
     /// January first, 12 entries (.NET has a 13th empty slot; we don't).
     pub month_names: [&'static str; 12],
     pub abbreviated_month_names: [&'static str; 12],
+    /// .NET `MonthGenitiveNames`: the form a month takes next to a day number,
+    /// which Slavic and Finnic cultures inflect (`ru` "март" but "5 марта").
+    pub month_genitive_names: [&'static str; 12],
+    pub abbreviated_month_genitive_names: [&'static str; 12],
+    /// .NET `DateTimeFormatFlags.UseGenitiveMonth`, which
+    /// `DateTimeFormatInfoScanner.GetFormatFlagGenitiveMonth` sets exactly when
+    /// a culture's genitive names differ from its regular ones. Cultures
+    /// without the flag never consult the genitive arrays, so `de`'s
+    /// abbreviated genitive "März" only shows up because `de` *does* have it.
+    pub use_genitive_month: bool,
     /// Sunday first, matching .NET `DayNames`.
     pub day_names: [&'static str; 7],
     pub abbreviated_day_names: [&'static str; 7],
@@ -93,7 +111,7 @@ pub fn get(name: &str) -> Option<&'static CultureData> {
     if name.is_empty() {
         return Some(&INVARIANT);
     }
-    None // milestone M2: generated locale table lands here
+    generated::lookup(name)
 }
 
 static INVARIANT: CultureData = CultureData {
@@ -105,6 +123,7 @@ static INVARIANT: CultureData = CultureData {
         negative_sign: "-",
         positive_sign: "+",
         number_decimal_digits: 2,
+        number_negative_pattern: 1,
         currency_symbol: "\u{a4}",
         currency_decimal_digits: 2,
         currency_decimal_separator: ".",
@@ -141,6 +160,24 @@ static INVARIANT: CultureData = CultureData {
         abbreviated_month_names: [
             "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
         ],
+        month_genitive_names: [
+            "January",
+            "February",
+            "March",
+            "April",
+            "May",
+            "June",
+            "July",
+            "August",
+            "September",
+            "October",
+            "November",
+            "December",
+        ],
+        abbreviated_month_genitive_names: [
+            "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+        ],
+        use_genitive_month: false,
         day_names: [
             "Sunday",
             "Monday",
@@ -165,3 +202,71 @@ static INVARIANT: CultureData = CultureData {
         full_date_time_pattern: "dddd, dd MMMM yyyy HH:mm:ss",
     },
 };
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `""` is answered from the hand-written [`INVARIANT`], so the two copies
+    /// have to agree — otherwise the invariant culture would format one way
+    /// here and another way in the .NET the goldens came from.
+    #[test]
+    fn the_generated_invariant_matches_the_hand_written_one() {
+        let generated = generated::CULTURES
+            .iter()
+            .find(|culture| culture.name.is_empty())
+            .expect("culturegen emits the invariant culture");
+        assert_eq!(*generated, INVARIANT);
+    }
+
+    /// [`generated::lookup`] binary-searches, so a mis-sorted table would make
+    /// cultures randomly invisible rather than fail loudly.
+    #[test]
+    fn the_generated_table_is_sorted_by_lowercase_name() {
+        let names: Vec<String> = generated::CULTURES
+            .iter()
+            .map(|culture| culture.name.to_ascii_lowercase())
+            .collect();
+        let mut sorted = names.clone();
+        sorted.sort();
+        sorted.dedup();
+        assert_eq!(names, sorted);
+    }
+
+    #[test]
+    fn every_culture_in_the_table_is_reachable() {
+        for culture in generated::CULTURES {
+            let found = get(culture.name).expect(culture.name);
+            assert_eq!(found.name, culture.name);
+            assert_eq!(
+                get(&culture.name.to_ascii_uppercase())
+                    .expect(culture.name)
+                    .name,
+                culture.name
+            );
+        }
+    }
+
+    #[test]
+    fn lookup_is_case_insensitive() {
+        assert_eq!(get("de-DE").expect("de-DE").name, "de-DE");
+        assert_eq!(get("DE-de").expect("DE-de").name, "de-DE");
+        assert_eq!(get("dE-dE").expect("dE-dE").name, "de-DE");
+        assert_eq!(get("ZH-hans").expect("ZH-hans").name, "zh-Hans");
+    }
+
+    #[test]
+    fn the_empty_name_is_the_invariant_culture() {
+        assert!(std::ptr::eq(get("").expect("invariant"), invariant()));
+    }
+
+    /// .NET would resolve an unknown name against the whole CLDR tree; we only
+    /// have what `tools/culturegen` was asked for, so anything else is `None`
+    /// rather than a guess at a parent's data.
+    #[test]
+    fn an_unlisted_culture_is_none() {
+        for name in ["de-XX", "de-", "d", "en_US", "klingon", " de-DE", "de-DE "] {
+            assert!(get(name).is_none(), "{name}");
+        }
+    }
+}
