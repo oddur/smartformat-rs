@@ -5,7 +5,7 @@
 //! here every node owns its strings, and additionally carries the byte range it
 //! was parsed from so the engine can reproduce the original tokens.
 
-mod chars;
+pub(crate) mod chars;
 mod escaped_literal;
 mod parser;
 mod settings;
@@ -17,6 +17,7 @@ pub use parser::Parser;
 pub use settings::{CustomCharError, ParserSettings, SelectorFilter};
 
 use std::fmt;
+use std::fmt::Write as _;
 
 /// A parsed format string: literal text interleaved with placeholders.
 ///
@@ -160,7 +161,7 @@ pub struct Placeholder {
 /// Reconstructs the placeholder from its parsed components.
 impl fmt::Display for Placeholder {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("{")?;
+        f.write_char(chars::PLACEHOLDER_BEGIN_CHAR)?;
         for selector in &self.selectors {
             // The alignment is appended below, in normalized form.
             if selector.operator.starts_with(chars::ALIGNMENT_OPERATOR) {
@@ -173,17 +174,28 @@ impl fmt::Display for Placeholder {
             write!(f, "{}{}", chars::ALIGNMENT_OPERATOR, self.alignment)?;
         }
         if !self.formatter_name.is_empty() {
-            write!(f, ":{}", self.formatter_name)?;
+            write!(
+                f,
+                "{}{}",
+                chars::FORMATTER_NAME_SEPARATOR,
+                self.formatter_name
+            )?;
             if !self.formatter_options.is_empty() {
-                write!(f, "({})", self.formatter_options)?;
+                write!(
+                    f,
+                    "{}{}{}",
+                    chars::FORMATTER_OPTIONS_BEGIN_CHAR,
+                    self.formatter_options,
+                    chars::FORMATTER_OPTIONS_END_CHAR
+                )?;
             }
         }
         if let Some(format) = &self.format {
             // .NET writes `Format.AsSpan()` here, which is the untouched
             // source text, not the escape-resolved `Format.ToString()`.
-            write!(f, ":{}", format.raw)?;
+            write!(f, "{}{}", chars::FORMATTER_NAME_SEPARATOR, format.raw)?;
         }
-        f.write_str("}")
+        f.write_char(chars::PLACEHOLDER_END_CHAR)
     }
 }
 

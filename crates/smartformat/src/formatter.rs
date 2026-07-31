@@ -16,6 +16,7 @@ use crate::fmt::culture::{self, CultureData};
 use crate::fmt::date;
 use crate::fmt::number::{self, Number};
 use crate::fmt::FormatSpecError;
+use crate::parsing::chars::ALIGNMENT_OPERATOR;
 use crate::parsing::{Format, FormatItem, Parser, ParserSettings, Placeholder, Selector};
 use crate::settings::{CaseSensitivity, ErrorAction, SmartSettings};
 use crate::sources::{SelectorInfo, SourceRegistry};
@@ -562,7 +563,7 @@ impl<'e> Engine<'e> {
 /// .NET skips empty selectors (`{0..Length}`) and alignment-only selectors
 /// (`{0,10}`).
 fn skip_selector(selector: &Selector) -> bool {
-    selector.text.is_empty() || selector.operator.starts_with(',')
+    selector.text.is_empty() || selector.operator.starts_with(ALIGNMENT_OPERATOR)
 }
 
 /// The index .NET reports for an error inside a placeholder.

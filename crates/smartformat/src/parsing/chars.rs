@@ -8,12 +8,16 @@ pub(crate) const CHAR_LITERAL_ESCAPE_CHAR: char = '\\';
 pub(crate) const FORMATTER_NAME_SEPARATOR: char = ':';
 /// Introduces the alignment, as in `{name,10}`.
 pub(crate) const ALIGNMENT_OPERATOR: char = ',';
+/// Separates two or more selectors, as in `First.Second.Third`.
+pub(crate) const SELECTOR_OPERATOR: char = '.';
 /// Marks a selector as nullable, as in `{First?.Second}`.
 pub(crate) const NULLABLE_OPERATOR: char = '?';
 pub(crate) const PLACEHOLDER_BEGIN_CHAR: char = '{';
 pub(crate) const PLACEHOLDER_END_CHAR: char = '}';
 pub(crate) const FORMATTER_OPTIONS_BEGIN_CHAR: char = '(';
 pub(crate) const FORMATTER_OPTIONS_END_CHAR: char = ')';
+/// Begins a list index, as in `{Numbers[0]}`.
+pub(crate) const LIST_INDEX_BEGIN_CHAR: char = '[';
 /// Ends a list index, as in `{Numbers[0]}`.
 pub(crate) const LIST_INDEX_END_CHAR: char = ']';
 
@@ -28,10 +32,10 @@ pub(crate) const FORMAT_OPTIONS_TERMINATOR_CHARS: [char; 5] = [
 
 /// Split selectors from each other. Contiguous operator characters form one operator.
 pub(crate) const OPERATOR_CHARS: [char; 5] = [
-    '.',
+    SELECTOR_OPERATOR,
     NULLABLE_OPERATOR,
     ALIGNMENT_OPERATOR,
-    '[',
+    LIST_INDEX_BEGIN_CHAR,
     LIST_INDEX_END_CHAR,
 ];
 

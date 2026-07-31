@@ -2,15 +2,18 @@
 //!
 //! Ported from SmartFormat.NET `src/SmartFormat/Core/Parsing/EscapedLiteral.cs`.
 
-use super::chars::CHAR_LITERAL_ESCAPE_CHAR;
+use super::chars::{
+    CHAR_LITERAL_ESCAPE_CHAR, FORMATTER_NAME_SEPARATOR, FORMATTER_OPTIONS_BEGIN_CHAR,
+    FORMATTER_OPTIONS_END_CHAR, PLACEHOLDER_BEGIN_CHAR, PLACEHOLDER_END_CHAR,
+};
 
 /// `\\`, `\{`, `\}` and `\:` are recognized everywhere.
 fn general(input: char) -> Option<char> {
     match input {
-        '\\' => Some('\\'),
-        '{' => Some('{'),
-        '}' => Some('}'),
-        ':' => Some(':'),
+        CHAR_LITERAL_ESCAPE_CHAR => Some(CHAR_LITERAL_ESCAPE_CHAR),
+        PLACEHOLDER_BEGIN_CHAR => Some(PLACEHOLDER_BEGIN_CHAR),
+        PLACEHOLDER_END_CHAR => Some(PLACEHOLDER_END_CHAR),
+        FORMATTER_NAME_SEPARATOR => Some(FORMATTER_NAME_SEPARATOR),
         _ => None,
     }
 }
@@ -33,8 +36,8 @@ fn character_literal(input: char) -> Option<char> {
 /// `\(` and `\)` — only inside formatter options.
 fn formatter_option(input: char) -> Option<char> {
     match input {
-        '(' => Some('('),
-        ')' => Some(')'),
+        FORMATTER_OPTIONS_BEGIN_CHAR => Some(FORMATTER_OPTIONS_BEGIN_CHAR),
+        FORMATTER_OPTIONS_END_CHAR => Some(FORMATTER_OPTIONS_END_CHAR),
         _ => None,
     }
 }

@@ -12,6 +12,7 @@
 
 use std::borrow::Cow;
 
+use crate::parsing::chars::NULLABLE_OPERATOR;
 use crate::parsing::{Placeholder, Selector};
 use crate::settings::SmartSettings;
 use crate::value::Value;
@@ -25,9 +26,6 @@ pub use default_source::DefaultSource;
 pub use list::ListSource;
 pub use map::MapSource;
 pub use string::StringSource;
-
-/// The nullable operator `?`, as in `{Person?.Name}`.
-const NULLABLE_OPERATOR: char = '?';
 
 /// Everything a [`Source`] needs to evaluate a single selector, mirroring
 /// .NET `ISelectorInfo`.
