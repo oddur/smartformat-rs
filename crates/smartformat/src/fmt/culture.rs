@@ -82,6 +82,20 @@ pub fn invariant() -> &'static CultureData {
     &INVARIANT
 }
 
+/// Looks up a culture by name (`""` → invariant, `"de-DE"`, `"is"`, …),
+/// matching the name case-insensitively like .NET's `GetCultureInfo`.
+///
+/// The data is generated from .NET itself by `tools/culturegen` (not mapped
+/// from CLDR), so a listed culture formats byte-identically to .NET; `None`
+/// means the culture is not in the generated set — the caller decides whether
+/// to error or fall back, we never guess at data.
+pub fn get(name: &str) -> Option<&'static CultureData> {
+    if name.is_empty() {
+        return Some(&INVARIANT);
+    }
+    None // milestone M2: generated locale table lands here
+}
+
 static INVARIANT: CultureData = CultureData {
     name: "",
     number: NumberFormat {

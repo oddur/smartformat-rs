@@ -8,6 +8,7 @@
 //! Work in progress; see `DESIGN.md` in the repository for scope and milestones.
 
 pub mod error;
+pub mod extensions;
 pub mod fmt;
 pub mod formatter;
 pub mod parsing;
