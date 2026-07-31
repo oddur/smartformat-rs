@@ -102,17 +102,100 @@ pub fn invariant() -> &'static CultureData {
 }
 
 /// Looks up a culture by name (`""` → invariant, `"de-DE"`, `"is"`, …),
-/// matching the name case-insensitively like .NET's `GetCultureInfo`.
+/// matching the name case-insensitively like .NET's `GetCultureInfo`, and
+/// ignoring an alternate sort order the way .NET's *data* resolution does:
+/// everything from the `_` on names a collation, not a culture, so `"en_US"`
+/// is the language `en` sorted the American way and formats as `en` — with the
+/// invariant currency symbol `¤`, not `en-US`'s `$`. Probed against .NET 10:
+/// `GetCultureInfo("en_US")` and `GetCultureInfo("en")` agree in every
+/// `NumberFormat` and `DateTimeFormat` field this crate carries, as do
+/// `"de-DE_phoneb"` and `"de-DE"`.
+///
+/// A name .NET itself rejects ([`language_subtag`] says which) is `None`
+/// rather than a lookup of some prefix of it.
 ///
 /// The data is generated from .NET itself by `tools/culturegen` (not mapped
 /// from CLDR), so a listed culture formats byte-identically to .NET; `None`
 /// means the culture is not in the generated set — the caller decides whether
-/// to error or fall back, we never guess at data.
+/// to error or fall back, we never guess at data. .NET would answer a name
+/// outside the set from the CLDR tree (`"zh_Hans"` is `zh` there, a culture we
+/// do not ship); we say we do not know it.
 pub fn get(name: &str) -> Option<&'static CultureData> {
     if name.is_empty() {
         return Some(&INVARIANT);
     }
-    generated::lookup(name)
+    language_subtag(name)?;
+    let culture = name
+        .split_once(SORT_ORDER_SEPARATOR)
+        .map_or(name, |(culture, _sort_order)| culture);
+    generated::lookup(culture)
+}
+
+/// The characters .NET allows between the subtags of a culture name: `-`
+/// between the subtags proper, and one [`SORT_ORDER_SEPARATOR`] before the
+/// name of an alternate sort order (`de-DE_phoneb`).
+pub(crate) const SUBTAG_SEPARATORS: [char; 2] = ['-', SORT_ORDER_SEPARATOR];
+
+/// What separates a culture name from the alternate sort order after it.
+pub(crate) const SORT_ORDER_SEPARATOR: char = '_';
+
+/// `CultureInfo.GetCultureInfo`'s longest accepted name, .NET
+/// `CultureData.LocaleNameMaxLength`.
+const LOCALE_NAME_MAX_LENGTH: usize = 85;
+
+/// ICU's longest accepted language subtag, `ULOC_LANG_CAPACITY` minus the
+/// terminator (probed: `aaaaaaaaaaa` resolves, `aaaaaaaaaaaa` does not).
+const LANGUAGE_SUBTAG_MAX_LENGTH: usize = 11;
+
+/// The primary subtag of a culture name .NET's `CultureInfo.GetCultureInfo`
+/// accepts — the language, as it was spelled — or `None` for a name .NET
+/// rejects with `CultureNotFoundException`.
+///
+/// This is the one place the crate decides what a .NET culture name is:
+/// [`get`] uses it before looking a name up, and the `plural(…)` option uses
+/// it to name a language.
+///
+/// .NET checks the characters itself (`CultureData.IcuIsValidCultureName`:
+/// ASCII letters and digits, `-`, and at most one `_`) and leaves the rest to
+/// ICU. Probed against .NET 10, ICU additionally rejects an empty subtag
+/// (`en-`, `en--US`, `_en`), a language subtag longer than
+/// [`LANGUAGE_SUBTAG_MAX_LENGTH`], and a name that is one character long (`a`,
+/// though `a-b` is accepted).
+///
+/// Lowercased, the subtag is the `TwoLetterISOLanguageName` of every culture
+/// .NET knows (probed over `CultureInfo.GetCultures(AllCultures)`), which is
+/// what the `plural(…)` option needs. Two ICU resolutions it does not
+/// reproduce, both in DESIGN.md: a three-letter ISO 639-2 code that has a
+/// two-letter equivalent (`eng` is `en` in .NET, itself here), and `und` (the
+/// invariant culture, whose language is `iv`).
+pub(crate) fn language_subtag(name: &str) -> Option<&str> {
+    if name.is_empty() || name.len() > LOCALE_NAME_MAX_LENGTH {
+        return None;
+    }
+    if !name
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || SUBTAG_SEPARATORS.contains(&c))
+    {
+        return None;
+    }
+    if name.matches(SORT_ORDER_SEPARATOR).count() > 1 {
+        return None;
+    }
+
+    let mut subtags = name.split(SUBTAG_SEPARATORS);
+    let language = subtags.next().unwrap_or_default();
+    if language.len() > LANGUAGE_SUBTAG_MAX_LENGTH {
+        return None;
+    }
+    let mut has_more = false;
+    for subtag in subtags {
+        has_more = true;
+        if subtag.is_empty() {
+            return None;
+        }
+    }
+    // A name of one character is a culture only with a subtag after it.
+    (language.len() >= if has_more { 1 } else { 2 }).then_some(language)
 }
 
 static INVARIANT: CultureData = CultureData {
@@ -263,11 +346,96 @@ mod tests {
 
     /// .NET would resolve an unknown name against the whole CLDR tree; we only
     /// have what `tools/culturegen` was asked for, so anything else is `None`
-    /// rather than a guess at a parent's data.
+    /// rather than a guess at a parent's data. `zh_Hans` is the interesting
+    /// one: .NET reads it as the neutral culture `zh`, which we do not ship,
+    /// so it is unknown here even though `zh-Hans` is listed.
     #[test]
     fn an_unlisted_culture_is_none() {
-        for name in ["de-XX", "de-", "d", "en_US", "klingon", " de-DE", "de-DE "] {
+        for name in [
+            "de-XX",
+            "d",
+            "klingon",
+            " de-DE",
+            "de-DE ",
+            "zh_Hans",
+            "en-US-POSIX",
+        ] {
             assert!(get(name).is_none(), "{name}");
+        }
+    }
+
+    /// A name .NET itself rejects is unknown, not a lookup of the part of it
+    /// before the sort order — `en_` must not find `en`.
+    #[test]
+    fn a_name_dotnet_rejects_is_none() {
+        for name in [
+            "de-",
+            "en_",
+            "_en",
+            "en--US",
+            "en-US_",
+            "en_US_POSIX",
+            "a",
+            "@@",
+            "de DE",
+            "рус",
+            "aaaaaaaaaaaa",
+        ] {
+            assert!(language_subtag(name).is_none(), "{name}");
+            assert!(get(name).is_none(), "{name}");
+        }
+    }
+
+    /// .NET reads the text after an `_` as an alternate sort order, which
+    /// changes how strings compare and nothing about how values format: probed
+    /// on .NET 10, `en_US` has every `NumberFormat` and `DateTimeFormat` field
+    /// of `en` (currency `¤`), not of `en-US` (currency `$`).
+    #[test]
+    fn an_alternate_sort_order_resolves_to_the_culture_before_it() {
+        for (name, culture) in [
+            ("en_US", "en"),
+            ("EN_us", "en"),
+            ("en_US-POSIX", "en"),
+            ("is_IS", "is"),
+            ("de-DE_phoneb", "de-DE"),
+            ("pt-BR_zzz", "pt-BR"),
+        ] {
+            let found = get(name).unwrap_or_else(|| panic!("{name}"));
+            assert!(std::ptr::eq(found, get(culture).expect(culture)), "{name}");
+            assert_eq!(found.name, culture, "{name}");
+        }
+    }
+
+    /// The names of the table are names .NET spelled, so the validator that
+    /// guards [`get`] must not hide any of them.
+    #[test]
+    fn every_culture_in_the_table_is_a_valid_name() {
+        for culture in generated::CULTURES {
+            if culture.name.is_empty() {
+                continue;
+            }
+            let language = language_subtag(culture.name).expect(culture.name);
+            assert!(culture.name.starts_with(language), "{}", culture.name);
+        }
+    }
+
+    /// The language subtag is the name as written up to the first separator;
+    /// lowercased it is .NET's `TwoLetterISOLanguageName` (probed).
+    #[test]
+    fn the_language_subtag_is_the_primary_one() {
+        for (name, language) in [
+            ("en", "en"),
+            ("EN", "EN"),
+            ("en-US", "en"),
+            ("en_US", "en"),
+            ("zh-Hans", "zh"),
+            ("a-b", "a"),
+            ("1234", "1234"),
+            ("kde", "kde"),
+            ("aaaaaaaaaaa", "aaaaaaaaaaa"),
+            ("en-us-x-private", "en"),
+        ] {
+            assert_eq!(language_subtag(name), Some(language), "{name}");
         }
     }
 }
