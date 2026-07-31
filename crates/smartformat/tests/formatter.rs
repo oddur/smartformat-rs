@@ -346,6 +346,26 @@ fn unsupported_format_specs_are_distinguishable() {
     }
 }
 
+/// A deliberate divergence: unterminated formatter options make .NET index past
+/// the end of the format string and throw `IndexOutOfRangeException`
+/// (`err-unterminated-formatter-options` pins that), so there is no .NET message
+/// to copy; we report the ordinary missing-closing-brace parse error.
+#[test]
+fn unterminated_formatter_options_are_a_parse_error() {
+    for template in ["{0:d(", r"{0:d(a\"] {
+        let error = SmartFormatter::default()
+            .format(template, &args([Value::Int(5)]))
+            .unwrap_err();
+        match error {
+            Error::Parse { errors } => assert!(
+                errors.iter().any(|e| e.message.contains("closing brace")),
+                "{template}: {errors:?}"
+            ),
+            other => panic!("expected a parse error for {template}, got {other}"),
+        }
+    }
+}
+
 /// A deliberate divergence: .NET writes the CLR type name (`System.Object[]`)
 /// here, which is never a useful rendering, so we fail loudly instead.
 #[test]

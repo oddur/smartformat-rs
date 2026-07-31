@@ -201,6 +201,78 @@
       }
     },
     {
+      "id": "lit-escape-unicode-lone-high-then-pair",
+      "template": "a\\uD83D\uD83D\uDE00",
+      "args": [],
+      "culture": "",
+      "expected": {
+        "result": "a\uFFFD\uD83D\uDE00"
+      }
+    },
+    {
+      "id": "lit-escape-unicode-lone-low-then-pair",
+      "template": "a\\uDE00\uD83D\uDE00",
+      "args": [],
+      "culture": "",
+      "expected": {
+        "result": "a\uFFFD\uD83D\uDE00"
+      }
+    },
+    {
+      "id": "lit-escape-unicode-high-then-non-surrogate",
+      "template": "a\\uD83DAb",
+      "args": [],
+      "culture": "",
+      "expected": {
+        "result": "a\uFFFDAb"
+      }
+    },
+    {
+      "id": "lit-escape-unicode-leading-space",
+      "template": "\\u 123",
+      "args": [],
+      "culture": "",
+      "expected": {
+        "result": "ģ"
+      }
+    },
+    {
+      "id": "lit-escape-unicode-leading-space-inline",
+      "template": "x\\u 123y",
+      "args": [],
+      "culture": "",
+      "expected": {
+        "result": "xģy"
+      }
+    },
+    {
+      "id": "lit-escape-unicode-two-leading-spaces",
+      "template": "\\u  12",
+      "args": [],
+      "culture": "",
+      "expected": {
+        "result": "\u0012"
+      }
+    },
+    {
+      "id": "lit-escape-unicode-trailing-tab",
+      "template": "\\u123\tz",
+      "args": [],
+      "culture": "",
+      "expected": {
+        "result": "ģz"
+      }
+    },
+    {
+      "id": "lit-escape-unicode-short-window",
+      "template": "abc\\u12",
+      "args": [],
+      "culture": "",
+      "expected": {
+        "result": "abc\u0012"
+      }
+    },
+    {
       "id": "lit-escape-mixed",
       "template": "line1\\nline2\\ttabbed\\\\end",
       "args": [],
@@ -1022,6 +1094,141 @@
       "culture": "",
       "expected": {
         "result": "Bob and 30"
+      }
+    },
+    {
+      "id": "sel-nullable-later-selector-covers-null",
+      "template": "{City.Length?.Nope}",
+      "args": {
+        "Name": "Alice",
+        "City": null
+      },
+      "culture": "",
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "sel-nullable-later-selector-missing-branch",
+      "template": "{City.Nope?.Deep}",
+      "args": {
+        "Name": "Alice",
+        "City": null
+      },
+      "culture": "",
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "sel-nullable-empty-result-is-aligned",
+      "template": "[{City.Length?.Nope,6}]",
+      "args": {
+        "Name": "Alice",
+        "City": null
+      },
+      "culture": "",
+      "expected": {
+        "result": "[      ]"
+      }
+    },
+    {
+      "id": "sel-nullable-after-non-null-member",
+      "template": "{Name.Length?.Nope}",
+      "args": {
+        "Name": "Alice",
+        "City": null
+      },
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "sel-nullable-missing-key",
+      "template": "{Person?.Nope}",
+      "args": {
+        "Person": {
+          "Name": "Joe"
+        }
+      },
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "sel-nullable-missing-key-chained",
+      "template": "{Person?.Nope?.Deep}",
+      "args": {
+        "Person": {
+          "Name": "Joe"
+        }
+      },
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "sel-nullable-missing-first-selector",
+      "template": "{Missing?.Name}",
+      "args": {
+        "Person": {
+          "Name": "Joe"
+        }
+      },
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "sel-nullable-null-member-missing-key",
+      "template": "{Person?.Nope}",
+      "args": {
+        "Person": null
+      },
+      "culture": "",
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "sel-default-format-empty-args",
+      "template": "{}",
+      "args": [],
+      "culture": "",
+      "expected": {
+        "result": "System.Object[]"
+      }
+    },
+    {
+      "id": "sel-default-format-list",
+      "template": "{0}",
+      "args": [
+        [
+          1,
+          2,
+          3
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "result": "System.Object[]"
+      }
+    },
+    {
+      "id": "sel-default-format-map",
+      "template": "{Person}",
+      "args": {
+        "Person": {
+          "Name": "Joe"
+        }
+      },
+      "culture": "",
+      "expected": {
+        "result": "System.Collections.Generic.Dictionary`2[System.String,System.Object]"
       }
     },
     {
@@ -6394,6 +6601,186 @@
       }
     },
     {
+      "id": "num-double-r-lc-1e17",
+      "template": "{0:r}",
+      "args": [
+        1E+17
+      ],
+      "culture": "",
+      "expected": {
+        "result": "1e+17"
+      }
+    },
+    {
+      "id": "num-double-R5-1e17",
+      "template": "{0:R5}",
+      "args": [
+        1E+17
+      ],
+      "culture": "",
+      "expected": {
+        "result": "1E+17"
+      }
+    },
+    {
+      "id": "num-double-r5-lc-1e17",
+      "template": "{0:r5}",
+      "args": [
+        1E+17
+      ],
+      "culture": "",
+      "expected": {
+        "result": "1e+17"
+      }
+    },
+    {
+      "id": "num-double-r-lc-5e-324",
+      "template": "{0:r}",
+      "args": [
+        5E-324
+      ],
+      "culture": "",
+      "expected": {
+        "result": "5e-324"
+      }
+    },
+    {
+      "id": "num-double-R-1e-7",
+      "template": "{0:R}",
+      "args": [
+        1E-07
+      ],
+      "culture": "",
+      "expected": {
+        "result": "1E-07"
+      }
+    },
+    {
+      "id": "num-double-r5-lc-1e-7",
+      "template": "{0:r5}",
+      "args": [
+        1E-07
+      ],
+      "culture": "",
+      "expected": {
+        "result": "1e-07"
+      }
+    },
+    {
+      "id": "num-double-R20-2_675",
+      "template": "{0:R20}",
+      "args": [
+        2.675
+      ],
+      "culture": "",
+      "expected": {
+        "result": "2.675"
+      }
+    },
+    {
+      "id": "num-int-R5",
+      "template": "{0:R5}",
+      "args": [
+        1234567890
+      ],
+      "culture": "",
+      "expected": {
+        "result": "1.2346E+09"
+      }
+    },
+    {
+      "id": "num-int-r5-lc",
+      "template": "{0:r5}",
+      "args": [
+        1234567890
+      ],
+      "culture": "",
+      "expected": {
+        "result": "1.2346e+09"
+      }
+    },
+    {
+      "id": "num-int-R0",
+      "template": "{0:R0}",
+      "args": [
+        1234567890
+      ],
+      "culture": "",
+      "expected": {
+        "result": "1234567890"
+      }
+    },
+    {
+      "id": "num-int-R20",
+      "template": "{0:R20}",
+      "args": [
+        1234567890
+      ],
+      "culture": "",
+      "expected": {
+        "result": "1234567890"
+      }
+    },
+    {
+      "id": "num-int-r-lc",
+      "template": "{0:r}",
+      "args": [
+        42
+      ],
+      "culture": "",
+      "expected": {
+        "result": "42"
+      }
+    },
+    {
+      "id": "num-int-R5-neg",
+      "template": "{0:R5}",
+      "args": [
+        -9223372036854775808
+      ],
+      "culture": "",
+      "expected": {
+        "result": "-9.2234E+18"
+      }
+    },
+    {
+      "id": "num-int-r5-lc-neg",
+      "template": "{0:r5}",
+      "args": [
+        -9223372036854775808
+      ],
+      "culture": "",
+      "expected": {
+        "result": "-9.2234e+18"
+      }
+    },
+    {
+      "id": "num-int32-X-neg",
+      "template": "{0:X}",
+      "args": [
+        {
+          "$i32": "-255"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "FFFFFF01"
+      }
+    },
+    {
+      "id": "num-int32-B-neg",
+      "template": "{0:B}",
+      "args": [
+        {
+          "$i32": "-5"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "11111111111111111111111111111011"
+      }
+    },
+    {
       "id": "num-int-B",
       "template": "{0:B}",
       "args": [
@@ -7560,6 +7947,82 @@
       }
     },
     {
+      "id": "err-unicode-escape-plus-sign",
+      "template": "\\u+123",
+      "args": [],
+      "culture": "",
+      "expected": {
+        "error": "ArgumentException"
+      }
+    },
+    {
+      "id": "err-unicode-escape-minus-sign",
+      "template": "\\u-123",
+      "args": [],
+      "culture": "",
+      "expected": {
+        "error": "ArgumentException"
+      }
+    },
+    {
+      "id": "err-unicode-escape-hex-prefix",
+      "template": "\\u0x12",
+      "args": [],
+      "culture": "",
+      "expected": {
+        "error": "ArgumentException"
+      }
+    },
+    {
+      "id": "err-unicode-escape-inner-space",
+      "template": "\\u12 3",
+      "args": [],
+      "culture": "",
+      "expected": {
+        "error": "ArgumentException"
+      }
+    },
+    {
+      "id": "err-unicode-escape-only-whitespace",
+      "template": "\\u    ",
+      "args": [],
+      "culture": "",
+      "expected": {
+        "error": "ArgumentException"
+      }
+    },
+    {
+      "id": "err-unicode-escape-unicode-whitespace",
+      "template": "\\u\u00A0123",
+      "args": [],
+      "culture": "",
+      "expected": {
+        "error": "ArgumentException"
+      }
+    },
+    {
+      "id": "err-unterminated-formatter-options",
+      "template": "{0:d(",
+      "args": [
+        42
+      ],
+      "culture": "",
+      "expected": {
+        "error": "IndexOutOfRangeException"
+      }
+    },
+    {
+      "id": "err-unterminated-formatter-options-escape",
+      "template": "{0:d(a\\",
+      "args": [
+        42
+      ],
+      "culture": "",
+      "expected": {
+        "error": "IndexOutOfRangeException"
+      }
+    },
+    {
       "id": "str-capitalize-words-digit-start",
       "template": "{0.CapitalizeWords}",
       "args": [
@@ -7722,6 +8185,39 @@
       "culture": "",
       "expected": {
         "result": "abc"
+      }
+    },
+    {
+      "id": "str-to-upper-eszett",
+      "template": "{0.ToUpper}",
+      "args": [
+        "straße"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "STRAßE"
+      }
+    },
+    {
+      "id": "str-to-upper-invariant-eszett",
+      "template": "{0.ToUpperInvariant}",
+      "args": [
+        "straße"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "STRAßE"
+      }
+    },
+    {
+      "id": "str-to-lower-final-sigma",
+      "template": "{0.ToLower}",
+      "args": [
+        "ΩΣ"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "ωσ"
       }
     },
     {
@@ -8615,6 +9111,65 @@
       }
     },
     {
+      "id": "set-parseerr-outputerrorinresult-invalid-selector-char-nonascii",
+      "template": "äöü{a b}",
+      "args": {
+        "a": "A",
+        "b": "B"
+      },
+      "culture": "",
+      "settings": {
+        "parseErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "The format string has 1 issue:\n'0x20': Invalid character in the selector\nIn: \"äöü{a b}\"\nAt:  -----^ "
+      }
+    },
+    {
+      "id": "set-parseerr-outputerrorinresult-invalid-selector-char-astral",
+      "template": "\uD83D\uDE00{a b}",
+      "args": {
+        "a": "A",
+        "b": "B"
+      },
+      "culture": "",
+      "settings": {
+        "parseErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "The format string has 1 issue:\n'0x20': Invalid character in the selector\nIn: \"\uD83D\uDE00{a b}\"\nAt:  ----^ "
+      }
+    },
+    {
+      "id": "set-parseerr-outputerrorinresult-too-many-closing-braces-astral",
+      "template": "\uD83D\uDE000}",
+      "args": {
+        "a": "A",
+        "b": "B"
+      },
+      "culture": "",
+      "settings": {
+        "parseErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "The format string has 1 issue:\nFormat string has too many closing braces\nIn: \"\uD83D\uDE000}\"\nAt:  ---^ "
+      }
+    },
+    {
+      "id": "set-fmterr-outputerrorinresult-custom-pattern",
+      "template": "[{0:#,##0.00}]",
+      "args": [
+        1234.5
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "[1,234.50]"
+      }
+    },
+    {
       "id": "set-caseins-map-key",
       "template": "{name}",
       "args": {
@@ -8684,6 +9239,36 @@
       "culture": "",
       "expected": {
         "error": "FormattingException"
+      }
+    },
+    {
+      "id": "set-case-insensitive-exact-key-wins",
+      "template": "{Name}",
+      "args": {
+        "Name": "exact",
+        "NAME": "upper"
+      },
+      "culture": "",
+      "settings": {
+        "caseSensitivity": "CaseInsensitive"
+      },
+      "expected": {
+        "result": "exact"
+      }
+    },
+    {
+      "id": "set-case-insensitive-later-variant",
+      "template": "{NAME}",
+      "args": {
+        "Name": "exact",
+        "NAME": "upper"
+      },
+      "culture": "",
+      "settings": {
+        "caseSensitivity": "CaseInsensitive"
+      },
+      "expected": {
+        "result": "exact"
       }
     },
     {

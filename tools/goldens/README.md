@@ -80,10 +80,13 @@ The Rust runner mirrors this mapping, so keep the two in step.
 | `null` | `null` |
 | `{"$dt": "2009-06-15T13:45:30.0000000"}` | `DateTime`, parsed with the `"O"` round-trip format, `Unspecified` kind |
 | `{"$f": "NaN" \| "Infinity" \| "-Infinity"}` | `double` |
+| `{"$i32": "-255"}` | `int` (32-bit), for the cases pinning .NET's per-type integer width |
 
 Doubles are always written with a `.` or an exponent, so `-0.0` appears as `-0.0` and a
 reader can tell it apart from an integer. NaN and the infinities have no JSON number form,
-which is why they need the `$f` marker.
+which is why they need the `$f` marker. A plain integer literal is a `long`; `$i32` asks
+for an `int` instead, which only matters for `X` and `B`, where .NET renders the CLR
+type's own width.
 
 ## Coverage
 
@@ -92,6 +95,11 @@ alignment, nesting, numeric specifiers, date specifiers, errors, `StringSource` 
 methods, formatter names and options, the list-index operator, and non-default settings.
 Numeric and date cases are generated combinatorially from a value list crossed with a
 specifier list, which is where most of the volume comes from.
+
+Some cases exist only to pin .NET behavior the port deliberately does not match. They are
+in the table like any other case, and the Rust runner names each of them in its `SKIPPED`
+list with the reason; every entry under "Known divergences" in `DESIGN.md` points at one of
+those ids or at a unit test.
 
 Four areas are deliberately left out, because they belong to later milestones or fall
 outside the port's scope: custom numeric and date patterns, lists as values to format, the

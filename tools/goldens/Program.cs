@@ -118,6 +118,21 @@ static void Literals(List<GoldenCase> cases)
     // surrogate pair and the two halves join in the output string.
     Add("escape-unicode-surrogate-pair", @"a\ud83d\ude00b");
     Add("escape-unicode-surrogate-pair-only", @"\ud83d\ude00");
+    // A lone escaped surrogate joins only with an escaped partner: a literal
+    // astral character that follows is a character of its own, not a low half.
+    // .NET keeps the lone surrogate as a UTF-16 code unit, which Utf8JsonWriter
+    // transcodes to U+FFFD on its way into the golden file — the same character
+    // a Rust String can hold, so these cases do compare.
+    Add("escape-unicode-lone-high-then-pair", "a\\uD83D\U0001F600");
+    Add("escape-unicode-lone-low-then-pair", "a\\uDE00\U0001F600");
+    Add("escape-unicode-high-then-non-surrogate", "a\\uD83DAb");
+    // The four hex digits go through NumberStyles.HexNumber, which skips
+    // leading and trailing whitespace inside the four-character window.
+    Add("escape-unicode-leading-space", @"\u 123");
+    Add("escape-unicode-leading-space-inline", @"x\u 123y");
+    Add("escape-unicode-two-leading-spaces", @"\u  12");
+    Add("escape-unicode-trailing-tab", "\\u123\tz");
+    Add("escape-unicode-short-window", @"abc\u12");
     Add("escape-mixed", @"line1\nline2\ttabbed\\end");
     Add("escape-only-newline", @"\n");
     Add("trailing-backslash", @"abc\");
@@ -175,6 +190,29 @@ static void Selectors(List<GoldenCase> cases)
     Named("nested-scope-nameless-inside", "{Person:{Name:{}}}");
     Named("nested-scope-dotted-inside", "{Person:{Address.City}}");
     Named("nested-scope-outer-selector-inside", "{Person:{Name} and {Age}}");
+
+    // The nullable operator is a property of the whole placeholder in 3.6.1:
+    // `Source.HasNullableOperator` scans every selector, so an operator behind
+    // the null value covers it too, and a *missing* member is still an error.
+    const string nullCity = """{"Name":"Alice","City":null}""";
+    const string joe = """{"Person":{"Name":"Joe"}}""";
+    void Nullable(string id, string template, string argsJson) =>
+        cases.Add(new GoldenCase("sel-" + id, template, argsJson));
+
+    Nullable("nullable-later-selector-covers-null", "{City.Length?.Nope}", nullCity);
+    Nullable("nullable-later-selector-missing-branch", "{City.Nope?.Deep}", nullCity);
+    Nullable("nullable-empty-result-is-aligned", "[{City.Length?.Nope,6}]", nullCity);
+    Nullable("nullable-after-non-null-member", "{Name.Length?.Nope}", nullCity);
+    Nullable("nullable-missing-key", "{Person?.Nope}", joe);
+    Nullable("nullable-missing-key-chained", "{Person?.Nope?.Deep}", joe);
+    Nullable("nullable-missing-first-selector", "{Missing?.Name}", joe);
+    Nullable("nullable-null-member-missing-key", "{Person?.Nope}", """{"Person":null}""");
+
+    // Default formatting of a collection: .NET falls back to object.ToString()
+    // and renders the CLR type name, which this port refuses to do.
+    Nullable("default-format-empty-args", "{}", "[]");
+    Nullable("default-format-list", "{0}", "[[1,2,3]]");
+    Nullable("default-format-map", "{Person}", joe);
 
     Positional("positional-0", "{0}");
     Positional("positional-1", "{1}");
@@ -422,6 +460,28 @@ static void Numbers(List<GoldenCase> cases)
     cases.Add(new GoldenCase("num-double-R-2_675", "{0:R}", "[" + JsonDouble(2.675) + "]"));
     cases.Add(new GoldenCase("num-double-R-1e17", "{0:R}", "[" + JsonDouble(1e17) + "]"));
     cases.Add(new GoldenCase("num-int-R", "{0:R}", "[42]"));
+
+    // `R` is rewritten as `(char)(format - ('R' - 'G'))`, so it *is* `G` with
+    // the case kept — and only a floating-point value drops the precision.
+    cases.Add(new GoldenCase("num-double-r-lc-1e17", "{0:r}", "[" + JsonDouble(1e17) + "]"));
+    cases.Add(new GoldenCase("num-double-R5-1e17", "{0:R5}", "[" + JsonDouble(1e17) + "]"));
+    cases.Add(new GoldenCase("num-double-r5-lc-1e17", "{0:r5}", "[" + JsonDouble(1e17) + "]"));
+    cases.Add(new GoldenCase("num-double-r-lc-5e-324", "{0:r}", "[" + JsonDouble(5e-324) + "]"));
+    cases.Add(new GoldenCase("num-double-R-1e-7", "{0:R}", "[" + JsonDouble(1e-7) + "]"));
+    cases.Add(new GoldenCase("num-double-r5-lc-1e-7", "{0:r5}", "[" + JsonDouble(1e-7) + "]"));
+    cases.Add(new GoldenCase("num-double-R20-2_675", "{0:R20}", "[" + JsonDouble(2.675) + "]"));
+    cases.Add(new GoldenCase("num-int-R5", "{0:R5}", "[1234567890]"));
+    cases.Add(new GoldenCase("num-int-r5-lc", "{0:r5}", "[1234567890]"));
+    cases.Add(new GoldenCase("num-int-R0", "{0:R0}", "[1234567890]"));
+    cases.Add(new GoldenCase("num-int-R20", "{0:R20}", "[1234567890]"));
+    cases.Add(new GoldenCase("num-int-r-lc", "{0:r}", "[42]"));
+    cases.Add(new GoldenCase("num-int-R5-neg", "{0:R5}", "[" + JsonLong(long.MinValue) + "]"));
+    cases.Add(new GoldenCase("num-int-r5-lc-neg", "{0:r5}", "[" + JsonLong(long.MinValue) + "]"));
+
+    // The one case where the CLR type of the boxed value shows: `X` on a
+    // 32-bit int renders four bytes, where this port's `Value` has only i64.
+    cases.Add(new GoldenCase("num-int32-X-neg", "{0:X}", """[{"$i32":"-255"}]"""));
+    cases.Add(new GoldenCase("num-int32-B-neg", "{0:B}", """[{"$i32":"-5"}]"""));
     cases.Add(new GoldenCase("num-int-B", "{0:B}", "[5]"));
     cases.Add(new GoldenCase("num-int-B8", "{0:B8}", "[5]"));
     cases.Add(new GoldenCase("num-int-b-lc-neg", "{0:b}", "[-5]"));
@@ -503,6 +563,22 @@ static void Errors(List<GoldenCase> cases)
     Add("trailing-colon", "{0:", one);
     Add("trailing-operator-dot", "{0.}", one);
     Add("trailing-operator-after-member", "{0.Length.}", @"[""abc""]");
+
+    // `\u` hands its four-character window to NumberStyles.HexNumber, which
+    // accepts surrounding whitespace but nothing else outside [0-9A-Fa-f]. A
+    // rejected window throws ArgumentException from EscapedLiteral.
+    Add("unicode-escape-plus-sign", @"\u+123", empty);
+    Add("unicode-escape-minus-sign", @"\u-123", empty);
+    Add("unicode-escape-hex-prefix", @"\u0x12", empty);
+    Add("unicode-escape-inner-space", @"\u12 3", empty);
+    Add("unicode-escape-only-whitespace", @"\u    ", empty);
+    // U+00A0 is whitespace to Unicode but not to .NET's number parser.
+    Add("unicode-escape-unicode-whitespace", "\\u\u00A0123", empty);
+
+    // Formatter options that never close: .NET indexes past the end of the
+    // format string instead of reporting a parse error.
+    Add("unterminated-formatter-options", "{0:d(", one);
+    Add("unterminated-formatter-options-escape", @"{0:d(a\", one);
 }
 
 // ---------------------------------------------------------------------------
@@ -529,6 +605,11 @@ static void StringMethods(List<GoldenCase> cases)
     Add("trim-end", "TrimEnd", "  x  ");
     Add("to-upper-invariant", "ToUpperInvariant", "aBc");
     Add("to-lower-invariant", "ToLowerInvariant", "aBc");
+    // .NET's ToUpper is a one-to-one mapping, so 'ß' stays 'ß'; Rust's full
+    // mapping turns it into "SS".
+    Add("to-upper-eszett", "ToUpper", "straße");
+    Add("to-upper-invariant-eszett", "ToUpperInvariant", "straße");
+    Add("to-lower-final-sigma", "ToLower", "ΩΣ");
 }
 
 // ---------------------------------------------------------------------------
@@ -631,6 +712,26 @@ static void SettingsCases(List<GoldenCase> cases)
             $"set-parseerr-{action.ToString().ToLowerInvariant()}-{slug}", template, ab,
             new CaseSettings(ParseErrorAction: action)));
 
+    // The caret of the OutputErrorInResult report counts UTF-16 code units, so
+    // it keeps lining up under the template printed on the line above it.
+    var outputParseError = new CaseSettings(ParseErrorAction: ParseErrorAction.OutputErrorInResult);
+    cases.Add(new GoldenCase(
+        "set-parseerr-outputerrorinresult-invalid-selector-char-nonascii",
+        "äöü{a b}", ab, outputParseError));
+    cases.Add(new GoldenCase(
+        "set-parseerr-outputerrorinresult-invalid-selector-char-astral",
+        "\U0001F600{a b}", ab, outputParseError));
+    cases.Add(new GoldenCase(
+        "set-parseerr-outputerrorinresult-too-many-closing-braces-astral",
+        "\U0001F6000}", ab, outputParseError));
+
+    // A custom numeric pattern renders in .NET and is a documented non-goal
+    // here, so under OutputErrorInResult the two write different text.
+    cases.Add(new GoldenCase(
+        "set-fmterr-outputerrorinresult-custom-pattern", "[{0:#,##0.00}]",
+        "[" + JsonDouble(1234.5) + "]",
+        new CaseSettings(FormatErrorAction: FormatErrorAction.OutputErrorInResult)));
+
     // CaseSensitivity.
     var insensitive = new CaseSettings(CaseSensitivity: CaseSensitivityType.CaseInsensitive);
     const string person = """{"Name":"Alice","Text":"  hello world  "}""";
@@ -639,6 +740,13 @@ static void SettingsCases(List<GoldenCase> cases)
     cases.Add(new GoldenCase("set-caseins-string-method", "{Name.tolower}", person, insensitive));
     cases.Add(new GoldenCase("set-caseins-formatter-name", "{Name:D():x}", person, insensitive));
     cases.Add(new GoldenCase("set-sensitive-map-key", "{name}", person));
+
+    // Two case variants of one key. .NET takes the first insertion-order
+    // ignore-case match whatever the selector spells; we prefer the exactly
+    // spelled key, which agrees only for the first of these two.
+    const string variants = """{"Name":"exact","NAME":"upper"}""";
+    cases.Add(new GoldenCase("set-case-insensitive-exact-key-wins", "{Name}", variants, insensitive));
+    cases.Add(new GoldenCase("set-case-insensitive-later-variant", "{NAME}", variants, insensitive));
 
     // OrdinalIgnoreCase folds non-ASCII, which needs the letters allowed in a
     // selector first.
@@ -689,6 +797,8 @@ static object? ToClrValue(JsonNode? node)
                     (string) dt!, "O", CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind);
             if (obj.Count == 1 && obj.TryGetPropertyValue("$f", out var f))
                 return double.Parse((string) f!, NumberStyles.Float, CultureInfo.InvariantCulture);
+            if (obj.Count == 1 && obj.TryGetPropertyValue("$i32", out var i32))
+                return int.Parse((string) i32!, NumberStyles.Integer, CultureInfo.InvariantCulture);
 
             var dict = new Dictionary<string, object?>();
             foreach (var (key, value) in obj) dict[key] = ToClrValue(value);

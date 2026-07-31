@@ -48,6 +48,54 @@ const SKIPPED: &[(&str, &str)] = &[
         "set-compat-formatter-name",
         "in compatibility mode the whole format reaches the value as a custom numeric pattern, which is a documented non-goal",
     ),
+    (
+        "num-int32-X-neg",
+        "integer width: .NET formats the boxed int's own 32 bits, where every signed integer is an i64 here",
+    ),
+    (
+        "num-int32-B-neg",
+        "integer width: .NET formats the boxed int's own 32 bits, where every signed integer is an i64 here",
+    ),
+    (
+        "sel-default-format-empty-args",
+        "default formatting of a collection renders the CLR type name in .NET; we fail loudly instead",
+    ),
+    (
+        "sel-default-format-list",
+        "default formatting of a collection renders the CLR type name in .NET; we fail loudly instead",
+    ),
+    (
+        "sel-default-format-map",
+        "default formatting of a map renders the CLR type name in .NET; we fail loudly instead",
+    ),
+    (
+        "set-case-insensitive-later-variant",
+        "an ignore-case lookup with several case variants of one key follows insertion order in .NET, which a BTreeMap does not have",
+    ),
+    (
+        "err-unterminated-formatter-options",
+        "unterminated formatter options make .NET index past the end of the format string; we report a parse error",
+    ),
+    (
+        "err-unterminated-formatter-options-escape",
+        "unterminated formatter options make .NET index past the end of the format string; we report a parse error",
+    ),
+    (
+        "str-to-upper-eszett",
+        "case mapping: .NET maps one char to one char, so 'ß' stays 'ß'; Rust's full mapping gives \"SS\"",
+    ),
+    (
+        "str-to-upper-invariant-eszett",
+        "case mapping: .NET maps one char to one char, so 'ß' stays 'ß'; Rust's full mapping gives \"SS\"",
+    ),
+    (
+        "str-to-lower-final-sigma",
+        "case mapping: .NET lower-cases every sigma to 'σ'; Rust's full mapping applies the final-sigma rule and gives 'ς'",
+    ),
+    (
+        "set-fmterr-outputerrorinresult-custom-pattern",
+        "a custom numeric pattern renders in .NET and is a documented non-goal here, so the error text written into the result differs",
+    ),
 ];
 
 #[test]
@@ -228,6 +276,9 @@ fn to_value(node: &Json) -> Value {
         Json::Array(items) => Value::List(items.iter().map(to_value).collect()),
         Json::Object(entries) => match marker(entries) {
             Some(("$dt", text)) => datetime(text),
+            // A 32-bit .NET int, which `Value` widens to i64 — the marker
+            // exists only for the cases pinning that difference.
+            Some(("$i32", text)) => Value::Int(text.parse::<i32>().expect("int literal").into()),
             Some(("$f", text)) => Value::Float(match text {
                 "NaN" => f64::NAN,
                 "Infinity" => f64::INFINITY,
