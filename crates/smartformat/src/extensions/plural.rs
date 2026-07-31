@@ -26,6 +26,7 @@
 use std::fmt;
 
 use crate::extensions::plural_rules::{get_plural_rule, PluralRule};
+use crate::fmt::culture;
 use crate::formatter::{Formatter, FormattingInfo};
 use crate::value::Value;
 use crate::Error;
@@ -309,7 +310,7 @@ fn language_rule(language: &str, info: &FormattingInfo<'_>) -> Result<PluralRule
 /// `plural(…)` option goes through [`named_culture_language`] instead.
 fn two_letter_iso_language_name(culture_name: &str) -> String {
     culture_name
-        .split(['-', '_'])
+        .split(culture::SUBTAG_SEPARATORS)
         .next()
         .unwrap_or_default()
         .to_ascii_lowercase()
@@ -321,73 +322,21 @@ fn two_letter_iso_language_name(culture_name: &str) -> String {
 ///
 /// .NET hands the name to ICU, which normalizes it and answers the language
 /// subtag: `en-US`, `EN`, `en_US` and `en-us-x-private` are all `en`, and a
-/// language with no two-letter code keeps its own (`kde`). We take the primary
-/// subtag, which agrees with .NET for every culture .NET knows — the primary
-/// subtag of every name `CultureInfo.GetCultures(AllCultures)` returns is its
-/// `TwoLetterISOLanguageName` (probed).
-///
-/// Two ICU behaviors we do not reproduce, both documented in DESIGN.md: a
-/// three-letter ISO 639-2 code that has a two-letter equivalent is mapped to it
-/// (`eng` is English in .NET, and unknown here), and `und` is the invariant
-/// culture, whose language is `iv`.
+/// language with no two-letter code keeps its own (`kde`). That is
+/// [`culture::language_subtag`], which validates the name the way .NET does
+/// and answers its primary subtag — the crate's one notion of a .NET culture
+/// name, shared with [`culture::get`]; the ICU resolutions it does not
+/// reproduce are listed there.
 fn named_culture_language(name: &str) -> Result<String, String> {
-    if is_valid_culture_name(name) {
-        Ok(two_letter_iso_language_name(name))
-    } else {
+    match culture::language_subtag(name) {
+        Some(language) => Ok(language.to_ascii_lowercase()),
         // .NET's `CultureNotFoundException.Message`. `CultureInfo.GetCultureInfo`
         // looks the name up ASCII-lowercased, and quotes that spelling here.
-        Err(format!(
+        None => Err(format!(
             "Culture is not supported. (Parameter 'name')\n{} is an invalid culture identifier.",
             name.to_ascii_lowercase()
-        ))
+        )),
     }
-}
-
-/// `CultureInfo.GetCultureInfo`'s longest accepted name, .NET
-/// `CultureData.LocaleNameMaxLength`.
-const LOCALE_NAME_MAX_LENGTH: usize = 85;
-
-/// ICU's longest accepted language subtag, `ULOC_LANG_CAPACITY` minus the
-/// terminator (probed: `aaaaaaaaaaa` resolves, `aaaaaaaaaaaa` does not).
-const LANGUAGE_SUBTAG_MAX_LENGTH: usize = 11;
-
-/// Whether .NET's `CultureInfo.GetCultureInfo` accepts a culture name, as far
-/// as a name in a `plural(…)` option can tell.
-///
-/// .NET checks the characters itself (`CultureData.IcuIsValidCultureName`:
-/// ASCII letters and digits, `-`, and at most one `_`) and leaves the rest to
-/// ICU. Probed against SmartFormat.NET 3.6.1 on .NET 10, ICU additionally
-/// rejects an empty subtag (`en-`, `en--US`, `_en`), a language subtag longer
-/// than [`LANGUAGE_SUBTAG_MAX_LENGTH`], and a name that is one character long
-/// (`a`, though `a-b` is accepted).
-fn is_valid_culture_name(name: &str) -> bool {
-    if name.is_empty() || name.len() > LOCALE_NAME_MAX_LENGTH {
-        return false;
-    }
-    if !name
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
-    {
-        return false;
-    }
-    if name.matches('_').count() > 1 {
-        return false;
-    }
-
-    let mut subtags = name.split(['-', '_']);
-    let language = subtags.next().unwrap_or_default();
-    if language.len() > LANGUAGE_SUBTAG_MAX_LENGTH {
-        return false;
-    }
-    let mut has_more = false;
-    for subtag in subtags {
-        has_more = true;
-        if subtag.is_empty() {
-            return false;
-        }
-    }
-    // A name of one character is a culture only with a subtag after it.
-    language.len() >= if has_more { 1 } else { 2 }
 }
 
 /// The number a value pluralizes by: a number as itself, a list by how many
@@ -1095,7 +1044,8 @@ mod tests {
 
     #[test]
     fn a_named_culture_may_use_an_underscore() {
-        // .NET hands the name to ICU, which reads `en_US` as English —
+        // .NET hands the name to ICU, which reads the text after the `_` as an
+        // alternate sort order and `en_US` as English —
         // `CultureInfo.GetCultureInfo("en_US").TwoLetterISOLanguageName` is
         // "en" (probed).
         assert_eq!(
@@ -1106,6 +1056,13 @@ mod tests {
         assert_eq!(
             format_in("en", "{0:plural(zh_Hans):all}", Value::Int(7)),
             "all"
+        );
+        // A sort order may itself have subtags: `en_US-POSIX` is one
+        // underscore and is English, where `en_US_POSIX` is two and is no
+        // culture at all (probed — the rejection is asserted below).
+        assert_eq!(
+            format_in("ru", "{0:plural(en_US-POSIX):one|many}", Value::Int(2)),
+            "many"
         );
     }
 
@@ -1124,6 +1081,7 @@ mod tests {
             ("-en", "-en"),
             ("EN_", "en_"),
             ("aa_bb_cc", "aa_bb_cc"),
+            ("en_US_POSIX", "en_us_posix"),
             ("@@", "@@"),
             ("e n", "e n"),
             ("ру", "ру"),
@@ -1166,7 +1124,12 @@ mod tests {
         }
 
         // And a long name whose language .NET does know renders.
-        for name in ["en-US-POSIX", "en-us-x-private", "en-Latn-US"] {
+        for name in [
+            "en-US-POSIX",
+            "en_US-POSIX",
+            "en-us-x-private",
+            "en-Latn-US",
+        ] {
             let template = format!("{{0:plural({name}):one|many}}");
             assert_eq!(format_in("ru", &template, Value::Int(2)), "many", "{name}");
         }

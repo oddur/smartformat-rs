@@ -264,11 +264,15 @@ impl SmartFormatter {
 
     /// Renders `template` with the culture of that name — `""` for the
     /// invariant culture, `"de-DE"`, `"is"`, … — matched case-insensitively as
-    /// .NET's `GetCultureInfo` does.
+    /// .NET's `GetCultureInfo` does. A name may carry an alternate sort order
+    /// after an `_`, which .NET's data resolution ignores and so do we:
+    /// `"en_US"` is the language `en` sorted the American way, not `en-US`.
     ///
-    /// Fails with [`Error::UnknownCulture`] when no data is shipped for the
-    /// name; [`fmt::culture::get`](crate::fmt::culture::get) is the same lookup
-    /// without the error, for a caller that would rather fall back.
+    /// Fails with [`Error::UnknownCulture`] when the name is one .NET rejects
+    /// or when no data is shipped for it;
+    /// [`fmt::culture::get`](crate::fmt::culture::get) is the same lookup
+    /// without the error, for a caller that would rather fall back, and
+    /// documents both rules.
     ///
     /// ```
     /// use smartformat::{SmartFormatter, Value};
@@ -278,6 +282,16 @@ impl SmartFormatter {
     /// assert_eq!(
     ///     smart.format_with_culture_name("{0:N2}", &args, "de-DE").unwrap(),
     ///     "1.234,50"
+    /// );
+    /// // `en_US` is `en`, whose currency symbol is the placeholder `¤`;
+    /// // `en-US`, the culture, spends dollars.
+    /// assert_eq!(
+    ///     smart.format_with_culture_name("{0:C2}", &args, "en_US").unwrap(),
+    ///     "\u{a4}1,234.50"
+    /// );
+    /// assert_eq!(
+    ///     smart.format_with_culture_name("{0:C2}", &args, "en-US").unwrap(),
+    ///     "$1,234.50"
     /// );
     /// assert!(smart.format_with_culture_name("{0}", &args, "xx-XX").is_err());
     /// ```
