@@ -7,8 +7,10 @@ using System.Globalization;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using SmartFormat;
 using SmartFormat.Core.Settings;
+using SmartFormat.Extensions;
 
 const string smartFormatVersion = "3.6.1";
 
@@ -36,6 +38,13 @@ CultureDateCases(cases);
 CultureNameCases(cases);
 CultureFormatterCases(cases);
 FormatterErrorTextCases(cases);
+ListFormatterCases(cases);
+SubStringCases(cases);
+IsNullCases(cases);
+IsMatchCases(cases);
+TemplateCases(cases);
+// Must stay last: see the comment on the method.
+CollectionIndexPoisoningCases(cases);
 
 var duplicates = cases.GroupBy(c => c.Id).Where(g => g.Count() > 1).Select(g => g.Key).ToList();
 if (duplicates.Count > 0)
@@ -43,12 +52,21 @@ if (duplicates.Count > 0)
 
 var formatters = new Dictionary<CaseSettings, SmartFormatter>();
 
+// `ListFormatter.CollectionIndex` is a static, so a case that fails part-way
+// through an iteration leaves it set for the *rest of the process* — every
+// later case, whatever its settings and whatever formatter instance renders
+// it, then sees that index instead of -1. The canary turns that silent
+// corruption into a build failure: only the very last case may poison it.
+var canary = Smart.CreateDefaultSmartFormat(new SmartSettings());
+object?[] canaryArgs = [Array.Empty<object?>()];
+
 var caseArray = new JsonArray();
-foreach (var c in cases)
+for (var caseIndex = 0; caseIndex < cases.Count; caseIndex++)
 {
+    var c = cases[caseIndex];
     var settings = c.Settings ?? CaseSettings.Default;
     if (!formatters.TryGetValue(settings, out var smart))
-        formatters[settings] = smart = Smart.CreateDefaultSmartFormat(settings.ToSmartSettings());
+        formatters[settings] = smart = BuildFormatter(settings);
 
     var culture = c.Culture.Length == 0
         ? CultureInfo.InvariantCulture
@@ -78,6 +96,12 @@ foreach (var c in cases)
     if (c.Settings is { } custom) node["settings"] = custom.ToJson();
     node["expected"] = expected;
     caseArray.Add(node);
+
+    if (canary.Format(CultureInfo.InvariantCulture, "{Index}", canaryArgs) != "-1"
+        && caseIndex != cases.Count - 1)
+        throw new InvalidOperationException(
+            $"case {c.Id} left ListFormatter.CollectionIndex set, which poisons every case " +
+            "after it; move it into CollectionIndexPoisoningCases at the end of the table");
 }
 
 var document = new JsonObject
@@ -98,6 +122,87 @@ using (var writer = new Utf8JsonWriter(stdout, new JsonWriterOptions
 }
 
 stdout.Write("\n"u8);
+
+// ---------------------------------------------------------------------------
+// The formatter a case runs with
+// ---------------------------------------------------------------------------
+
+/// <summary>
+/// <c>Smart.CreateDefaultSmartFormat</c> plus whatever the case's settings ask
+/// of the extensions that carry configuration of their own.
+/// <see cref="TemplateFormatter"/> is not in the default set, so it is added
+/// only for a case that names a template fixture; the Rust golden runner
+/// mirrors all of this.
+/// </summary>
+static SmartFormatter BuildFormatter(CaseSettings settings)
+{
+    var smart = Smart.CreateDefaultSmartFormat(settings.ToSmartSettings());
+
+    var isMatch = smart.GetFormatterExtension<IsMatchFormatter>()!;
+    isMatch.RegexOptions = settings.RegexOptions;
+    isMatch.SplitChar = settings.IsMatchSplitChar;
+    isMatch.PlaceholderNameForMatches = settings.IsMatchPlaceholderName;
+
+    smart.GetFormatterExtension<SubStringFormatter>()!.OutOfRangeBehavior =
+        settings.SubStringOutOfRangeBehavior;
+
+    if (settings.Templates != TemplateSet.None)
+    {
+        var templates = new TemplateFormatter();
+        smart.AddExtensions(templates);
+        foreach (var (name, template) in TemplateFixture(settings.Templates))
+            templates.Register(name, template);
+    }
+
+    return smart;
+}
+
+/// <summary>
+/// The named template sets a <c>template-*</c> case can ask for. .NET builds
+/// the registry with the settings' case-sensitivity comparer and its
+/// <c>Dictionary.Add</c> throws on a duplicate, so
+/// <see cref="TemplateSet.CaseInsensitive"/> is the same fixture without the
+/// <c>LAST</c> entry, which collides with <c>last</c> under OrdinalIgnoreCase.
+/// </summary>
+static (string Name, string Template)[] TemplateFixture(TemplateSet set)
+{
+    // The .NET test fixture, plus the odd names the escape cases resolve to
+    // and the two templates the `cond` nesting case reaches.
+    var standard = new (string Name, string Template)[]
+    {
+        ("firstLast", "{First} {Last}"),
+        ("lastFirst", "{Last}, {First}"),
+        ("FIRST", "{First.ToUpper}"),
+        ("last", "{Last.ToLower}"),
+        ("LAST", "{Last.ToUpper}"),
+        ("NESTED", "{:t:FIRST} {:t:last}"),
+        (@"back\slash", "BS"),
+        ("{brace}", "BRACE"),
+        ("a|b", "PIPE"),
+        // Reads the list index, to see whether the scope chain survives being
+        // re-entered through a template.
+        ("indexed", "[{Index}] {First}"),
+        ("salutation", "{1:cond:{:t:sal_formal}|{:t:sal_informal}}"),
+        ("sal_formal", "Dear Mr {Last}"),
+        ("sal_informal", "Hi {First}"),
+        // A template whose own placeholder fails, for the error-report case.
+        ("bad", "{Nope}"),
+    };
+
+    return set switch
+    {
+        TemplateSet.Standard => standard,
+        // Nothing nested: `StringFormatCompatibility` turns off the syntax the
+        // standard fixture is written in, and a template that does not parse
+        // cannot be registered at all.
+        TemplateSet.Simple => [("firstLast", "{First} {Last}"), ("x", "X-TEMPLATE")],
+        // The empty name is a name like any other, and reaching it needs a
+        // fixture where `{:t:}` is not the unknown-template error.
+        TemplateSet.WithEmptyName => [.. standard, ("", "EMPTY")],
+        TemplateSet.CaseInsensitive => [.. standard.Where(t => t.Name != "LAST")],
+        _ => throw new InvalidOperationException("unknown template set: " + set),
+    };
+}
 
 // ---------------------------------------------------------------------------
 // Case table
@@ -784,6 +889,30 @@ static void SettingsCases(List<GoldenCase> cases)
     cases.Add(new GoldenCase("set-fill-right", "[{0,6}]", @"[""ab""]", dotFill));
     cases.Add(new GoldenCase("set-fill-left", "[{0,-6}]", @"[""ab""]", dotFill));
     cases.Add(new GoldenCase("set-fill-literal-in-nested", "[{0,6:<{}>}]", @"[""ab""]", dotFill));
+    cases.Add(new GoldenCase("set-fill-list-items", "[{0,4:list:{}|,}]", """[["a","b"]]""", dotFill));
+    cases.Add(new GoldenCase("set-fill-substr", "[{0,6:substr(0,2)}]", @"[""abcd""]", dotFill));
+
+    // The lenient error actions over the M3 formatters' own failures. The
+    // M2 twins are in the `set-fmterr-*` table above; these are the shapes
+    // only an M3 extension produces.
+    var m3Failing = new (string Slug, string Template, string Args)[]
+    {
+        ("list-not-a-list", "[{0:list:{}|,}]", @"[""x""]"),
+        ("list-one-part", "[{0:list:{}}]", """[["a","b"]]"""),
+        ("substr-bad-option", "[{0:substr(x)}]", @"[""abcd""]"),
+        ("substr-out-of-range", "[{0:substr(-99)}]", @"[""abcd""]"),
+        ("substr-format-is-text", "[{0:substr(0,2):plain}]", @"[""abcd""]"),
+        ("isnull-three-formats", "[{0:isnull:a|b|c}]", "[null]"),
+    };
+    foreach (var action in new[]
+             {
+                 FormatErrorAction.Ignore, FormatErrorAction.MaintainTokens,
+                 FormatErrorAction.OutputErrorInResult,
+             })
+    foreach (var (slug, template, args) in m3Failing)
+        cases.Add(new GoldenCase(
+            $"set-fmterr-{action.ToString().ToLowerInvariant()}-{slug}", template, args,
+            new CaseSettings(FormatErrorAction: action)));
 }
 
 // ---------------------------------------------------------------------------
@@ -1793,6 +1922,17 @@ static void FormatterErrorTextCases(List<GoldenCase> cases)
     Add("plural-invalid-culture-name-upper", "{0:plural(EN--US):a|b}", "[1]", "en-US");
     Add("plural-unknown-name", "{0:p:one|many}", "[2]", "en-US");
 
+    // A placeholder that names a formatter nothing answers to. .NET passes
+    // `Selector?.SelectorIndex ?? -1` and turns -1 into the *format*'s start
+    // offset, so a placeholder with no selector reports a different index from
+    // one with a selector — which is exactly what a nameless `{:t:...}`
+    // produces when the template formatter is not registered.
+    Add("no-formatter-no-selector", "{:nope:x}", "[42]");
+    Add("no-formatter-no-selector-options", "{:nope()}", "[42]");
+    Add("no-formatter-positional-selector", "{0:nope:x}", "[42]");
+    Add("no-formatter-named-selector", "{Name:nope:x}", """{"Name":"Alice"}""");
+    Add("no-formatter-alignment-only", "{,5:nope:x}", "[42]");
+
     // The same failures under MaintainTokens, which reconstructs the
     // placeholder from the template instead of reporting anything.
     cases.Add(new GoldenCase(
@@ -1801,6 +1941,728 @@ static void FormatterErrorTextCases(List<GoldenCase> cases)
         "errtext-maintain-cond-one-part", "{0:cond:Yes}", "[1]", maintain));
     cases.Add(new GoldenCase(
         "errtext-maintain-plural-one-word", "{0:plural:One}", "[1]", maintain, "en-US"));
+}
+
+// ---------------------------------------------------------------------------
+// M3: ListFormatter, named "list".
+//
+// The formatter sorts first of all, so it also decides what an unnamed
+// `|`-separated format means when the value is a collection. Its format is
+// split into at most five parts — item, spacer, last spacer, two-item spacer —
+// with a bound of four separators that is observable through a fifth part the
+// split never reaches.
+// ---------------------------------------------------------------------------
+
+static void ListFormatterCases(List<GoldenCase> cases)
+{
+    void Add(string id, string template, string argsJson, CaseSettings? settings = null) =>
+        cases.Add(new GoldenCase("list-" + id, template, argsJson, settings));
+
+    const string abc = """[["a","b","c"]]""";
+    const string ab = """[["a","b"]]""";
+    const string a = """[["a"]]""";
+    const string none = "[[]]";
+    const string oneToFive = "[[1,2,3,4,5]]";
+    const string atoE = """[["A","B","C","D","E"]]""";
+    const string twoLists = """[["A","B","C","D","E"],["One","Two","Three","Four","Five"]]""";
+
+    // -- Shape: how many parts the format has decides where each spacer goes.
+    Add("two-part", "{0:list:{}|, }", abc);
+    Add("two-part-two-items", "{0:list:{}|, }", ab);
+    Add("three-part", "{0:list:{}|, |, and }", abc);
+    Add("three-part-two-items", "{0:list:{}|, |, and }", ab);
+    Add("four-part", "{0:list:{}|, |, and | & }", abc);
+    Add("four-part-two-items", "{0:list:{}|, |, and | & }", ab);
+    Add("four-part-one-item", "{0:list:{}|, |, and | & }", a);
+    Add("five-parts", "{0:list:{}|1|2|3|4}", abc);
+    Add("empty-list", ">{0:list:{}|, |, and }<", none);
+    Add("empty-list-two-part", ">{0:list:{}|, }<", none);
+    Add("empty-spacer", "{0:list:{}|}", abc);
+    Add("no-item-format", "{0:list:|}", oneToFive);
+    Add("no-item-format-comma-spacer", "{0:list:|,}", oneToFive);
+    Add("item-spec-n2", "{0:list:N2|, |, and }", oneToFive);
+    Add("item-suffix", "{0:list:{}-|}", atoE);
+    Add("last-spacer", "{0:list:{}|-|+}", atoE);
+    Add("item-in-parens", "{0:list:({})|, |, and }", atoE);
+
+    // -- Auto-detection: ListFormatter sorts ahead of plural and cond, so an
+    // unnamed `|` format over a collection is a list.
+    Add("autodetect-two-part", "{0:one|many}", abc);
+    Add("autodetect-three-part", "{0:one|many|last}", abc);
+    Add("autodetect-two-items", "{0:one|many|last}", ab);
+
+    // -- The {Index} selector, which the list source answers while iterating.
+    Add("index-in-item", "{0:list:{} = {Index}|, }", atoE);
+    Add("index-other-list-dotted", "{0:list:{} = {1.Index}|, }", twoLists);
+    Add("index-other-list-bracket", "{0:list:{} = {1[Index]}|, }", twoLists);
+    Add("index-other-list-uppercase", "{0:list:{} = {1.INDEX}|, }", twoLists);
+    // A second list that runs out: the out-of-range item falls back to the
+    // list being iterated, which is what the parent scope holds.
+    Add("index-shorter-second-list", "{0:list:{}={1.Index}|, }", """[[1,2,3],["x"]]""");
+    // Outside any iteration the index is -1 for a value the list source
+    // answers for at all, and an unhandled selector for anything else.
+    Add("index-outside-list", "{Index}", "[[1,2,3]]");
+    Add("index-outside-string", "{Index}", @"[""abc""]");
+    Add("index-outside-map", "{Index}", """{"a":1}""");
+    Add("index-outside-int", "{Index}", "[42]");
+    Add("index-as-member", "{Items.Index}", """{"Items":[1,2]}""");
+    Add("index-after-list", "{0:list:{}|,}-{Index}", abc);
+    Add("index-nested", "{0:list:{Index}: {:list:{} = {Index}|, }|; }",
+        """[[["O","n","e"],["T","w","o"]]]""");
+    Add("index-restored-after-nested", "{0:list:[{Index}:{1:list:{}|,}:{Index}]|;}",
+        """[[1,2,3],["x","y"]]""");
+
+    // -- What a spacer is formatted against: the outermost value, not the item.
+    const string names = """{"Names":["John","Mary","Amy"],"Split":", ","IsAnd":true}""";
+    const string namesNor = """{"Names":["John","Mary","Amy"],"Split":", ","IsAnd":false}""";
+    Add("spacer-from-map", "{Names:list:{}|{Split}| {IsAnd:and|nor} }", names);
+    Add("spacer-from-map-false", "{Names:list:{}|{Split}| {IsAnd:and|nor} }", namesNor);
+    Add("spacer-positional", "{0:list:{}|{1}| {2} }", """[["John","Mary","Amy"],", ","and"]""");
+    Add("item-reads-outer-map", "{Names:list:{}{Split}|, }",
+        """{"Names":["John","Mary"],"Split":"+"}""");
+
+    // -- Alignment applies per item; a literal spacer is not aligned, but a
+    // placeholder inside a spacer keeps the alignment the parser gave it.
+    Add("alignment-right", ">{0,5:list:{}|, }<", abc);
+    Add("alignment-left", ">{0,-5:list:{}|, }<", abc);
+    Add("alignment-with-spec", ">{0,5:list:N2|, }<", "[[1,2]]");
+    Add("alignment-placeholder-spacer", ">{0,5:list:{}|{1}}<", """[["a","b","c"],"+"]""");
+
+    // -- The split stops after four separators, so a fifth part is never cut
+    // and a crossed literal in it is never resolved.
+    Add("split-limit-fifth-part", @"{0:list:{}|-|+|*|x\u12}", abc);
+    Add("split-limit-fourth-part", @"{0:list:{}|-|+|x\u12|z}", abc);
+    Add("split-crossed-spacer", @"{0:list:{}|x\u12}", abc);
+    Add("spacer-escaped-newline", @"{0:list:{}|\n}", ab);
+
+    // -- Errors. The formatter needs a collection and at least two parts.
+    Add("err-not-a-list", "{0:list:{}|, |, and }", @"[""not a list""]");
+    Add("err-int", "{0:list:{}|, |, and }", "[42]");
+    Add("err-null", "{0:list:{}|, |, and }", "[null]");
+    Add("err-one-part", "{0:list:{}}", abc);
+    Add("nullable-null", "{TheList?:list:{}|, |, and }", """{"TheList":null}""");
+    Add("err-short-name", "{0:l:{}|,}", abc);
+    Add("err-capitalized-name", "{0:List:{}|,}", abc);
+    cases.Add(new GoldenCase(
+        "list-err-not-a-list-in-result", "{0:list:{}|, |, and }", @"[""not a list""]",
+        new CaseSettings(FormatErrorAction: FormatErrorAction.OutputErrorInResult)));
+    cases.Add(new GoldenCase(
+        "list-err-one-part-in-result", "{0:list:{}}", abc,
+        new CaseSettings(FormatErrorAction: FormatErrorAction.OutputErrorInResult)));
+
+    // -- Where a list meets the other formatters.
+    // The invariant culture pluralizes as English, as `plural-invariant-*` pins.
+    Add("item-runs-plural", "{0:list:{} {:plural:item|items}|, }", "[[1,2]]");
+    Add("item-runs-cond", "{0:list:{:cond:zero|one|more}|, }", "[[0,1,2]]");
+    Add("item-runs-substr", "{0:list:{:substr(0,2)}|, }", @"[[""alpha"",""bravo""]]");
+    Add("item-runs-isnull", "{0:list:{:isnull:-|{}}|,}", @"[[""a"",null,""b""]]");
+    Add("inside-isnull", "{0:isnull:none|{:list:{}|-}}", abc);
+    Add("inside-choose", "{0:choose(1|2):{1:list:{}|-}|other}", """[1,["a","b"]]""");
+
+    // -- More shapes of the same three moving parts.
+    Add("one-item-two-part", "{0:list:{}|, }", a);
+    Add("one-item-three-part", "{0:list:{}|, |, and }", a);
+    Add("null-items", "{0:list:[{}]|, }", """[[null,"b",null]]""");
+    Add("index-in-spacer", "{0:list:{}|[{Index}]}", abc);
+    Add("index-in-empty-list", "{0:list:{Index}|,}", none);
+    Add("spacer-with-spec", "{0:list:{}|{1:N2}}", """[["a","b"],2.5]""");
+    Add("deeply-nested", "{0:list:[{:list:({:list:{}|.})|-}]|;}", "[[[[1,2],[3]],[[4]]]]");
+    Add("of-lists-aligned", ">{0,4:list:{:list:{}|-}|;}<", "[[[1,2],[3,4]]]");
+    Add("index-in-nested-spacer", "{0:list:{}|{1:list:{}|+}{Index}}", """[["a","b","c"],["x","y"]]""");
+    Add("named-cond-on-list", "{0:cond:full|empty}", abc);
+    Add("named-choose-on-list", "{0:choose(1|2):a|b|else}", abc);
+
+    // -- Lists of maps and lists of lists.
+    const string people = """
+        {"People":[
+            {"FirstName":"Jim","Friends":[{"FirstName":"Dwight"},{"FirstName":"Michael"}]},
+            {"FirstName":"Pam","Friends":[{"FirstName":"Dwight"},{"FirstName":"Michael"}]},
+            {"FirstName":"Dwight","Friends":[{"FirstName":"Michael"}]}]}
+        """;
+    Add("of-maps", "{People:list:{:{FirstName}}|, }", people);
+    Add("of-maps-nested",
+        "{People:list:{:{FirstName}'s friends: {Friends:list:{FirstName}|, }}|; }", people);
+    Add("of-lists", @"{0:list:{:list:{:D3}|, |, }|\n|\n}", "[[[1,2,3],[4,5,6],[7,8,9]]]");
+    Add("of-lists-index", "{0:list:{Index}={:list:{}|+}|;}", "[[[1,2],[3,4]]]");
+
+    // -- Divergences, held here with .NET's answer and skipped by the runner.
+    // A .NET Dictionary is IEnumerable, so it formats as a list of its pairs.
+    Add("map-is-enumerable", "{0:list:{}|, }", """[{"a":1,"b":2}]""");
+    // No format at all: the formatter declines, and DefaultFormatter renders
+    // the collection's CLR type name.
+    Add("no-format", "{0:list}", abc);
+    // A custom numeric pattern as the item format: the port's documented
+    // non-goal, where `D2` above is the standard-specifier equivalent.
+    Add("item-custom-pattern", "{0:list:00|, }", "[[1,2]]");
+}
+
+// ---------------------------------------------------------------------------
+// M3: SubStringFormatter, named "substr".
+//
+// Counted in UTF-16 code units, which is what makes the astral cases the
+// compatibility trap: a cut can split a surrogate pair.
+// ---------------------------------------------------------------------------
+
+static void SubStringCases(List<GoldenCase> cases)
+{
+    void Add(string id, string template, string argsJson, CaseSettings? settings = null) =>
+        cases.Add(new GoldenCase("substr-" + id, template, argsJson, settings));
+
+    var longJohn = JsonString("Long John");
+    const string nul = "[null]";
+    const string number = "[12345]";
+    var astral = JsonString("\U0001F600abc");
+
+    // -- Start and length, in both signs.
+    foreach (var (slug, options) in new (string, string)[]
+             {
+                 // Not a formatter name at all: without a `(` or a second `:`
+                 // the parser leaves `substr` in the format, where a string
+                 // ignores it.
+                 ("name-is-a-format-spec", ""),
+                 ("start-0", "(0)"),
+                 ("start-5", "(5)"),
+                 ("start-neg4", "(-4)"),
+                 ("start-neg4-length-2", "(-4,2)"),
+                 ("spaced-options", "(-4, 2)"),
+                 ("spaces-around-options", "( -4 , 2 )"),
+                 ("start-neg4-length-neg1", "(-4,-1)"),
+                 ("explicit-plus", "(+1)"),
+                 ("leading-zeros", "(0000000005)"),
+                 ("three-options", "(1,2,3)"),
+                 ("start-at-end", "(9)"),
+                 ("start-at-end-length-0", "(9,0)"),
+                 ("length-neg9", "(0,-9)"),
+             })
+        Add(slug, "{0:substr" + options + "}", longJohn);
+
+    // -- Out of range, under each of the three behaviors. Only `start + length`
+    // past the end is governed by the setting; a start index still negative
+    // after counting from the end, and a length still negative after counting
+    // back, are out of range under all three.
+    var outOfRange = new (string Slug, string Options)[]
+    {
+        ("start-past-end", "(999)"),
+        ("start-past-end-with-length", "(999,1)"),
+        ("length-past-end", "(0,999)"),
+        ("start-3-length-7", "(3,7)"),
+        ("start-3-length-6", "(3,6)"),
+        ("start-9-length-1", "(9,1)"),
+        ("start-neg999", "(-999)"),
+        ("start-neg999-length-3", "(-999,3)"),
+        ("length-neg999", "(0,-999)"),
+        ("start-5-length-neg9", "(5,-9)"),
+        ("start-neg4-length-neg5", "(-4,-5)"),
+        ("length-int-min", "(0,-2147483648)"),
+        ("int-max-both", "(2147483647,2147483647)"),
+    };
+    foreach (var behavior in new[]
+             {
+                 SubStringFormatter.SubStringOutOfRangeBehavior.ReturnEmptyString,
+                 SubStringFormatter.SubStringOutOfRangeBehavior.ReturnStartIndexToEndOfString,
+                 SubStringFormatter.SubStringOutOfRangeBehavior.ThrowException,
+             })
+    foreach (var (slug, options) in outOfRange)
+        cases.Add(new GoldenCase(
+            $"substr-oor-{behavior switch
+            {
+                SubStringFormatter.SubStringOutOfRangeBehavior.ReturnEmptyString => "empty",
+                SubStringFormatter.SubStringOutOfRangeBehavior.ReturnStartIndexToEndOfString => "toend",
+                _ => "throw",
+            }}-{slug}",
+            "{0:substr" + options + "}", longJohn,
+            new CaseSettings(SubStringOutOfRangeBehavior: behavior)));
+
+    // -- Options that are not an integer at all, and integers an Int32 cannot
+    // hold. The message quotes the option exactly as it was written.
+    foreach (var (slug, options) in new (string, string)[]
+             {
+                 ("empty", "()"),
+                 ("comma-only", "(,)"),
+                 ("letter", "( x )"),
+                 ("blank", "( )"),
+                 ("blank-then-length", "(  ,2)"),
+                 ("two-letters", "(x,y)"),
+                 ("length-letter", "(0,y)"),
+                 ("space-separated", "(1 2)"),
+                 ("decimal", "(1.0)"),
+                 ("hex-prefix", "(0x1)"),
+                 ("arabic-indic-digit", "(\u0663)"),
+                 ("pipe-separated", "(1|2)"),
+                 ("int32-overflow", "(2147483648)"),
+                 ("int32-underflow", "(-2147483649)"),
+                 ("length-overflow", "(0,99999999999)"),
+             })
+        Add("err-option-" + slug, "{0:substr" + options + "}", longJohn);
+
+    // A value that is not a string at all.
+    Add("err-non-string", "{0:substr(0,2)}", number);
+    Add("err-bool", "{0:substr(0,2)}", "[true]");
+    Add("err-list", "{0:substr(0,2)}", """[[1,2]]""");
+
+    // -- The format after the options must be nested placeholders only.
+    Add("err-format-is-text", "{0:substr(0,2):just text}", longJohn);
+    Add("format-empty", "{0:substr(0,2):}", longJohn);
+    Add("format-self", "{0:substr(0,2):{}}", longJohn);
+    Add("format-brackets", "{0:substr(0,4):[{}]}", longJohn);
+    Add("format-nested-substr", "{0:substr(0,4):{:substr(1,2)}}", longJohn);
+    Add("alignment-right", "[{0,15:substr(0,4)}]", longJohn);
+    Add("alignment-left", "[{0,-15:substr(0,4)}]", longJohn);
+    Add("alignment-with-format", "[{0,10:substr(0,4):[{}]}]", longJohn);
+
+    // -- A null value short-circuits before the options are even parsed.
+    Add("null", "{0:substr(0,3)}", nul);
+    Add("null-aligned", "[{0,10:substr(0,3)}]", nul);
+    Add("null-bad-options", "{0:substr(oops)}", nul);
+    Add("null-nested-isnull", "{0:substr(0,3):{:isnull:It is null}}", nul);
+    Add("null-format-is-text", "{0:substr(0,3):plain}", nul);
+
+    // -- Surrogate pairs: the counting is in UTF-16 code units, so a cut can
+    // split one and leave a half behind.
+    Add("astral-first-half", "{0:substr(0,1)}", astral);
+    Add("astral-whole-pair", "{0:substr(0,2)}", astral);
+    Add("astral-second-half-onwards", "{0:substr(1)}", astral);
+    Add("astral-after-pair", "{0:substr(2)}", astral);
+    Add("astral-from-end", "{0:substr(-3)}", astral);
+    Add("astral-length-past-end", "{0:substr(0,6)}", astral);
+    Add("astral-whole", "{0:substr(0,5)}", astral);
+
+    // -- A few more edges of the same arithmetic.
+    Add("zero-length", "{0:substr(0,0)}", longJohn);
+    Add("start-neg9-whole-string", "{0:substr(-9)}", longJohn);
+    Add("start-at-end-length-neg9", "{0:substr(9,-9)}", longJohn);
+    Add("aligned-empty-result", "[{0,6:substr(999)}]", longJohn);
+    Add("format-two-placeholders", "{0:substr(0,4):{}-{}}", longJohn);
+    Add("from-map", "{Text:substr(0,3)}", """{"Text":"Long John"}""");
+    Add("astral-inside-pair", "{0:substr(1,1)}", astral);
+    Add("astral-spanning-pair", "{0:substr(1,3)}", astral);
+    Add("empty-string", "{0:substr(0)}", @"[""""]");
+    Add("empty-string-length", "{0:substr(0,1)}", @"[""""]");
+
+    // -- The error text, which only OutputErrorInResult makes observable.
+    var output = new CaseSettings(FormatErrorAction: FormatErrorAction.OutputErrorInResult);
+    cases.Add(new GoldenCase("substr-errtext-non-string", "{0:substr(0,2)}", number, output));
+    cases.Add(new GoldenCase("substr-errtext-bad-option", "{0:substr(x,y)}", longJohn, output));
+    cases.Add(new GoldenCase("substr-errtext-overflow", "{0:substr(2147483648)}", longJohn, output));
+    cases.Add(new GoldenCase("substr-errtext-out-of-range", "{0:substr(-999)}", longJohn, output));
+    cases.Add(new GoldenCase("substr-errtext-format-is-text", "{0:substr(0,2):x}", longJohn, output));
+}
+
+// ---------------------------------------------------------------------------
+// M3: NullFormatter, named "isnull".
+// ---------------------------------------------------------------------------
+
+static void IsNullCases(List<GoldenCase> cases)
+{
+    void Add(string id, string template, string argsJson, CaseSettings? settings = null) =>
+        cases.Add(new GoldenCase("isnull-" + id, template, argsJson, settings));
+
+    var values = new (string Slug, string Json)[]
+    {
+        ("null", "[null]"),
+        ("string", @"[""a string""]"),
+        ("empty-string", @"[""""]"),
+        ("int", "[123]"),
+        ("bool", "[true]"),
+    };
+
+    var templates = new (string Slug, string Template)[]
+    {
+        ("one-format", "{0:isnull:It's null}"),
+        ("two-formats", "{0:isnull:It's null|It's not}"),
+        ("empty-format", "{0:isnull:}"),
+        ("two-empty-formats", "{0:isnull:|}"),
+        ("empty-options", "{0:isnull()}"),
+        ("blank-options", "{0:isnull( ):x}"),
+        ("value-in-null-branch", "{0:isnull:[{}]}"),
+        ("value-in-value-branch", "{0:isnull:x|[{}]}"),
+        ("aligned-one-format", "{0,10:isnull:N}"),
+        ("aligned-two-formats", "{0,10:isnull:N|Y}"),
+        ("aligned-left", "{0,-3:isnull:N}"),
+    };
+
+    foreach (var (templateSlug, template) in templates)
+    foreach (var (valueSlug, json) in values)
+        Add($"{templateSlug}-{valueSlug}", template, json);
+
+    // Nesting: the value branch runs another formatter over the same value.
+    const string nullable = """{"NullableInt":null,"IntValueIfNotNull":1000}""";
+    const string nonNull = """{"NullableInt":2000,"IntValueIfNotNull":2000}""";
+    const string other = """{"NullableInt":1234.5,"IntValueIfNotNull":1234.5}""";
+    const string nested =
+        "{NullableInt:isnull:Was null|{IntValueIfNotNull:choose(1000|2000):1k|{:N2}}}";
+    Add("nested-null", nested, nullable);
+    Add("nested-2000", nested, nonNull);
+    Add("nested-else", nested, other);
+    Add("nested-substr", "{0:isnull:nothing|{:substr(0,4)}}", @"[""Long John""]");
+    Add("nested-list", "{0:isnull:nothing|{:list:{}|, }}", """[["a","b"]]""");
+
+    // Values whose "null" is a selector's doing rather than the argument's.
+    Add("map-value", "{0:isnull:N|Y}", """[{"a":1}]""");
+    Add("list-value", "{0:isnull:N|Y}", "[[1,2]]");
+    Add("null-member", "{City:isnull:no city|{}}", """{"City":null,"Name":"Alice"}""");
+    Add("nullable-member", "{City?.Length:isnull:N|Y}", """{"City":null}""");
+    Add("in-list", "{0:list:{:isnull:-|{}}|,}", @"[[""a"",null,""b""]]");
+
+    // Errors.
+    Add("err-choose-options", "{0:isnull(op|ti|ons):Is null}", "[null]");
+    Add("err-three-formats", "{0:isnull:1|2|3}", "[null]");
+    Add("err-escaped-split-char", @"{0:isnull:a\|b|c}", "[null]");
+    Add("err-short-name", "{0:null:a|b}", "[null]");
+
+    var output = new CaseSettings(FormatErrorAction: FormatErrorAction.OutputErrorInResult);
+    cases.Add(new GoldenCase(
+        "isnull-errtext-choose-options", "{0:isnull(op|ti|ons):Is null}", "[null]", output));
+    cases.Add(new GoldenCase(
+        "isnull-errtext-three-formats", "{0:isnull:1|2|3}", "[null]", output));
+
+    // The lazy split again: only the piece the formatter picks is cut, so a
+    // crossed literal in the branch not taken never fails.
+    Add("crossed-first-branch-null", @"{0:isnull:\u12|a}", "[null]");
+    Add("crossed-first-branch-value", @"{0:isnull:\u12|a}", @"[""v""]");
+    Add("crossed-second-branch-null", @"{0:isnull:a|\u12}", "[null]");
+    Add("crossed-second-branch-value", @"{0:isnull:a|\u12}", @"[""v""]");
+    Add("crossed-third-branch", @"{0:isnull:a|b|\u12}", "[null]");
+}
+
+// ---------------------------------------------------------------------------
+// M3: IsMatchFormatter, named "ismatch".
+//
+// Patterns here stay inside the subset fancy-regex and .NET both read the same
+// way; the ones they disagree on are pinned by unit tests in `ismatch.rs`
+// instead, with one held here as a knowingly-skipped case.
+// ---------------------------------------------------------------------------
+
+static void IsMatchCases(List<GoldenCase> cases)
+{
+    void Add(string id, string template, string argsJson, CaseSettings? settings = null) =>
+        cases.Add(new GoldenCase("ismatch-" + id, template, argsJson, settings));
+
+    const string theValue = """{"theValue":"Some123Content"}""";
+
+    // -- The two branches, and what each may write.
+    Add("match-with-value", @"{theValue:ismatch(^.+123.+$):Okay - {}|No match content}", theValue);
+    Add("match-fixed-text", @"{theValue:ismatch(^.+123.+$):Fixed content if match|No match content}",
+        theValue);
+    Add("no-match", @"{theValue:ismatch(^.+999.+$):{}|No match content}", theValue);
+    Add("match-empty-branch", @"{theValue:ismatch(^.+123.+$):|Only content with no match}", theValue);
+    Add("no-match-branch", @"{theValue:ismatch(^.+999.+$):|Only content with no match}", theValue);
+
+    // -- Capture groups, read through the `m` placeholder.
+    Add("groups-all", @"{theValue:ismatch(^.+\(1\)\(2\)\(3\).+$):Matches for '{}'\: {m[0]} - {m[1]} - {m[2]} - {m[3]}|No match}",
+        theValue);
+    Add("groups-two", @"{theValue:ismatch(^.+\(1\)\(2\)\(3\).+$):First 2 matches in '{}'\: {m[1]} and {m[2]}|No match}",
+        theValue);
+    Add("groups-no-match", @"{theValue:ismatch(^.+\(9\)\(9\)\(9\).+$):Matches for '{}'\: {m[1]}|No match}",
+        theValue);
+    Add("group-zero", @"{theValue:ismatch(123):[{m[0]}]|no}", theValue);
+    Add("group-not-participating", @"{theValue:ismatch(\(123\)|\(zzz\)):[{m[1]}][{m[2]}]|no}", theValue);
+    Add("outer-selector-in-branch", @"{theValue:ismatch(123):got {} and {theValue}|no}", theValue);
+    Add("group-out-of-range", @"{theValue:ismatch(123):[{m[5]}]|no}", theValue);
+
+    // -- Escapes in the options, where `(`, `)`, `{`, `}`, `:` and `\` all
+    // have to be written escaped for the parser to hand them to the engine.
+    foreach (var (slug, options, search) in new (string, string, string)[]
+             {
+                 ("pipe", @"\\|", "|"),
+                 ("question", @"\\?", "?"),
+                 ("plus", @"\\+", "+"),
+                 ("star", @"\\*", "*"),
+                 ("caret", @"\\^", "^"),
+                 ("dollar", @"\\$", "$"),
+                 ("dot", @"\\.", "."),
+                 ("open-bracket", @"\\[", "["),
+                 ("close-bracket", @"\\]", "]"),
+                 ("colon", @"\:", ":"),
+                 ("backslash", @"\\\\", @"\"),
+                 ("open-paren", @"\\\(", "("),
+                 ("close-paren", @"\\\)", ")"),
+                 ("open-brace", @"\\\{", "{"),
+                 ("close-brace", @"\\\}", "}"),
+             })
+        Add("escape-" + slug, "{0:ismatch(" + options + "):found {}|}", JsonString(search));
+
+    // -- Pattern syntax both engines read the same way.
+    foreach (var (slug, options, search) in new (string, string, string)[]
+             {
+                 ("parens-group", @"\\\(\([^\\\)]*\)\\\)", "Text (inside) parenthesis"),
+                 ("parens-group-no-match", @"\\\(\([^\\\)]*\)\\\)", "No parenthesis"),
+                 ("lookahead", @"Lon\(?=don\)", "This is London"),
+                 ("lookahead-no-match", @"Lon\(?=don\)", "This is Loando"),
+                 ("angle-brackets", "<[^<>]+>", "<abcde>"),
+                 ("angle-brackets-no-match", "<[^<>]+>", "<>"),
+                 ("open-repetition", @"\\d\{3,\}", "1234"),
+                 ("open-repetition-no-match", @"\\d\{3,\}", "12"),
+                 ("counted-and-escaped-colon", @"^.\{5,\}\:,$", "1z%aW:,"),
+                 ("counted-and-escaped-colon-no-match", @"^.\{5,\}\:,$", "1z:,"),
+                 ("backreference", @"\(a\)\\1", "aa"),
+                 ("named-backreference", @"\(?<x>a\)\\k<x>", "aa"),
+                 ("atomic-group", @"\(?>a+\)b", "ab"),
+                 ("inline-comment", @"a\(?#hi\)b", "ab"),
+                 ("conditional", @"^\(a\)?\(?\(1\)b|c\)$", "ab"),
+                 ("end-of-string-lower-z", @"^ab\\z", "ab"),
+                 ("start-of-string-upper-a", @"\\Aab", "abc"),
+                 ("word-boundary", @"\\bcat\\b", "a cat sat"),
+                 ("word-boundary-no-match", @"\\bcat\\b", "concatenate"),
+                 ("digit-class", @"^\\d+$", "1234"),
+                 ("word-class", @"^\\w+$", "a_1"),
+                 ("whitespace-class", @"^\\s+$", " \t"),
+                 ("exact-quantifier", @"^a\{2\}$", "aa"),
+                 ("exact-quantifier-no-match", @"^a\{2\}$", "aaa"),
+                 ("lookbehind", @"\(?<=a\)b", "ab"),
+                 ("negative-lookahead", @"a\(?!b\)", "ac"),
+                 ("negative-lookahead-no-match", @"a\(?!b\)", "ab"),
+                 ("nested-groups", @"\(\(a\)\(b\)\)", "ab"),
+                 ("unicode-letter", @"^\\p\{L\}+$", "abcé"),
+                 ("non-greedy", @"^<.+?>", "<a><b>"),
+             })
+        Add("pattern-" + slug, "{0:ismatch(" + options + "):found {}|}", JsonString(search));
+
+    // Group numbering, and a branch that runs another formatter.
+    Add("alternation-groups", @"{0:ismatch(^\(a|b\)\(c|d\)$):[{m[1]}][{m[2]}]|no}", JsonString("ad"));
+    Add("nested-group-numbers", @"{0:ismatch(\(\(a\)\(b\)\)):[{m[1]}][{m[2]}][{m[3]}]|no}",
+        JsonString("ab"));
+    Add("empty-value", "{0:ismatch(^$):empty|not}", @"[""""]");
+    Add("nested-ismatch", "{0:ismatch(a):{:ismatch(b):ab|a only}|none}", JsonString("ab"));
+    Add("in-list", "{0:list:{:ismatch(a):A|B}|,}", @"[[""a"",""b"",""a""]]");
+    Add("aligned-group", @"[{theValue,12:ismatch(123):{m[0]}|no}]", theValue);
+    // The match list is a collection, so the other extensions reach it.
+    Add("matches-as-list", @"{theValue:ismatch(^.+\(1\)\(2\)\(3\).+$):[{m:list:{}|-}]|no}", theValue);
+    Add("matches-with-index", @"{theValue:ismatch(^.+\(1\)\(2\)\(3\).+$):{m:list:{Index}={}|,}|no}",
+        theValue);
+    Add("group-through-substr", @"{theValue:ismatch(\(Some\)):{m[1]:substr(0,2)}|no}", theValue);
+
+    // The lenient error actions over a format that is not two parts.
+    cases.Add(new GoldenCase(
+        "ismatch-ignore-one-part", "[{theValue:ismatch(123):one}]", theValue,
+        new CaseSettings(FormatErrorAction: FormatErrorAction.Ignore)));
+    cases.Add(new GoldenCase(
+        "ismatch-maintaintokens-one-part", "[{theValue:ismatch(123):one}]", theValue,
+        new CaseSettings(FormatErrorAction: FormatErrorAction.MaintainTokens)));
+
+    // The Unicode currency-symbol category, which both engines know.
+    foreach (var (slug, value) in new (string, string)[]
+             {
+                 ("euro", "\u20ac Euro"), ("yen", "\u00a5 Yen"), ("none", "none"),
+             })
+        Add("unicode-category-" + slug,
+            @"{Currency:ismatch(\\p\{Sc\}):Currency: {m[0]}|Unknown}",
+            $$"""{"Currency":{{JsonSerializer.Serialize(value)}}}""");
+
+    // -- Values that are not strings, and an empty pattern.
+    Add("empty-pattern", "{0:ismatch():yes [{m[0]}]|no}", JsonString("abc"));
+    Add("alignment", "{0,10:ismatch(b):Y|N}", JsonString("abc"));
+    Add("bool-value", "{0:ismatch(True):yes|no}", "[true]");
+    // No floating-point value belongs here: `IsMatchFormatter` matches against
+    // the value's `ToString()` under the *thread* culture, so `1.5` renders
+    // with whatever decimal separator the machine has. Same rule as the
+    // `choose` options (see `tools/goldens/README.md`).
+    Add("int-value-group", @"{0:ismatch(^\(1\)2$):a {m[1]}|b}", "[12]");
+    Add("null-value", "{0:ismatch(^.+$):a|b}", "[null]");
+
+    // -- RegexOptions, which is a property of the formatter rather than of the
+    // template, so each of these runs with its own configured extension.
+    void Options(string id, string template, string argsJson, RegexOptions options) =>
+        cases.Add(new GoldenCase(
+            "ismatch-" + id, template, argsJson, new CaseSettings(RegexOptions: options)));
+
+    Add("case-sensitive-default", "{theValue:ismatch(^SOME123.+$):Okay - {}|No match content}", theValue);
+    Options("ignore-case", "{theValue:ismatch(^SOME123.+$):Okay - {}|No match content}", theValue,
+        RegexOptions.IgnoreCase);
+    Options("ignore-case-alternation", @"{0:ismatch(^A|B$):yes|no}", JsonString("b"),
+        RegexOptions.IgnoreCase);
+    Add("multiline-default", "{0:ismatch(^b$):yes|no}", JsonString("a\nb\nc"));
+    Options("multiline", "{0:ismatch(^b$):yes|no}", JsonString("a\nb\nc"), RegexOptions.Multiline);
+    Options("singleline", "{0:ismatch(^a.b$):yes|no}", JsonString("a\nb"), RegexOptions.Singleline);
+    Options("ignore-pattern-whitespace", "{0:ismatch(^a b c$):yes|no}", JsonString("abc"),
+        RegexOptions.IgnorePatternWhitespace);
+    Options("ignore-pattern-whitespace-in-class", "{0:ismatch(^[a b]+$):yes|no}", JsonString("a b"),
+        RegexOptions.IgnorePatternWhitespace);
+    Options("compiled-is-a-hint", "{theValue:ismatch(^.+123.+$):Okay|No}", theValue,
+        RegexOptions.Compiled);
+    Options("culture-invariant", "{theValue:ismatch(^SOME123.+$):Okay|No}", theValue,
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    // A different split character, and a different name for the match list.
+    var tilde = new CaseSettings(IsMatchSplitChar: '~');
+    cases.Add(new GoldenCase(
+        "ismatch-split-char-match", @"{theValue:ismatch(^.+123.+$):|Has match for '{}'|~|No match|}",
+        theValue, tilde));
+    cases.Add(new GoldenCase(
+        "ismatch-split-char-no-match", @"{theValue:ismatch(^.+999.+$):|Has match for '{}'|~|No match|}",
+        theValue, tilde));
+    cases.Add(new GoldenCase(
+        "ismatch-placeholder-name",
+        @"{theValue:ismatch(^\(123\)\(4\)\(5\)$):First match in '{}'\: {match[1]}|No match}",
+        """{"theValue":"12345"}""",
+        new CaseSettings(IsMatchPlaceholderName: "match")));
+
+    // -- Errors: a format that is not exactly two parts, and an option escape
+    // that cannot be resolved.
+    Add("err-one-part", "{theValue:ismatch(^.+123.+$):Dummy content}", theValue);
+    Add("err-three-parts", "{theValue:ismatch(^.+123.+$):a|b|c}", theValue);
+    Add("err-empty-format", "{theValue:ismatch(^.+123.+$):}", theValue);
+    Add("err-no-format", "{theValue:ismatch(^.+123.+$)}", theValue);
+    Add("err-bad-escape", @"{0:ismatch(a\qb):yes|no}", JsonString("x"));
+
+    var output = new CaseSettings(FormatErrorAction: FormatErrorAction.OutputErrorInResult);
+    cases.Add(new GoldenCase(
+        "ismatch-errtext-one-part", "{theValue:ismatch(^.+123.+$):Dummy content}", theValue, output));
+    cases.Add(new GoldenCase(
+        "ismatch-errtext-no-format", "{theValue:ismatch(^.+123.+$)}", theValue, output));
+    cases.Add(new GoldenCase(
+        "ismatch-errtext-null-value", "{0:ismatch(^.+$):a|b}", "[null]", output));
+
+    // -- One documented divergence, held here with .NET's answer: .NET's `$`
+    // also matches before a final newline, where fancy-regex's does not.
+    Add("dollar-before-final-newline", "{0:ismatch(^abc$):yes|no}", JsonString("abc\n"));
+}
+
+// ---------------------------------------------------------------------------
+// M3: TemplateFormatter, named "t".
+//
+// Not in `CreateDefaultSmartFormat`, so each case names the template fixture it
+// runs with (see `TemplateFixture`).
+// ---------------------------------------------------------------------------
+
+static void TemplateCases(List<GoldenCase> cases)
+{
+    var standard = new CaseSettings(Templates: TemplateSet.Standard);
+    var withEmpty = new CaseSettings(Templates: TemplateSet.WithEmptyName);
+    var insensitive = new CaseSettings(
+        Templates: TemplateSet.CaseInsensitive,
+        CaseSensitivity: CaseSensitivityType.CaseInsensitive);
+    var output = new CaseSettings(
+        Templates: TemplateSet.Standard,
+        FormatErrorAction: FormatErrorAction.OutputErrorInResult);
+
+    const string person = """{"First":"Scott","Last":"Rippey"}""";
+
+    void Add(string id, string template, string argsJson = person, CaseSettings? settings = null) =>
+        cases.Add(new GoldenCase("template-" + id, template, argsJson, settings ?? standard));
+
+    // -- Where the name may be written, and what else the placeholder may hold.
+    Add("name-in-format", "{:t:firstLast}");
+    Add("name-in-options", "{:t(firstLast)}");
+    Add("empty-options-name-in-format", "{:t():firstLast}");
+    Add("options-win-over-format", "{:t(firstLast):IGNORED}");
+    Add("long-name-is-unknown", "{:template:firstLast}");
+    Add("selector-before-name", "{First:t:lastFirst}");
+
+    // -- Lookups.
+    Add("last-first", "{:t:lastFirst}");
+    Add("upper-first", "{:t:FIRST}");
+    Add("lower-last", "{:t:last}");
+    Add("upper-last", "{:t:LAST}");
+    Add("nested", "{:t:NESTED}");
+    cases.Add(new GoldenCase("template-case-insensitive-name", "{:T:firstLast}", person, insensitive));
+    cases.Add(new GoldenCase("template-case-insensitive-last", "{:t:LAST}", person, insensitive));
+    cases.Add(new GoldenCase("template-case-insensitive-nested", "{:t:NeStEd}", person, insensitive));
+    cases.Add(new GoldenCase("template-case-insensitive-nested-lower", "{:t:nested}", person, insensitive));
+    Add("case-sensitive-wrong-case", "{:t:LaSt}");
+
+    // -- Unknown names.
+    Add("unknown-name", "{:t:does-not-exist}");
+    Add("unknown-name-in-options", "{:t(nope)}");
+    Add("empty-name-unregistered", "{:t:}");
+    Add("empty-options-unregistered", "{:t()}");
+    Add("empty-options-and-format-unregistered", "{:t():}");
+    cases.Add(new GoldenCase("template-empty-name", "{:t:}", person, withEmpty));
+    cases.Add(new GoldenCase("template-empty-options", "{:t()}", person, withEmpty));
+    cases.Add(new GoldenCase("template-empty-options-and-format", "{:t():}", person, withEmpty));
+
+    // The error text, which quotes the name as it resolved.
+    cases.Add(new GoldenCase("template-errtext-unknown", "{:t:does-not-exist}", person, output));
+    cases.Add(new GoldenCase("template-errtext-empty-name", "{:t:}", person, output));
+    cases.Add(new GoldenCase(
+        "template-errtext-unknown-case-insensitive", "{:T:nope}", person,
+        new CaseSettings(
+            Templates: TemplateSet.CaseInsensitive,
+            CaseSensitivity: CaseSensitivityType.CaseInsensitive,
+            FormatErrorAction: FormatErrorAction.OutputErrorInResult)));
+
+    // -- The name is a literal, so its escape sequences resolve like any other.
+    Add("escaped-backslash", @"{:t:back\\slash}");
+    Add("escaped-backslash-in-options", @"{:t(back\\slash)}");
+    Add("escaped-braces", @"{:t:\{brace\}}");
+    Add("pipe-in-name", "{:t:a|b}");
+    Add("pipe-in-options", "{:t(a|b)}");
+    Add("unresolvable-escape", @"{:t:back\slash}");
+    Add("crossed-escape", @"{:t:a\u12}");
+    Add("unicode-escape", @"{:t:\u0041}");
+
+    // -- Alignment reaches the template's literal text, not the whole result.
+    Add("alignment-right", "[{,20:t(firstLast)}]");
+    Add("alignment-left", "[{,-20:t(firstLast)}]");
+
+    // -- A template over a selected value, and two in one template string.
+    Add("selected-value", "{Person:t:firstLast}",
+        """{"Person":{"First":"Scott","Last":"Rippey"}}""");
+    Add("twice", "{:t:firstLast} / {:t:lastFirst}");
+    Add("around-literals", "<{:t:FIRST}>");
+    Add("name-with-space", "{:t:first Last}");
+    Add("name-with-colon", @"{:t:a\:b}");
+
+    // -- Nesting: a template that names two more, and one that runs `cond`
+    // over a second positional argument.
+    cases.Add(new GoldenCase(
+        "template-cond-formal", "{0:t(salutation)}:",
+        """[{"First":"Joe","Last":"Doe"},true]""", standard));
+    cases.Add(new GoldenCase(
+        "template-cond-informal", "{0:t(salutation)}:",
+        """[{"First":"Joe","Last":"Doe"},false]""", standard));
+
+    // -- A template rendered for every item of a list.
+    cases.Add(new GoldenCase(
+        "template-in-list", "{:{:t:NESTED}|, }",
+        """[[{"First":"Jim","Last":"Halpert"},{"First":"Pam","Last":"Beasley"},{"First":"Dwight","Last":"Schrute"}]]""",
+        standard));
+
+    // -- A template that reads the list index of the list it is rendered in.
+    cases.Add(new GoldenCase(
+        "template-in-list-with-index", "{:{:t:indexed}|, }",
+        """[[{"First":"Jim"},{"First":"Pam"}]]""", standard));
+
+    // -- The lenient error actions over an unknown template name.
+    cases.Add(new GoldenCase(
+        "template-ignore-unknown", "[{:t:nope}]", person,
+        new CaseSettings(Templates: TemplateSet.Standard, FormatErrorAction: FormatErrorAction.Ignore)));
+    cases.Add(new GoldenCase(
+        "template-maintaintokens-unknown", "[{:t:nope}]", person,
+        new CaseSettings(
+            Templates: TemplateSet.Standard,
+            FormatErrorAction: FormatErrorAction.MaintainTokens)));
+
+    // -- In compatibility mode no formatter name is parsed at all.
+    cases.Add(new GoldenCase(
+        "template-compatibility-mode", "{0:t:x}", @"[""a string""]",
+        new CaseSettings(Templates: TemplateSet.Simple, StringFormatCompatibility: true)));
+
+    // -- Divergences, held here with .NET's answer. .NET reports an error
+    // raised inside a template against the *template*'s text; we quote the
+    // string being rendered.
+    cases.Add(new GoldenCase("template-error-inside", "x{:t:bad}y", person, output));
+}
+
+// ---------------------------------------------------------------------------
+// Cases that leave `ListFormatter.CollectionIndex` set, which in .NET is a
+// static: an iteration that fails part-way through never runs the restore, and
+// every later `{Index}` in the *process* — under any settings, through any
+// formatter instance — then reads the leaked value instead of -1. Nothing may
+// follow these, and the render loop's canary enforces it.
+//
+// The port has no such leak (its index is a per-call cell), so it agrees with
+// .NET on the case itself and not on what comes after; which is why nothing
+// comes after.
+// ---------------------------------------------------------------------------
+
+static void CollectionIndexPoisoningCases(List<GoldenCase> cases)
+{
+    // A spacer whose escape cannot be resolved fails when it is written, after
+    // the first item has already reached the output.
+    cases.Add(new GoldenCase(
+        "list-spacer-bad-escape", @">{0:list:{}|a\qb}<", """[["a","b","c"]]""",
+        new CaseSettings(FormatErrorAction: FormatErrorAction.OutputErrorInResult)));
 }
 
 // ---------------------------------------------------------------------------
@@ -1899,7 +2761,17 @@ internal sealed record CaseSettings(
     bool StringFormatCompatibility = false,
     char AlignmentFillCharacter = ' ',
     string CustomSelectorChars = "",
-    bool ConvertCharacterStringLiterals = true)
+    bool ConvertCharacterStringLiterals = true,
+    // The M3 extensions that carry configuration of their own. These are not
+    // SmartSettings at all — they are properties of a formatter extension —
+    // but they select the formatter a case runs with in exactly the same way,
+    // so they ride along in the same record and the same JSON object.
+    RegexOptions RegexOptions = RegexOptions.None,
+    char IsMatchSplitChar = '|',
+    string IsMatchPlaceholderName = "m",
+    SubStringFormatter.SubStringOutOfRangeBehavior SubStringOutOfRangeBehavior =
+        SubStringFormatter.SubStringOutOfRangeBehavior.ReturnEmptyString,
+    TemplateSet Templates = TemplateSet.None)
 {
     public static readonly CaseSettings Default = new();
 
@@ -1943,6 +2815,26 @@ internal sealed record CaseSettings(
             json["customSelectorChars"] = CustomSelectorChars;
         if (ConvertCharacterStringLiterals != Default.ConvertCharacterStringLiterals)
             json["convertCharacterStringLiterals"] = ConvertCharacterStringLiterals;
+        if (RegexOptions != Default.RegexOptions)
+            json["regexOptions"] = RegexOptions.ToString();
+        if (IsMatchSplitChar != Default.IsMatchSplitChar)
+            json["isMatchSplitChar"] = IsMatchSplitChar.ToString();
+        if (IsMatchPlaceholderName != Default.IsMatchPlaceholderName)
+            json["isMatchPlaceholderName"] = IsMatchPlaceholderName;
+        if (SubStringOutOfRangeBehavior != Default.SubStringOutOfRangeBehavior)
+            json["subStringOutOfRangeBehavior"] = SubStringOutOfRangeBehavior.ToString();
+        if (Templates != Default.Templates)
+            json["templates"] = Templates.ToString();
         return json;
     }
+}
+
+/// <summary>Which set of named templates a case has registered, if any.</summary>
+internal enum TemplateSet
+{
+    None,
+    Standard,
+    WithEmptyName,
+    CaseInsensitive,
+    Simple,
 }

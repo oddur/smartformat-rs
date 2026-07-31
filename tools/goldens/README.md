@@ -77,6 +77,24 @@ holding only the properties that differ. The Rust runner mirrors the same keys.
 | `customSelectorChars` | `ParserSettings.AddCustomSelectorChars` | the characters to allow |
 | `convertCharacterStringLiterals` | `SmartSettings.Parser.ConvertCharacterStringLiterals` | `false` |
 
+The same object also carries the configuration of the formatter *extensions* that have
+any. These are not `SmartSettings`, but they select the formatter a case runs with in
+exactly the same way, so they ride along in the same record and the same JSON object.
+
+| Key | .NET property | Values |
+| --- | --- | --- |
+| `regexOptions` | `IsMatchFormatter.RegexOptions` | a `[Flags]` name, or several comma-separated |
+| `isMatchSplitChar` | `IsMatchFormatter.SplitChar` | a one-character string |
+| `isMatchPlaceholderName` | `IsMatchFormatter.PlaceholderNameForMatches` | the name, default `m` |
+| `subStringOutOfRangeBehavior` | `SubStringFormatter.OutOfRangeBehavior` | `ReturnStartIndexToEndOfString`, `ThrowException` |
+| `templates` | which set `TemplateFormatter.Register` is called with | `Standard`, `WithEmptyName`, `CaseInsensitive`, `Simple` |
+
+`TemplateFormatter` is not in `CreateDefaultSmartFormat`, so a case only has one when it
+names a template set. The four sets are built by `TemplateFixture` in `Program.cs` and
+mirrored name for name by `template_fixture` in the Rust runner — .NET fixes the
+registry's comparer at construction and its `Dictionary.Add` throws on a duplicate, which
+is why the case-insensitive set is the standard one minus `LAST`.
+
 ## How `args` maps to .NET values
 
 The Rust runner mirrors this mapping, so keep the two in step.
@@ -108,7 +126,8 @@ alignment, nesting, numeric specifiers, date specifiers, errors, `StringSource` 
 methods, formatter names and options, the list-index operator, non-default settings, the
 `plural` / `choose` / `cond` formatters, which of the two auto-detecting formatters claims
 an unnamed `|`-separated format, the `\uXXXX` sequences the parser reads past (the `uesc-*`
-group), how a culture *name* resolves, and the culture data. Numeric, date, plural and culture
+group), how a culture *name* resolves, the culture data, and the M3 formatters — `list-*`,
+`substr-*`, `isnull-*`, `ismatch-*`, `template-*`. Numeric, date, plural and culture
 cases are generated combinatorially from a value or culture list crossed with a specifier
 list, which is where most of the volume comes from.
 
@@ -123,24 +142,42 @@ The `errtext-*` group renders M2 errors with `FormatErrorAction.OutputErrorInRes
 is the only way a case can observe an error's *text* rather than just its exception type.
 It pins both shapes .NET produces there: a `FormattingException`'s own message, which
 quotes the template and points a caret at the failure, and the bare message of any other
-exception the evaluator wraps.
+exception the evaluator wraps. The M3 formatters carry their own `*-errtext-*` cases in
+their own groups, for the same reason.
+
+The `ismatch-*` patterns stay inside the subset `fancy-regex` and .NET read the same way;
+the constructs the two engines disagree on are pinned by unit tests in `ismatch.rs`
+instead, with one held here as a knowingly-skipped case
+(`ismatch-dollar-before-final-newline`). See "IsMatch runs on fancy-regex" in `DESIGN.md`
+for the full list.
 
 Some cases exist only to pin .NET behavior the port deliberately does not match. They are
 in the table like any other case, and the Rust runner names each of them in its `SKIPPED`
 list with the reason; every entry under "Known divergences" in `DESIGN.md` points at one of
 those ids or at a unit test.
 
-Three areas are deliberately left out, because they belong to later milestones or fall
-outside the port's scope: custom numeric and date patterns, lists as values to format, and
-the M3/M4 formatters.
+Two areas are deliberately left out, because they fall outside the port's scope or belong
+to a later milestone: custom numeric and date patterns, and the M4 formatters.
 
-Two kinds of case must **not** go in the table, because their .NET answer depends on the
+Three kinds of case must **not** go in the table, because their .NET answer depends on the
 machine that regenerates them rather than on the library:
 
 - float or decimal values as `choose` options (`{0:choose(1.5|2.5):a|b}`). `ChooseFormatter`
   stringifies the value with the *thread* culture, ignoring the `IFormatProvider` of the
   call, so the case renders — or throws — differently per locale.
+- non-string values matched by `ismatch` whose `ToString()` reads culture data
+  (`{0:ismatch(^1\\.5$):yes|no}` on `1.5`). `IsMatchFormatter` reads the value the same
+  thread-culture way, so on an `en-DE` machine that pattern does not match. Integers,
+  bools and strings are safe.
 - date conditions (`{0:cond:Past|Present|Future}`). `ConditionalFormatter` compares against
   `DateTime.UtcNow`; there is no way to pin a wall clock from the harness. The Rust side
   takes its comparison point from `ConditionalFormatter::with_now` and is unit-tested
   instead.
+
+One more ordering rule, enforced by the harness rather than by review:
+`ListFormatter.CollectionIndex` is a **static** in .NET, so a case whose list iteration
+fails part-way leaves it set for the rest of the process and every later `{Index}` — under
+any settings, through any formatter instance — reads the leaked value instead of `-1`. The
+render loop therefore checks an `{Index}` canary after every case and fails the build
+unless the only case that leaves it set is the last one in the table. Such cases go in
+`CollectionIndexPoisoningCases`, which is called last.

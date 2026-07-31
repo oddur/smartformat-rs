@@ -23,8 +23,13 @@ Everything in SmartFormat's core plus the built-in extensions, in this order:
 - **M2 — value-dense formatters (done):** `PluralLocalizationFormatter`,
   `ChooseFormatter`, `ConditionalFormatter`, plus the culture data all three and
   `DefaultFormatter` render through, generated from .NET by `tools/culturegen`.
-- **M3 — breadth:** `ListFormatter`, `SubStringFormatter`, `NullFormatter`,
-  `IsMatchFormatter` (regex), `TemplateFormatter`.
+- **M3 — breadth (done):** `ListFormatter` (with the `{Index}` selector it
+  carries), `SubStringFormatter`, `NullFormatter`, `IsMatchFormatter` (regex,
+  behind the `regex-formatters` feature), `TemplateFormatter`. All but the
+  template formatter are in `FormatterRegistry::new()`, at .NET's ranks;
+  templates are registered explicitly through
+  `SmartFormatter::register_template`, as .NET's `CreateDefaultSmartFormat`
+  leaves that extension out too.
 - **M4 — the .NET-heavy tail:** `LocalizationFormatter`, `TimeFormatter`,
   `GlobalVariablesSource`, `PersistentVariablesSource`.
 
@@ -155,6 +160,16 @@ answer is not reproducible.
   *Pins:* `lit-escape-unicode-lone-high-then-pair`,
   `lit-escape-unicode-lone-low-then-pair`,
   `lit-escape-unicode-high-then-non-surrogate`.
+  `substr` reaches the same place from the other side: its start index and
+  length count UTF-16 code units, as .NET's do, so a cut can split a surrogate
+  pair. `{0:substr(0,1)}` over `"\u{1F600}abc"` is a lone high surrogate in
+  .NET, which its UTF-8 encoding writes as `EF BF BD` — the same U+FFFD a Rust
+  `String` holds — so the two are byte-identical and these are ordinary
+  goldens, not divergences. The *counting* stays in code units either way:
+  `{0:substr(2)}` is `abc` and `{0:substr(0,5)}` is the whole string.
+  *Pins:* the `substr-astral-*` cases and
+  `extensions::substring::tests::a_cut_inside_a_surrogate_pair`,
+  `…::a_string_of_wide_characters`.
 - **Unicode case mapping.** `ToUpper`/`ToLower` and case-insensitive selector
   matching use Rust's Unicode mappings. Case-insensitive matching restricts
   itself to one-to-one mappings, like .NET's `OrdinalIgnoreCase`, but
@@ -184,19 +199,99 @@ answer is not reproducible.
   it"). A type name is never what a template author wanted, so this gap is loud.
   It also means `{}` against an *empty* argument list is an error here, where
   .NET renders `System.Object[]`; the scope itself matches .NET, only the
-  rendering of it differs.
+  rendering of it differs. `ListFormatter` does not change this: it declines a
+  placeholder that carries no format at all, so `{0:list}` on a list reaches
+  `DefaultFormatter` in .NET too.
   *Pins:* `sel-default-format-empty-args`, `sel-default-format-list`,
-  `sel-default-format-map`, plus `default_formatting_of_a_list_is_an_error`,
-  `default_formatting_of_a_map_is_an_error` and
+  `sel-default-format-map`, `list-no-format`, plus
+  `default_formatting_of_a_list_is_an_error`,
+  `default_formatting_of_a_map_is_an_error`,
+  `default_formatting_of_a_list_is_still_an_error` and
   `an_empty_argument_list_is_its_own_scope`.
+- **A map is not list-formattable.** A .NET `Dictionary` is `IEnumerable`, so
+  `ListFormatter` claims it and renders each `KeyValuePair.ToString()`:
+  `{0:list:{}|, }` over `{"a":1,"b":2}` is `[a, 1], [b, 2]`. `Value::Map` is not
+  a list here, so the formatter declines it and — because the placeholder named
+  it — raises "Formatter named 'list' requires an IEnumerable argument and at
+  least 2 format parameters." Same family as the entry above: a pair's CLR
+  `ToString` is never what the template author meant.
+  *Pin:* `list-map-is-enumerable`.
+- **`ismatch` runs on `fancy-regex`, not `System.Text.RegularExpressions`.**
+  No Rust engine reads .NET's dialect exactly. Four constructs .NET accepts
+  fail to compile here, which fails the whole call rather than matching
+  different text: the alternative named-group syntax `(?'name'…)`, `\Z` (end of
+  input or before a final newline — `\z` agrees in both), balancing groups
+  `(?<-x>…)`, and .NET's Unicode *block* names such as `\p{IsBasicLatin}`.
+  Four more compile on both sides and mean different things, which nothing can
+  detect, so each is pinned by a test: `$` matches before a final newline in
+  .NET and not here; `[a-z-[aeiou]]` is class subtraction in .NET and a union
+  here (write `[a-z&&[^aeiou]]`); `a{,3}` is five literal characters in .NET
+  and `a{0,3}` here (write `a{0,3}`); and .NET numbers *named* groups after all
+  unnamed ones, where fancy-regex numbers left to right, so `(a)(?<x>b)(c)` on
+  `"abc"` gives `{m[2]}` = `c` in .NET and `b` here. `IgnoreCase` is always
+  culture-invariant here; .NET folds with the thread culture unless
+  `CultureInvariant` is set. `RegexOptions` members with no equivalent —
+  `ExplicitCapture` (dropping it would renumber every group `{m[i]}` reads),
+  `RightToLeft`, `ECMAScript`, `NonBacktracking`, and any undefined bit — fail
+  the call rather than silently matching different text; `Compiled` and
+  `CultureInvariant` are accepted and ignored. The goldens stay inside the
+  subset both engines agree on, with one divergent pattern held as a skip.
+  *Pins:* `ismatch-dollar-before-final-newline` (skipped), and in
+  `extensions::ismatch::tests`
+  `a_pattern_dotnet_accepts_and_fancy_regex_does_not_fails_loudly`,
+  `dollar_does_not_match_before_a_final_newline`,
+  `character_class_subtraction_is_a_silent_divergence`,
+  `an_open_lower_bound_is_a_silent_divergence`,
+  `named_groups_are_numbered_left_to_right`,
+  `unsupported_regex_options_fail_loudly`,
+  `dotnet_syntax_that_both_engines_agree_on` (the constructs that do agree).
+- **`ismatch` has no match timeout.** .NET compiles every pattern with
+  `TimeSpan.FromMilliseconds(500)`. fancy-regex has no timeout, so the runaway
+  guard is `IsMatchFormatter::backtrack_limit` (fancy-regex's default of
+  1,000,000 steps), and exceeding it fails the call with `Regular expression
+  "…" exceeded the backtrack limit of N steps`. It is a different measure from
+  a wall clock — a pattern .NET times out on need not fail here, and the other
+  way round — but it is deterministic, which a timeout is not, so a golden may
+  rely on it. The guard only engages when fancy-regex's backtracking VM runs: a
+  pattern with no fancy features is delegated to the linear-time `regex` engine
+  and never backtracks.
+  *Pins:* `extensions::ismatch::tests::a_runaway_pattern_hits_the_backtrack_limit`,
+  `…::the_default_backtrack_limit_is_fancy_regexs`.
+- **`ismatch` refuses a list or a map.** .NET matches the pattern against the
+  value's CLR type name; we fail with "Matching a list or a map with
+  \"ismatch\" is not supported; select a value from it". The same call as the
+  default-formatting entry above.
+  *Pin:* `extensions::ismatch::tests::a_list_value_fails_loudly`.
+- **An error inside a registered template quotes the wrong string.** .NET
+  builds the `FormattingException` from the failing item's own `BaseString`,
+  which for a template is the *template* text; the engine here quotes the
+  string being rendered. With a template `bad` = `{Nope}` and the outer
+  `x{:t:bad}y` under `OutputErrorInResult`, both write the same issue and the
+  same index, and .NET's caret block quotes `{Nope}` where ours quotes
+  `x{:t:bad}y`. Closing it means letting a child `Format` carry the base string
+  it was parsed from; it will bite any later formatter that renders a `Format`
+  parsed elsewhere.
+  *Pins:* `template-error-inside` (skipped) and
+  `extensions::template::tests::an_error_inside_a_template_is_reported_against_the_outer_template`.
+- **`substr` option parsing is culture-invariant.** .NET's `int.Parse(string)`
+  uses `NumberFormatInfo.CurrentInfo`, so the sign characters it accepts are
+  the *thread* culture's; we parse the invariant `+` / `-`. Only a culture
+  whose negative sign is not U+002D could tell, and the culture a template is
+  rendered with never reaches that call in .NET either, so there is no golden.
+  *Pin:* `extensions::substring::tests::options_are_parsed_as_dotnet_integers`.
 - **A format no formatter claims is a custom pattern in .NET.** `{0:plural}` and
   `{0:zero}` against a number hold one part, which is too few for either
   auto-detecting formatter, so `DefaultFormatter` hands the whole format to
   `long.ToString(format, culture)` — which reads it as a *custom* numeric
   pattern whose characters are all literals and renders `plural` / `zero`. A
   custom pattern is the non-goal above, so both are `UnsupportedSpec` here. The
-  cases exist to show what the auto-detection *not* firing looks like.
-  *Pins:* `plural-bare-name`, `autodetect-single-part`.
+  cases exist to show what the auto-detection *not* firing looks like. The same
+  non-goal reaches inside a formatter's own format: `{0:list:00|, }` renders
+  each item with the custom pattern `00` in .NET and is `UnsupportedSpec` here,
+  where `D2` is the standard-specifier equivalent and agrees.
+  *Pins:* `plural-bare-name`, `autodetect-single-part`,
+  `list-item-custom-pattern`, and
+  `extensions::list::tests::the_item_format_may_be_a_specifier`.
 - **`ar-SA` dates use the Hijri calendar in .NET.** `ar-SA`'s default calendar
   is `UmAlQuraCalendar`, so .NET renders 2024-03-05 as
   `24 شعبان، 1445 بعد الهجرة` — Hijri year, month and day. `fmt::date` has only
@@ -295,6 +390,33 @@ as an explicit input instead.
   here, so a custom rule is `PluralLocalizationFormatter::with_custom_rule` and
   the language table is read-only. .NET's precedence is kept: a language named
   in the formatter options still wins over the custom rule.
+- **The list's collection index lives on the format call.** .NET's
+  `ListFormatter.CollectionIndex` is a static, because extensions are shared
+  singletons; ours is a `Cell<i32>` created per call. Within one template the
+  two agree, restore included — .NET has no `finally`, so the restore runs only
+  on the success path and `try_evaluate_format` is written the same way on
+  purpose. What differs is what happens *after* an iteration that failed
+  part-way: in .NET the index stays set for the rest of the process, and every
+  later `{Index}` anywhere in it — any settings, any formatter instance —
+  reads the leaked value instead of `-1`. Reproduced with 3.6.1:
+  `{0:list:{}|a\qb}[{Index}]` under `Ignore` renders `a[1]`, and the next call
+  in the process sees `Index` = 1. That is not worth reproducing, so the
+  goldens must never depend on it: the harness renders a `{Index}` canary after
+  every case and fails the build unless the only case that leaves the index set
+  is the last one in the table (`CollectionIndexPoisoningCases`).
+  *Pins:* `list-spacer-bad-escape` (the failing iteration itself, which does
+  agree) and
+  `extensions::list::tests::a_spacer_whose_escape_sequence_does_not_resolve_fails_where_it_is_written`.
+- **A template registry's comparer is fixed at construction.** .NET's
+  `TemplateFormatter.Initialize` builds its dictionary with
+  `Settings.GetCaseSensitivityComparer()` and never revisits it, so a settings
+  change afterwards does not reach the registry. `TemplateFormatter::with_case_sensitivity`
+  mirrors that trap deliberately: the comparer is the formatter's own state,
+  not `info.settings()` at render time. `SmartFormatter::register_template`
+  seeds it from the formatter's settings at the first call, which is the path
+  that cannot get the two out of step.
+  *Pins:* `extensions::template::tests::templates_are_case_sensitive`,
+  `…::templates_can_be_case_insensitive`.
 
 ## Reproduced .NET quirks
 
@@ -354,6 +476,41 @@ Rust code the quirk forced, so nobody "cleans it up".
   `…::a_zero_digit_unicode_slice_is_an_error_but_only_where_it_is_written`,
   `…::split_skips_a_crossed_literal_it_has_already_passed`,
   `…::a_piece_resolves_the_escape_sequence_the_cut_truncated`.
+- **The list format's split stops after four separators.** .NET's
+  `ListFormatter` calls `format.Split(SplitChar, 4)`, and `Format.FindAll`
+  stops searching once it has four separators, so a fifth part is never cut —
+  which is observable, because a crossed literal in it is never resolved:
+  `{0:list:{}|-|+|*|x\u12}` on `["a","b","c"]` renders `a-b+c` in 3.6.1, where
+  an unbounded split would fail the whole placeholder with `SplitError::Count`.
+  Hence `Format::split_max(separator, max_count)` next to `Format::split`, with
+  `split(sep) == split_max(sep, usize::MAX)`. Do not fold the bound away.
+  *Pins:* `list-split-limit-fifth-part`, `list-split-limit-fourth-part`,
+  `list-split-crossed-spacer`, and
+  `extensions::list::tests::the_search_for_the_separators_stops_after_the_fourth`.
+- **A spacer is formatted against the outermost value, an item against the
+  item.** .NET's `ListFormatter` walks the `FormattingInfo` parent chain up to
+  the root and formats each spacer against *its* `CurrentValue`, which is why
+  `{Names:list:{}|{Split}| {IsAnd:and|nor} }` reads `Split` and `IsAnd` off the
+  same map the list came from. An item, by contrast, keeps the list in the
+  chain under it — a list item is not the list — so `{0:list:{} = {Index}|, }`
+  resolves `Index` one level up and `{0:list:{}={1.Index}|, }` falls back to
+  the list being iterated when the second list is shorter. Our `format_as_child`
+  pushes only the child value, so the item path needs
+  `FormattingInfo::format_as_child_of_current`, which also carries the
+  alignment override: a spacer is written with alignment 0, while a placeholder
+  *inside* a spacer keeps the one the parser gave it (`>{0,5:list:{}|-}<` is
+  `>    a-    b-    c<` but `>{0,5:list:{}|{1}}<` is `>    a    +    b    +    c<`).
+  One knowing simplification: .NET's chain for a spacer holds an extra
+  null-valued `FormattingInfo` between the list and the spacer's child, which
+  we do not push — reachable only through a nullable-operator selector inside a
+  spacer, which would short-circuit one step earlier in .NET.
+  *Pins:* `list-spacer-from-map`, `list-spacer-from-map-false`,
+  `list-spacer-positional`, `list-item-reads-outer-map`,
+  `list-index-shorter-second-list`, `list-alignment-right`,
+  `list-alignment-left`, `list-alignment-placeholder-spacer`, and
+  `extensions::list::tests::a_spacer_is_formatted_against_the_data_of_the_call`,
+  `…::an_item_format_falls_back_to_the_enclosing_scopes`,
+  `…::the_alignment_applies_to_the_items_and_not_to_the_spacers`.
 - **`LiteralText` is built through one constructor, not field by field.**
   `text` and `escape_error` are derived from `raw` and
   `convert_character_literals`, so `LiteralText::resolved(raw, start, end,
@@ -402,19 +559,24 @@ version the goldens are generated with.
 
 ## Deferred, not divergent
 
-- **`ListFormatter`'s place in the registry.** .NET's
-  `CreateDefaultSmartFormat` sorts to `list, plural, cond, ismatch, isnull,
-  choose, substr, d`, and `ListFormatter.CanAutoDetect` is `true`, so it claims
-  a `|`-separated format on an `IEnumerable` before the plural formatter sees
-  it: `{0:one|many}` on `["x","y"]` is `xmanyy` in .NET (the first part formats
-  each item, the second is the spacer) and `many` here. M3 adds the formatter
-  **at index 0**, which restores .NET's answer; the auto-detection tests in
-  `extensions::plural::tests` run with a stripped registry and pin this
-  formatter rather than the default order.
-  *Pin:* `autodetect-list` (skipped until M3).
-- **The `{Index}` selector.** In .NET this is `ListFormatter`'s `ISource` role
-  (`Extensions/ListFormatter.cs`, `selectorIsIndex` plus the static
-  `CollectionIndex`), not `DefaultSource`, so it lands with the `list` formatter
-  in M3 rather than with the M1 sources. Two behaviors to port then: inside a
-  `list` format `{Index}` is the current item's index and `{List2[Index]}` syncs
-  a second list; outside one, `{Index}` against an enumerable answers `-1`.
+Nothing. M4 (`LocalizationFormatter`, `TimeFormatter`, `GlobalVariablesSource`,
+`PersistentVariablesSource`) is still to come, but no *behavior of an extension
+already ported* is knowingly missing. The two entries that stood here through
+M2 — `ListFormatter`'s place in the registry, and the `{Index}` selector it
+carries as an `ISource` — are done:
+
+- `FormatterRegistry::new()` sorts to .NET's `list, plural, cond, ismatch,
+  isnull, choose, substr, d`, so `ListFormatter` claims a `|`-separated format
+  on a list before the plural formatter sees it and `{0:one|many}` on
+  `["a","b","c"]` is `amanybmanyc`. `FormatterRegistry::add` places a formatter
+  by the same `WellKnownExtensionTypes` rank .NET uses, which is how a
+  `TemplateFormatter` lands after `isnull` and before `choose`.
+  *Pins:* `autodetect-list`, `list-autodetect-two-part`,
+  `list-autodetect-three-part`, `list-autodetect-two-items`.
+- `{Index}` is answered by `ListSource`, as .NET answers it from
+  `ListFormatter`'s `ISource` role: inside a `list` format it is the current
+  item's index, `{List2[Index]}` synchronizes a second list and falls back to
+  the list being iterated when that one is shorter, and outside an iteration it
+  is `-1` for any value the source answers for at all (a list, a string, a map)
+  and an unhandled selector for anything else.
+  *Pins:* the `list-index-*` goldens and `extensions::list::tests::index_*`.

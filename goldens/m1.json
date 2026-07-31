@@ -9399,6 +9399,298 @@
       }
     },
     {
+      "id": "set-fill-list-items",
+      "template": "[{0,4:list:{}|,}]",
+      "args": [
+        [
+          "a",
+          "b"
+        ]
+      ],
+      "culture": "",
+      "settings": {
+        "alignmentFillCharacter": "."
+      },
+      "expected": {
+        "result": "[...a,...b]"
+      }
+    },
+    {
+      "id": "set-fill-substr",
+      "template": "[{0,6:substr(0,2)}]",
+      "args": [
+        "abcd"
+      ],
+      "culture": "",
+      "settings": {
+        "alignmentFillCharacter": "."
+      },
+      "expected": {
+        "result": "[....ab]"
+      }
+    },
+    {
+      "id": "set-fmterr-ignore-list-not-a-list",
+      "template": "[{0:list:{}|,}]",
+      "args": [
+        "x"
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "Ignore"
+      },
+      "expected": {
+        "result": "[]"
+      }
+    },
+    {
+      "id": "set-fmterr-ignore-list-one-part",
+      "template": "[{0:list:{}}]",
+      "args": [
+        [
+          "a",
+          "b"
+        ]
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "Ignore"
+      },
+      "expected": {
+        "result": "[]"
+      }
+    },
+    {
+      "id": "set-fmterr-ignore-substr-bad-option",
+      "template": "[{0:substr(x)}]",
+      "args": [
+        "abcd"
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "Ignore"
+      },
+      "expected": {
+        "result": "[]"
+      }
+    },
+    {
+      "id": "set-fmterr-ignore-substr-out-of-range",
+      "template": "[{0:substr(-99)}]",
+      "args": [
+        "abcd"
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "Ignore"
+      },
+      "expected": {
+        "result": "[]"
+      }
+    },
+    {
+      "id": "set-fmterr-ignore-substr-format-is-text",
+      "template": "[{0:substr(0,2):plain}]",
+      "args": [
+        "abcd"
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "Ignore"
+      },
+      "expected": {
+        "result": "[]"
+      }
+    },
+    {
+      "id": "set-fmterr-ignore-isnull-three-formats",
+      "template": "[{0:isnull:a|b|c}]",
+      "args": [
+        null
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "Ignore"
+      },
+      "expected": {
+        "result": "[]"
+      }
+    },
+    {
+      "id": "set-fmterr-maintaintokens-list-not-a-list",
+      "template": "[{0:list:{}|,}]",
+      "args": [
+        "x"
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "MaintainTokens"
+      },
+      "expected": {
+        "result": "[{0:list:{}|,}]"
+      }
+    },
+    {
+      "id": "set-fmterr-maintaintokens-list-one-part",
+      "template": "[{0:list:{}}]",
+      "args": [
+        [
+          "a",
+          "b"
+        ]
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "MaintainTokens"
+      },
+      "expected": {
+        "result": "[{0:list:{}}]"
+      }
+    },
+    {
+      "id": "set-fmterr-maintaintokens-substr-bad-option",
+      "template": "[{0:substr(x)}]",
+      "args": [
+        "abcd"
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "MaintainTokens"
+      },
+      "expected": {
+        "result": "[{0:substr(x):}]"
+      }
+    },
+    {
+      "id": "set-fmterr-maintaintokens-substr-out-of-range",
+      "template": "[{0:substr(-99)}]",
+      "args": [
+        "abcd"
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "MaintainTokens"
+      },
+      "expected": {
+        "result": "[{0:substr(-99):}]"
+      }
+    },
+    {
+      "id": "set-fmterr-maintaintokens-substr-format-is-text",
+      "template": "[{0:substr(0,2):plain}]",
+      "args": [
+        "abcd"
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "MaintainTokens"
+      },
+      "expected": {
+        "result": "[{0:substr(0,2):plain}]"
+      }
+    },
+    {
+      "id": "set-fmterr-maintaintokens-isnull-three-formats",
+      "template": "[{0:isnull:a|b|c}]",
+      "args": [
+        null
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "MaintainTokens"
+      },
+      "expected": {
+        "result": "[{0:isnull:a|b|c}]"
+      }
+    },
+    {
+      "id": "set-fmterr-outputerrorinresult-list-not-a-list",
+      "template": "[{0:list:{}|,}]",
+      "args": [
+        "x"
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "[Formatter named 'list' requires an IEnumerable argument and at least 2 format parameters.]"
+      }
+    },
+    {
+      "id": "set-fmterr-outputerrorinresult-list-one-part",
+      "template": "[{0:list:{}}]",
+      "args": [
+        [
+          "a",
+          "b"
+        ]
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "[Formatter named 'list' requires an IEnumerable argument and at least 2 format parameters.]"
+      }
+    },
+    {
+      "id": "set-fmterr-outputerrorinresult-substr-bad-option",
+      "template": "[{0:substr(x)}]",
+      "args": [
+        "abcd"
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "[The input string 'x' was not in a correct format.]"
+      }
+    },
+    {
+      "id": "set-fmterr-outputerrorinresult-substr-out-of-range",
+      "template": "[{0:substr(-99)}]",
+      "args": [
+        "abcd"
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "[Specified argument was out of the range of valid values.]"
+      }
+    },
+    {
+      "id": "set-fmterr-outputerrorinresult-substr-format-is-text",
+      "template": "[{0:substr(0,2):plain}]",
+      "args": [
+        "abcd"
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "[Error parsing format string: The format requires a nested placeholder at 16\n[{0:substr(0,2):plain}]\n----------------^]"
+      }
+    },
+    {
+      "id": "set-fmterr-outputerrorinresult-isnull-three-formats",
+      "template": "[{0:isnull:a|b|c}]",
+      "args": [
+        null
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "[Formatter named 'isnull' must have 1 or 2 format options]"
+      }
+    },
+    {
       "id": "fopt-unresolvable-escape",
       "template": "{0:d(a\\qb)}",
       "args": [
@@ -23428,6 +23720,76 @@
       }
     },
     {
+      "id": "errtext-no-formatter-no-selector",
+      "template": "{:nope:x}",
+      "args": [
+        42
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "Error parsing format string: No suitable Formatter could be found at 7\n{:nope:x}\n-------^"
+      }
+    },
+    {
+      "id": "errtext-no-formatter-no-selector-options",
+      "template": "{:nope()}",
+      "args": [
+        42
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "Error parsing format string: No suitable Formatter could be found at 8\n{:nope()}\n--------^"
+      }
+    },
+    {
+      "id": "errtext-no-formatter-positional-selector",
+      "template": "{0:nope:x}",
+      "args": [
+        42
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "Error parsing format string: No suitable Formatter could be found at 0\n{0:nope:x}\n^"
+      }
+    },
+    {
+      "id": "errtext-no-formatter-named-selector",
+      "template": "{Name:nope:x}",
+      "args": {
+        "Name": "Alice"
+      },
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "Error parsing format string: No suitable Formatter could be found at 0\n{Name:nope:x}\n^"
+      }
+    },
+    {
+      "id": "errtext-no-formatter-alignment-only",
+      "template": "{,5:nope:x}",
+      "args": [
+        42
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "Error parsing format string: No suitable Formatter could be found at 9\n{,5:nope:x}\n---------^"
+      }
+    },
+    {
       "id": "errtext-maintain-choose-no-match",
       "template": "{0:choose(1|2):1|2}",
       "args": [
@@ -23467,6 +23829,5342 @@
       },
       "expected": {
         "result": "{0:plural:One}"
+      }
+    },
+    {
+      "id": "list-two-part",
+      "template": "{0:list:{}|, }",
+      "args": [
+        [
+          "a",
+          "b",
+          "c"
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "result": "a, b, c"
+      }
+    },
+    {
+      "id": "list-two-part-two-items",
+      "template": "{0:list:{}|, }",
+      "args": [
+        [
+          "a",
+          "b"
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "result": "a, b"
+      }
+    },
+    {
+      "id": "list-three-part",
+      "template": "{0:list:{}|, |, and }",
+      "args": [
+        [
+          "a",
+          "b",
+          "c"
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "result": "a, b, and c"
+      }
+    },
+    {
+      "id": "list-three-part-two-items",
+      "template": "{0:list:{}|, |, and }",
+      "args": [
+        [
+          "a",
+          "b"
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "result": "a, and b"
+      }
+    },
+    {
+      "id": "list-four-part",
+      "template": "{0:list:{}|, |, and | & }",
+      "args": [
+        [
+          "a",
+          "b",
+          "c"
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "result": "a, b, and c"
+      }
+    },
+    {
+      "id": "list-four-part-two-items",
+      "template": "{0:list:{}|, |, and | & }",
+      "args": [
+        [
+          "a",
+          "b"
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "result": "a & b"
+      }
+    },
+    {
+      "id": "list-four-part-one-item",
+      "template": "{0:list:{}|, |, and | & }",
+      "args": [
+        [
+          "a"
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "result": "a"
+      }
+    },
+    {
+      "id": "list-five-parts",
+      "template": "{0:list:{}|1|2|3|4}",
+      "args": [
+        [
+          "a",
+          "b",
+          "c"
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "result": "a1b2c"
+      }
+    },
+    {
+      "id": "list-empty-list",
+      "template": ">{0:list:{}|, |, and }<",
+      "args": [
+        []
+      ],
+      "culture": "",
+      "expected": {
+        "result": "><"
+      }
+    },
+    {
+      "id": "list-empty-list-two-part",
+      "template": ">{0:list:{}|, }<",
+      "args": [
+        []
+      ],
+      "culture": "",
+      "expected": {
+        "result": "><"
+      }
+    },
+    {
+      "id": "list-empty-spacer",
+      "template": "{0:list:{}|}",
+      "args": [
+        [
+          "a",
+          "b",
+          "c"
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "result": "abc"
+      }
+    },
+    {
+      "id": "list-no-item-format",
+      "template": "{0:list:|}",
+      "args": [
+        [
+          1,
+          2,
+          3,
+          4,
+          5
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "result": "12345"
+      }
+    },
+    {
+      "id": "list-no-item-format-comma-spacer",
+      "template": "{0:list:|,}",
+      "args": [
+        [
+          1,
+          2,
+          3,
+          4,
+          5
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "result": "1,2,3,4,5"
+      }
+    },
+    {
+      "id": "list-item-spec-n2",
+      "template": "{0:list:N2|, |, and }",
+      "args": [
+        [
+          1,
+          2,
+          3,
+          4,
+          5
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "result": "1.00, 2.00, 3.00, 4.00, and 5.00"
+      }
+    },
+    {
+      "id": "list-item-suffix",
+      "template": "{0:list:{}-|}",
+      "args": [
+        [
+          "A",
+          "B",
+          "C",
+          "D",
+          "E"
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "result": "A-B-C-D-E-"
+      }
+    },
+    {
+      "id": "list-last-spacer",
+      "template": "{0:list:{}|-|+}",
+      "args": [
+        [
+          "A",
+          "B",
+          "C",
+          "D",
+          "E"
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "result": "A-B-C-D+E"
+      }
+    },
+    {
+      "id": "list-item-in-parens",
+      "template": "{0:list:({})|, |, and }",
+      "args": [
+        [
+          "A",
+          "B",
+          "C",
+          "D",
+          "E"
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "result": "(A), (B), (C), (D), and (E)"
+      }
+    },
+    {
+      "id": "list-autodetect-two-part",
+      "template": "{0:one|many}",
+      "args": [
+        [
+          "a",
+          "b",
+          "c"
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "result": "amanybmanyc"
+      }
+    },
+    {
+      "id": "list-autodetect-three-part",
+      "template": "{0:one|many|last}",
+      "args": [
+        [
+          "a",
+          "b",
+          "c"
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "result": "amanyblastc"
+      }
+    },
+    {
+      "id": "list-autodetect-two-items",
+      "template": "{0:one|many|last}",
+      "args": [
+        [
+          "a",
+          "b"
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "result": "alastb"
+      }
+    },
+    {
+      "id": "list-index-in-item",
+      "template": "{0:list:{} = {Index}|, }",
+      "args": [
+        [
+          "A",
+          "B",
+          "C",
+          "D",
+          "E"
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "result": "A = 0, B = 1, C = 2, D = 3, E = 4"
+      }
+    },
+    {
+      "id": "list-index-other-list-dotted",
+      "template": "{0:list:{} = {1.Index}|, }",
+      "args": [
+        [
+          "A",
+          "B",
+          "C",
+          "D",
+          "E"
+        ],
+        [
+          "One",
+          "Two",
+          "Three",
+          "Four",
+          "Five"
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "result": "A = One, B = Two, C = Three, D = Four, E = Five"
+      }
+    },
+    {
+      "id": "list-index-other-list-bracket",
+      "template": "{0:list:{} = {1[Index]}|, }",
+      "args": [
+        [
+          "A",
+          "B",
+          "C",
+          "D",
+          "E"
+        ],
+        [
+          "One",
+          "Two",
+          "Three",
+          "Four",
+          "Five"
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "result": "A = One, B = Two, C = Three, D = Four, E = Five"
+      }
+    },
+    {
+      "id": "list-index-other-list-uppercase",
+      "template": "{0:list:{} = {1.INDEX}|, }",
+      "args": [
+        [
+          "A",
+          "B",
+          "C",
+          "D",
+          "E"
+        ],
+        [
+          "One",
+          "Two",
+          "Three",
+          "Four",
+          "Five"
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "result": "A = One, B = Two, C = Three, D = Four, E = Five"
+      }
+    },
+    {
+      "id": "list-index-shorter-second-list",
+      "template": "{0:list:{}={1.Index}|, }",
+      "args": [
+        [
+          1,
+          2,
+          3
+        ],
+        [
+          "x"
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "result": "1=x, 2=2, 3=3"
+      }
+    },
+    {
+      "id": "list-index-outside-list",
+      "template": "{Index}",
+      "args": [
+        [
+          1,
+          2,
+          3
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "result": "-1"
+      }
+    },
+    {
+      "id": "list-index-outside-string",
+      "template": "{Index}",
+      "args": [
+        "abc"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "-1"
+      }
+    },
+    {
+      "id": "list-index-outside-map",
+      "template": "{Index}",
+      "args": {
+        "a": 1
+      },
+      "culture": "",
+      "expected": {
+        "result": "-1"
+      }
+    },
+    {
+      "id": "list-index-outside-int",
+      "template": "{Index}",
+      "args": [
+        42
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "list-index-as-member",
+      "template": "{Items.Index}",
+      "args": {
+        "Items": [
+          1,
+          2
+        ]
+      },
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "list-index-after-list",
+      "template": "{0:list:{}|,}-{Index}",
+      "args": [
+        [
+          "a",
+          "b",
+          "c"
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "result": "a,b,c--1"
+      }
+    },
+    {
+      "id": "list-index-nested",
+      "template": "{0:list:{Index}: {:list:{} = {Index}|, }|; }",
+      "args": [
+        [
+          [
+            "O",
+            "n",
+            "e"
+          ],
+          [
+            "T",
+            "w",
+            "o"
+          ]
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "result": "0: O = 0, n = 1, e = 2; 1: T = 0, w = 1, o = 2"
+      }
+    },
+    {
+      "id": "list-index-restored-after-nested",
+      "template": "{0:list:[{Index}:{1:list:{}|,}:{Index}]|;}",
+      "args": [
+        [
+          1,
+          2,
+          3
+        ],
+        [
+          "x",
+          "y"
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "result": "[0:x,y:0];[1:x,y:1];[2:x,y:2]"
+      }
+    },
+    {
+      "id": "list-spacer-from-map",
+      "template": "{Names:list:{}|{Split}| {IsAnd:and|nor} }",
+      "args": {
+        "Names": [
+          "John",
+          "Mary",
+          "Amy"
+        ],
+        "Split": ", ",
+        "IsAnd": true
+      },
+      "culture": "",
+      "expected": {
+        "result": "John, Mary and Amy"
+      }
+    },
+    {
+      "id": "list-spacer-from-map-false",
+      "template": "{Names:list:{}|{Split}| {IsAnd:and|nor} }",
+      "args": {
+        "Names": [
+          "John",
+          "Mary",
+          "Amy"
+        ],
+        "Split": ", ",
+        "IsAnd": false
+      },
+      "culture": "",
+      "expected": {
+        "result": "John, Mary nor Amy"
+      }
+    },
+    {
+      "id": "list-spacer-positional",
+      "template": "{0:list:{}|{1}| {2} }",
+      "args": [
+        [
+          "John",
+          "Mary",
+          "Amy"
+        ],
+        ", ",
+        "and"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "John, Mary and Amy"
+      }
+    },
+    {
+      "id": "list-item-reads-outer-map",
+      "template": "{Names:list:{}{Split}|, }",
+      "args": {
+        "Names": [
+          "John",
+          "Mary"
+        ],
+        "Split": "+"
+      },
+      "culture": "",
+      "expected": {
+        "result": "John+, Mary+"
+      }
+    },
+    {
+      "id": "list-alignment-right",
+      "template": ">{0,5:list:{}|, }<",
+      "args": [
+        [
+          "a",
+          "b",
+          "c"
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "result": ">    a,     b,     c<"
+      }
+    },
+    {
+      "id": "list-alignment-left",
+      "template": ">{0,-5:list:{}|, }<",
+      "args": [
+        [
+          "a",
+          "b",
+          "c"
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "result": ">a    , b    , c    <"
+      }
+    },
+    {
+      "id": "list-alignment-with-spec",
+      "template": ">{0,5:list:N2|, }<",
+      "args": [
+        [
+          1,
+          2
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "result": "> 1.00,  2.00<"
+      }
+    },
+    {
+      "id": "list-alignment-placeholder-spacer",
+      "template": ">{0,5:list:{}|{1}}<",
+      "args": [
+        [
+          "a",
+          "b",
+          "c"
+        ],
+        "+"
+      ],
+      "culture": "",
+      "expected": {
+        "result": ">    a    +    b    +    c<"
+      }
+    },
+    {
+      "id": "list-split-limit-fifth-part",
+      "template": "{0:list:{}|-|+|*|x\\u12}",
+      "args": [
+        [
+          "a",
+          "b",
+          "c"
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "result": "a-b+c"
+      }
+    },
+    {
+      "id": "list-split-limit-fourth-part",
+      "template": "{0:list:{}|-|+|x\\u12|z}",
+      "args": [
+        [
+          "a",
+          "b",
+          "c"
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "result": "a-b+c"
+      }
+    },
+    {
+      "id": "list-split-crossed-spacer",
+      "template": "{0:list:{}|x\\u12}",
+      "args": [
+        [
+          "a",
+          "b",
+          "c"
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "list-spacer-escaped-newline",
+      "template": "{0:list:{}|\\n}",
+      "args": [
+        [
+          "a",
+          "b"
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "result": "a\nb"
+      }
+    },
+    {
+      "id": "list-err-not-a-list",
+      "template": "{0:list:{}|, |, and }",
+      "args": [
+        "not a list"
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "list-err-int",
+      "template": "{0:list:{}|, |, and }",
+      "args": [
+        42
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "list-err-null",
+      "template": "{0:list:{}|, |, and }",
+      "args": [
+        null
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "list-err-one-part",
+      "template": "{0:list:{}}",
+      "args": [
+        [
+          "a",
+          "b",
+          "c"
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "list-nullable-null",
+      "template": "{TheList?:list:{}|, |, and }",
+      "args": {
+        "TheList": null
+      },
+      "culture": "",
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "list-err-short-name",
+      "template": "{0:l:{}|,}",
+      "args": [
+        [
+          "a",
+          "b",
+          "c"
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "list-err-capitalized-name",
+      "template": "{0:List:{}|,}",
+      "args": [
+        [
+          "a",
+          "b",
+          "c"
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "list-err-not-a-list-in-result",
+      "template": "{0:list:{}|, |, and }",
+      "args": [
+        "not a list"
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "Formatter named 'list' requires an IEnumerable argument and at least 2 format parameters."
+      }
+    },
+    {
+      "id": "list-err-one-part-in-result",
+      "template": "{0:list:{}}",
+      "args": [
+        [
+          "a",
+          "b",
+          "c"
+        ]
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "Formatter named 'list' requires an IEnumerable argument and at least 2 format parameters."
+      }
+    },
+    {
+      "id": "list-item-runs-plural",
+      "template": "{0:list:{} {:plural:item|items}|, }",
+      "args": [
+        [
+          1,
+          2
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "result": "1 item, 2 items"
+      }
+    },
+    {
+      "id": "list-item-runs-cond",
+      "template": "{0:list:{:cond:zero|one|more}|, }",
+      "args": [
+        [
+          0,
+          1,
+          2
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "result": "zero, one, more"
+      }
+    },
+    {
+      "id": "list-item-runs-substr",
+      "template": "{0:list:{:substr(0,2)}|, }",
+      "args": [
+        [
+          "alpha",
+          "bravo"
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "result": "al, br"
+      }
+    },
+    {
+      "id": "list-item-runs-isnull",
+      "template": "{0:list:{:isnull:-|{}}|,}",
+      "args": [
+        [
+          "a",
+          null,
+          "b"
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "result": "a,-,b"
+      }
+    },
+    {
+      "id": "list-inside-isnull",
+      "template": "{0:isnull:none|{:list:{}|-}}",
+      "args": [
+        [
+          "a",
+          "b",
+          "c"
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "result": "a-b-c"
+      }
+    },
+    {
+      "id": "list-inside-choose",
+      "template": "{0:choose(1|2):{1:list:{}|-}|other}",
+      "args": [
+        1,
+        [
+          "a",
+          "b"
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "result": "a-b"
+      }
+    },
+    {
+      "id": "list-one-item-two-part",
+      "template": "{0:list:{}|, }",
+      "args": [
+        [
+          "a"
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "result": "a"
+      }
+    },
+    {
+      "id": "list-one-item-three-part",
+      "template": "{0:list:{}|, |, and }",
+      "args": [
+        [
+          "a"
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "result": "a"
+      }
+    },
+    {
+      "id": "list-null-items",
+      "template": "{0:list:[{}]|, }",
+      "args": [
+        [
+          null,
+          "b",
+          null
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "result": "[], [b], []"
+      }
+    },
+    {
+      "id": "list-index-in-spacer",
+      "template": "{0:list:{}|[{Index}]}",
+      "args": [
+        [
+          "a",
+          "b",
+          "c"
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "result": "a[1]b[2]c"
+      }
+    },
+    {
+      "id": "list-index-in-empty-list",
+      "template": "{0:list:{Index}|,}",
+      "args": [
+        []
+      ],
+      "culture": "",
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "list-spacer-with-spec",
+      "template": "{0:list:{}|{1:N2}}",
+      "args": [
+        [
+          "a",
+          "b"
+        ],
+        2.5
+      ],
+      "culture": "",
+      "expected": {
+        "result": "a2.50b"
+      }
+    },
+    {
+      "id": "list-deeply-nested",
+      "template": "{0:list:[{:list:({:list:{}|.})|-}]|;}",
+      "args": [
+        [
+          [
+            [
+              1,
+              2
+            ],
+            [
+              3
+            ]
+          ],
+          [
+            [
+              4
+            ]
+          ]
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "result": "[(1.2)-(3)];[(4)]"
+      }
+    },
+    {
+      "id": "list-of-lists-aligned",
+      "template": ">{0,4:list:{:list:{}|-}|;}<",
+      "args": [
+        [
+          [
+            1,
+            2
+          ],
+          [
+            3,
+            4
+          ]
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "result": ">   1-   2;   3-   4<"
+      }
+    },
+    {
+      "id": "list-index-in-nested-spacer",
+      "template": "{0:list:{}|{1:list:{}|+}{Index}}",
+      "args": [
+        [
+          "a",
+          "b",
+          "c"
+        ],
+        [
+          "x",
+          "y"
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "result": "ax+y1bx+y2c"
+      }
+    },
+    {
+      "id": "list-named-cond-on-list",
+      "template": "{0:cond:full|empty}",
+      "args": [
+        [
+          "a",
+          "b",
+          "c"
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "result": "full"
+      }
+    },
+    {
+      "id": "list-named-choose-on-list",
+      "template": "{0:choose(1|2):a|b|else}",
+      "args": [
+        [
+          "a",
+          "b",
+          "c"
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "result": "else"
+      }
+    },
+    {
+      "id": "list-of-maps",
+      "template": "{People:list:{:{FirstName}}|, }",
+      "args": {
+        "People": [
+          {
+            "FirstName": "Jim",
+            "Friends": [
+              {
+                "FirstName": "Dwight"
+              },
+              {
+                "FirstName": "Michael"
+              }
+            ]
+          },
+          {
+            "FirstName": "Pam",
+            "Friends": [
+              {
+                "FirstName": "Dwight"
+              },
+              {
+                "FirstName": "Michael"
+              }
+            ]
+          },
+          {
+            "FirstName": "Dwight",
+            "Friends": [
+              {
+                "FirstName": "Michael"
+              }
+            ]
+          }
+        ]
+      },
+      "culture": "",
+      "expected": {
+        "result": "Jim, Pam, Dwight"
+      }
+    },
+    {
+      "id": "list-of-maps-nested",
+      "template": "{People:list:{:{FirstName}'s friends: {Friends:list:{FirstName}|, }}|; }",
+      "args": {
+        "People": [
+          {
+            "FirstName": "Jim",
+            "Friends": [
+              {
+                "FirstName": "Dwight"
+              },
+              {
+                "FirstName": "Michael"
+              }
+            ]
+          },
+          {
+            "FirstName": "Pam",
+            "Friends": [
+              {
+                "FirstName": "Dwight"
+              },
+              {
+                "FirstName": "Michael"
+              }
+            ]
+          },
+          {
+            "FirstName": "Dwight",
+            "Friends": [
+              {
+                "FirstName": "Michael"
+              }
+            ]
+          }
+        ]
+      },
+      "culture": "",
+      "expected": {
+        "result": "Jim's friends: Dwight, Michael; Pam's friends: Dwight, Michael; Dwight's friends: Michael"
+      }
+    },
+    {
+      "id": "list-of-lists",
+      "template": "{0:list:{:list:{:D3}|, |, }|\\n|\\n}",
+      "args": [
+        [
+          [
+            1,
+            2,
+            3
+          ],
+          [
+            4,
+            5,
+            6
+          ],
+          [
+            7,
+            8,
+            9
+          ]
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "result": "001, 002, 003\n004, 005, 006\n007, 008, 009"
+      }
+    },
+    {
+      "id": "list-of-lists-index",
+      "template": "{0:list:{Index}={:list:{}|+}|;}",
+      "args": [
+        [
+          [
+            1,
+            2
+          ],
+          [
+            3,
+            4
+          ]
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "result": "0=1+2;1=3+4"
+      }
+    },
+    {
+      "id": "list-map-is-enumerable",
+      "template": "{0:list:{}|, }",
+      "args": [
+        {
+          "a": 1,
+          "b": 2
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "[a, 1], [b, 2]"
+      }
+    },
+    {
+      "id": "list-no-format",
+      "template": "{0:list}",
+      "args": [
+        [
+          "a",
+          "b",
+          "c"
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "result": "System.Object[]"
+      }
+    },
+    {
+      "id": "list-item-custom-pattern",
+      "template": "{0:list:00|, }",
+      "args": [
+        [
+          1,
+          2
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "result": "01, 02"
+      }
+    },
+    {
+      "id": "substr-name-is-a-format-spec",
+      "template": "{0:substr}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "Long John"
+      }
+    },
+    {
+      "id": "substr-start-0",
+      "template": "{0:substr(0)}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "Long John"
+      }
+    },
+    {
+      "id": "substr-start-5",
+      "template": "{0:substr(5)}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "John"
+      }
+    },
+    {
+      "id": "substr-start-neg4",
+      "template": "{0:substr(-4)}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "John"
+      }
+    },
+    {
+      "id": "substr-start-neg4-length-2",
+      "template": "{0:substr(-4,2)}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "Jo"
+      }
+    },
+    {
+      "id": "substr-spaced-options",
+      "template": "{0:substr(-4, 2)}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "Jo"
+      }
+    },
+    {
+      "id": "substr-spaces-around-options",
+      "template": "{0:substr( -4 , 2 )}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "Jo"
+      }
+    },
+    {
+      "id": "substr-start-neg4-length-neg1",
+      "template": "{0:substr(-4,-1)}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "Joh"
+      }
+    },
+    {
+      "id": "substr-explicit-plus",
+      "template": "{0:substr(+1)}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "ong John"
+      }
+    },
+    {
+      "id": "substr-leading-zeros",
+      "template": "{0:substr(0000000005)}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "John"
+      }
+    },
+    {
+      "id": "substr-three-options",
+      "template": "{0:substr(1,2,3)}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "on"
+      }
+    },
+    {
+      "id": "substr-start-at-end",
+      "template": "{0:substr(9)}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "substr-start-at-end-length-0",
+      "template": "{0:substr(9,0)}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "substr-length-neg9",
+      "template": "{0:substr(0,-9)}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "substr-oor-empty-start-past-end",
+      "template": "{0:substr(999)}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "settings": {},
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "substr-oor-empty-start-past-end-with-length",
+      "template": "{0:substr(999,1)}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "settings": {},
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "substr-oor-empty-length-past-end",
+      "template": "{0:substr(0,999)}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "settings": {},
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "substr-oor-empty-start-3-length-7",
+      "template": "{0:substr(3,7)}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "settings": {},
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "substr-oor-empty-start-3-length-6",
+      "template": "{0:substr(3,6)}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "settings": {},
+      "expected": {
+        "result": "g John"
+      }
+    },
+    {
+      "id": "substr-oor-empty-start-9-length-1",
+      "template": "{0:substr(9,1)}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "settings": {},
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "substr-oor-empty-start-neg999",
+      "template": "{0:substr(-999)}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "settings": {},
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "substr-oor-empty-start-neg999-length-3",
+      "template": "{0:substr(-999,3)}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "settings": {},
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "substr-oor-empty-length-neg999",
+      "template": "{0:substr(0,-999)}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "settings": {},
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "substr-oor-empty-start-5-length-neg9",
+      "template": "{0:substr(5,-9)}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "settings": {},
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "substr-oor-empty-start-neg4-length-neg5",
+      "template": "{0:substr(-4,-5)}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "settings": {},
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "substr-oor-empty-length-int-min",
+      "template": "{0:substr(0,-2147483648)}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "settings": {},
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "substr-oor-empty-int-max-both",
+      "template": "{0:substr(2147483647,2147483647)}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "settings": {},
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "substr-oor-toend-start-past-end",
+      "template": "{0:substr(999)}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "settings": {
+        "subStringOutOfRangeBehavior": "ReturnStartIndexToEndOfString"
+      },
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "substr-oor-toend-start-past-end-with-length",
+      "template": "{0:substr(999,1)}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "settings": {
+        "subStringOutOfRangeBehavior": "ReturnStartIndexToEndOfString"
+      },
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "substr-oor-toend-length-past-end",
+      "template": "{0:substr(0,999)}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "settings": {
+        "subStringOutOfRangeBehavior": "ReturnStartIndexToEndOfString"
+      },
+      "expected": {
+        "result": "Long John"
+      }
+    },
+    {
+      "id": "substr-oor-toend-start-3-length-7",
+      "template": "{0:substr(3,7)}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "settings": {
+        "subStringOutOfRangeBehavior": "ReturnStartIndexToEndOfString"
+      },
+      "expected": {
+        "result": "g John"
+      }
+    },
+    {
+      "id": "substr-oor-toend-start-3-length-6",
+      "template": "{0:substr(3,6)}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "settings": {
+        "subStringOutOfRangeBehavior": "ReturnStartIndexToEndOfString"
+      },
+      "expected": {
+        "result": "g John"
+      }
+    },
+    {
+      "id": "substr-oor-toend-start-9-length-1",
+      "template": "{0:substr(9,1)}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "settings": {
+        "subStringOutOfRangeBehavior": "ReturnStartIndexToEndOfString"
+      },
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "substr-oor-toend-start-neg999",
+      "template": "{0:substr(-999)}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "settings": {
+        "subStringOutOfRangeBehavior": "ReturnStartIndexToEndOfString"
+      },
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "substr-oor-toend-start-neg999-length-3",
+      "template": "{0:substr(-999,3)}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "settings": {
+        "subStringOutOfRangeBehavior": "ReturnStartIndexToEndOfString"
+      },
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "substr-oor-toend-length-neg999",
+      "template": "{0:substr(0,-999)}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "settings": {
+        "subStringOutOfRangeBehavior": "ReturnStartIndexToEndOfString"
+      },
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "substr-oor-toend-start-5-length-neg9",
+      "template": "{0:substr(5,-9)}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "settings": {
+        "subStringOutOfRangeBehavior": "ReturnStartIndexToEndOfString"
+      },
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "substr-oor-toend-start-neg4-length-neg5",
+      "template": "{0:substr(-4,-5)}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "settings": {
+        "subStringOutOfRangeBehavior": "ReturnStartIndexToEndOfString"
+      },
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "substr-oor-toend-length-int-min",
+      "template": "{0:substr(0,-2147483648)}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "settings": {
+        "subStringOutOfRangeBehavior": "ReturnStartIndexToEndOfString"
+      },
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "substr-oor-toend-int-max-both",
+      "template": "{0:substr(2147483647,2147483647)}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "settings": {
+        "subStringOutOfRangeBehavior": "ReturnStartIndexToEndOfString"
+      },
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "substr-oor-throw-start-past-end",
+      "template": "{0:substr(999)}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "settings": {
+        "subStringOutOfRangeBehavior": "ThrowException"
+      },
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "substr-oor-throw-start-past-end-with-length",
+      "template": "{0:substr(999,1)}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "settings": {
+        "subStringOutOfRangeBehavior": "ThrowException"
+      },
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "substr-oor-throw-length-past-end",
+      "template": "{0:substr(0,999)}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "settings": {
+        "subStringOutOfRangeBehavior": "ThrowException"
+      },
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "substr-oor-throw-start-3-length-7",
+      "template": "{0:substr(3,7)}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "settings": {
+        "subStringOutOfRangeBehavior": "ThrowException"
+      },
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "substr-oor-throw-start-3-length-6",
+      "template": "{0:substr(3,6)}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "settings": {
+        "subStringOutOfRangeBehavior": "ThrowException"
+      },
+      "expected": {
+        "result": "g John"
+      }
+    },
+    {
+      "id": "substr-oor-throw-start-9-length-1",
+      "template": "{0:substr(9,1)}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "settings": {
+        "subStringOutOfRangeBehavior": "ThrowException"
+      },
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "substr-oor-throw-start-neg999",
+      "template": "{0:substr(-999)}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "settings": {
+        "subStringOutOfRangeBehavior": "ThrowException"
+      },
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "substr-oor-throw-start-neg999-length-3",
+      "template": "{0:substr(-999,3)}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "settings": {
+        "subStringOutOfRangeBehavior": "ThrowException"
+      },
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "substr-oor-throw-length-neg999",
+      "template": "{0:substr(0,-999)}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "settings": {
+        "subStringOutOfRangeBehavior": "ThrowException"
+      },
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "substr-oor-throw-start-5-length-neg9",
+      "template": "{0:substr(5,-9)}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "settings": {
+        "subStringOutOfRangeBehavior": "ThrowException"
+      },
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "substr-oor-throw-start-neg4-length-neg5",
+      "template": "{0:substr(-4,-5)}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "settings": {
+        "subStringOutOfRangeBehavior": "ThrowException"
+      },
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "substr-oor-throw-length-int-min",
+      "template": "{0:substr(0,-2147483648)}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "settings": {
+        "subStringOutOfRangeBehavior": "ThrowException"
+      },
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "substr-oor-throw-int-max-both",
+      "template": "{0:substr(2147483647,2147483647)}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "settings": {
+        "subStringOutOfRangeBehavior": "ThrowException"
+      },
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "substr-err-option-empty",
+      "template": "{0:substr()}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "substr-err-option-comma-only",
+      "template": "{0:substr(,)}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "substr-err-option-letter",
+      "template": "{0:substr( x )}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "substr-err-option-blank",
+      "template": "{0:substr( )}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "substr-err-option-blank-then-length",
+      "template": "{0:substr(  ,2)}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "substr-err-option-two-letters",
+      "template": "{0:substr(x,y)}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "substr-err-option-length-letter",
+      "template": "{0:substr(0,y)}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "substr-err-option-space-separated",
+      "template": "{0:substr(1 2)}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "substr-err-option-decimal",
+      "template": "{0:substr(1.0)}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "substr-err-option-hex-prefix",
+      "template": "{0:substr(0x1)}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "substr-err-option-arabic-indic-digit",
+      "template": "{0:substr(٣)}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "substr-err-option-pipe-separated",
+      "template": "{0:substr(1|2)}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "substr-err-option-int32-overflow",
+      "template": "{0:substr(2147483648)}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "substr-err-option-int32-underflow",
+      "template": "{0:substr(-2147483649)}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "substr-err-option-length-overflow",
+      "template": "{0:substr(0,99999999999)}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "substr-err-non-string",
+      "template": "{0:substr(0,2)}",
+      "args": [
+        12345
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "substr-err-bool",
+      "template": "{0:substr(0,2)}",
+      "args": [
+        true
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "substr-err-list",
+      "template": "{0:substr(0,2)}",
+      "args": [
+        [
+          1,
+          2
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "substr-err-format-is-text",
+      "template": "{0:substr(0,2):just text}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "substr-format-empty",
+      "template": "{0:substr(0,2):}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "Lo"
+      }
+    },
+    {
+      "id": "substr-format-self",
+      "template": "{0:substr(0,2):{}}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "Lo"
+      }
+    },
+    {
+      "id": "substr-format-brackets",
+      "template": "{0:substr(0,4):[{}]}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "[Long]"
+      }
+    },
+    {
+      "id": "substr-format-nested-substr",
+      "template": "{0:substr(0,4):{:substr(1,2)}}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "on"
+      }
+    },
+    {
+      "id": "substr-alignment-right",
+      "template": "[{0,15:substr(0,4)}]",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "[           Long]"
+      }
+    },
+    {
+      "id": "substr-alignment-left",
+      "template": "[{0,-15:substr(0,4)}]",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "[Long           ]"
+      }
+    },
+    {
+      "id": "substr-alignment-with-format",
+      "template": "[{0,10:substr(0,4):[{}]}]",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "[         [      Long         ]]"
+      }
+    },
+    {
+      "id": "substr-null",
+      "template": "{0:substr(0,3)}",
+      "args": [
+        null
+      ],
+      "culture": "",
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "substr-null-aligned",
+      "template": "[{0,10:substr(0,3)}]",
+      "args": [
+        null
+      ],
+      "culture": "",
+      "expected": {
+        "result": "[          ]"
+      }
+    },
+    {
+      "id": "substr-null-bad-options",
+      "template": "{0:substr(oops)}",
+      "args": [
+        null
+      ],
+      "culture": "",
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "substr-null-nested-isnull",
+      "template": "{0:substr(0,3):{:isnull:It is null}}",
+      "args": [
+        null
+      ],
+      "culture": "",
+      "expected": {
+        "result": "It is null"
+      }
+    },
+    {
+      "id": "substr-null-format-is-text",
+      "template": "{0:substr(0,3):plain}",
+      "args": [
+        null
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "substr-astral-first-half",
+      "template": "{0:substr(0,1)}",
+      "args": [
+        "\uD83D\uDE00abc"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "\uFFFD"
+      }
+    },
+    {
+      "id": "substr-astral-whole-pair",
+      "template": "{0:substr(0,2)}",
+      "args": [
+        "\uD83D\uDE00abc"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "\uD83D\uDE00"
+      }
+    },
+    {
+      "id": "substr-astral-second-half-onwards",
+      "template": "{0:substr(1)}",
+      "args": [
+        "\uD83D\uDE00abc"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "\uFFFDabc"
+      }
+    },
+    {
+      "id": "substr-astral-after-pair",
+      "template": "{0:substr(2)}",
+      "args": [
+        "\uD83D\uDE00abc"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "abc"
+      }
+    },
+    {
+      "id": "substr-astral-from-end",
+      "template": "{0:substr(-3)}",
+      "args": [
+        "\uD83D\uDE00abc"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "abc"
+      }
+    },
+    {
+      "id": "substr-astral-length-past-end",
+      "template": "{0:substr(0,6)}",
+      "args": [
+        "\uD83D\uDE00abc"
+      ],
+      "culture": "",
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "substr-astral-whole",
+      "template": "{0:substr(0,5)}",
+      "args": [
+        "\uD83D\uDE00abc"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "\uD83D\uDE00abc"
+      }
+    },
+    {
+      "id": "substr-zero-length",
+      "template": "{0:substr(0,0)}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "substr-start-neg9-whole-string",
+      "template": "{0:substr(-9)}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "Long John"
+      }
+    },
+    {
+      "id": "substr-start-at-end-length-neg9",
+      "template": "{0:substr(9,-9)}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "substr-aligned-empty-result",
+      "template": "[{0,6:substr(999)}]",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "[      ]"
+      }
+    },
+    {
+      "id": "substr-format-two-placeholders",
+      "template": "{0:substr(0,4):{}-{}}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "Long-Long"
+      }
+    },
+    {
+      "id": "substr-from-map",
+      "template": "{Text:substr(0,3)}",
+      "args": {
+        "Text": "Long John"
+      },
+      "culture": "",
+      "expected": {
+        "result": "Lon"
+      }
+    },
+    {
+      "id": "substr-astral-inside-pair",
+      "template": "{0:substr(1,1)}",
+      "args": [
+        "\uD83D\uDE00abc"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "\uFFFD"
+      }
+    },
+    {
+      "id": "substr-astral-spanning-pair",
+      "template": "{0:substr(1,3)}",
+      "args": [
+        "\uD83D\uDE00abc"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "\uFFFDab"
+      }
+    },
+    {
+      "id": "substr-empty-string",
+      "template": "{0:substr(0)}",
+      "args": [
+        ""
+      ],
+      "culture": "",
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "substr-empty-string-length",
+      "template": "{0:substr(0,1)}",
+      "args": [
+        ""
+      ],
+      "culture": "",
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "substr-errtext-non-string",
+      "template": "{0:substr(0,2)}",
+      "args": [
+        12345
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "Formatter named 'substr' requires at least 1 formatter option and a string? argument."
+      }
+    },
+    {
+      "id": "substr-errtext-bad-option",
+      "template": "{0:substr(x,y)}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "The input string 'x' was not in a correct format."
+      }
+    },
+    {
+      "id": "substr-errtext-overflow",
+      "template": "{0:substr(2147483648)}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "Value was either too large or too small for an Int32."
+      }
+    },
+    {
+      "id": "substr-errtext-out-of-range",
+      "template": "{0:substr(-999)}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "Specified argument was out of the range of valid values."
+      }
+    },
+    {
+      "id": "substr-errtext-format-is-text",
+      "template": "{0:substr(0,2):x}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "Error parsing format string: The format requires a nested placeholder at 15\n{0:substr(0,2):x}\n---------------^"
+      }
+    },
+    {
+      "id": "isnull-one-format-null",
+      "template": "{0:isnull:It's null}",
+      "args": [
+        null
+      ],
+      "culture": "",
+      "expected": {
+        "result": "It's null"
+      }
+    },
+    {
+      "id": "isnull-one-format-string",
+      "template": "{0:isnull:It's null}",
+      "args": [
+        "a string"
+      ],
+      "culture": "",
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "isnull-one-format-empty-string",
+      "template": "{0:isnull:It's null}",
+      "args": [
+        ""
+      ],
+      "culture": "",
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "isnull-one-format-int",
+      "template": "{0:isnull:It's null}",
+      "args": [
+        123
+      ],
+      "culture": "",
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "isnull-one-format-bool",
+      "template": "{0:isnull:It's null}",
+      "args": [
+        true
+      ],
+      "culture": "",
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "isnull-two-formats-null",
+      "template": "{0:isnull:It's null|It's not}",
+      "args": [
+        null
+      ],
+      "culture": "",
+      "expected": {
+        "result": "It's null"
+      }
+    },
+    {
+      "id": "isnull-two-formats-string",
+      "template": "{0:isnull:It's null|It's not}",
+      "args": [
+        "a string"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "It's not"
+      }
+    },
+    {
+      "id": "isnull-two-formats-empty-string",
+      "template": "{0:isnull:It's null|It's not}",
+      "args": [
+        ""
+      ],
+      "culture": "",
+      "expected": {
+        "result": "It's not"
+      }
+    },
+    {
+      "id": "isnull-two-formats-int",
+      "template": "{0:isnull:It's null|It's not}",
+      "args": [
+        123
+      ],
+      "culture": "",
+      "expected": {
+        "result": "It's not"
+      }
+    },
+    {
+      "id": "isnull-two-formats-bool",
+      "template": "{0:isnull:It's null|It's not}",
+      "args": [
+        true
+      ],
+      "culture": "",
+      "expected": {
+        "result": "It's not"
+      }
+    },
+    {
+      "id": "isnull-empty-format-null",
+      "template": "{0:isnull:}",
+      "args": [
+        null
+      ],
+      "culture": "",
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "isnull-empty-format-string",
+      "template": "{0:isnull:}",
+      "args": [
+        "a string"
+      ],
+      "culture": "",
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "isnull-empty-format-empty-string",
+      "template": "{0:isnull:}",
+      "args": [
+        ""
+      ],
+      "culture": "",
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "isnull-empty-format-int",
+      "template": "{0:isnull:}",
+      "args": [
+        123
+      ],
+      "culture": "",
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "isnull-empty-format-bool",
+      "template": "{0:isnull:}",
+      "args": [
+        true
+      ],
+      "culture": "",
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "isnull-two-empty-formats-null",
+      "template": "{0:isnull:|}",
+      "args": [
+        null
+      ],
+      "culture": "",
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "isnull-two-empty-formats-string",
+      "template": "{0:isnull:|}",
+      "args": [
+        "a string"
+      ],
+      "culture": "",
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "isnull-two-empty-formats-empty-string",
+      "template": "{0:isnull:|}",
+      "args": [
+        ""
+      ],
+      "culture": "",
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "isnull-two-empty-formats-int",
+      "template": "{0:isnull:|}",
+      "args": [
+        123
+      ],
+      "culture": "",
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "isnull-two-empty-formats-bool",
+      "template": "{0:isnull:|}",
+      "args": [
+        true
+      ],
+      "culture": "",
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "isnull-empty-options-null",
+      "template": "{0:isnull()}",
+      "args": [
+        null
+      ],
+      "culture": "",
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "isnull-empty-options-string",
+      "template": "{0:isnull()}",
+      "args": [
+        "a string"
+      ],
+      "culture": "",
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "isnull-empty-options-empty-string",
+      "template": "{0:isnull()}",
+      "args": [
+        ""
+      ],
+      "culture": "",
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "isnull-empty-options-int",
+      "template": "{0:isnull()}",
+      "args": [
+        123
+      ],
+      "culture": "",
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "isnull-empty-options-bool",
+      "template": "{0:isnull()}",
+      "args": [
+        true
+      ],
+      "culture": "",
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "isnull-blank-options-null",
+      "template": "{0:isnull( ):x}",
+      "args": [
+        null
+      ],
+      "culture": "",
+      "expected": {
+        "result": "x"
+      }
+    },
+    {
+      "id": "isnull-blank-options-string",
+      "template": "{0:isnull( ):x}",
+      "args": [
+        "a string"
+      ],
+      "culture": "",
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "isnull-blank-options-empty-string",
+      "template": "{0:isnull( ):x}",
+      "args": [
+        ""
+      ],
+      "culture": "",
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "isnull-blank-options-int",
+      "template": "{0:isnull( ):x}",
+      "args": [
+        123
+      ],
+      "culture": "",
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "isnull-blank-options-bool",
+      "template": "{0:isnull( ):x}",
+      "args": [
+        true
+      ],
+      "culture": "",
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "isnull-value-in-null-branch-null",
+      "template": "{0:isnull:[{}]}",
+      "args": [
+        null
+      ],
+      "culture": "",
+      "expected": {
+        "result": "[]"
+      }
+    },
+    {
+      "id": "isnull-value-in-null-branch-string",
+      "template": "{0:isnull:[{}]}",
+      "args": [
+        "a string"
+      ],
+      "culture": "",
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "isnull-value-in-null-branch-empty-string",
+      "template": "{0:isnull:[{}]}",
+      "args": [
+        ""
+      ],
+      "culture": "",
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "isnull-value-in-null-branch-int",
+      "template": "{0:isnull:[{}]}",
+      "args": [
+        123
+      ],
+      "culture": "",
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "isnull-value-in-null-branch-bool",
+      "template": "{0:isnull:[{}]}",
+      "args": [
+        true
+      ],
+      "culture": "",
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "isnull-value-in-value-branch-null",
+      "template": "{0:isnull:x|[{}]}",
+      "args": [
+        null
+      ],
+      "culture": "",
+      "expected": {
+        "result": "x"
+      }
+    },
+    {
+      "id": "isnull-value-in-value-branch-string",
+      "template": "{0:isnull:x|[{}]}",
+      "args": [
+        "a string"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "[a string]"
+      }
+    },
+    {
+      "id": "isnull-value-in-value-branch-empty-string",
+      "template": "{0:isnull:x|[{}]}",
+      "args": [
+        ""
+      ],
+      "culture": "",
+      "expected": {
+        "result": "[]"
+      }
+    },
+    {
+      "id": "isnull-value-in-value-branch-int",
+      "template": "{0:isnull:x|[{}]}",
+      "args": [
+        123
+      ],
+      "culture": "",
+      "expected": {
+        "result": "[123]"
+      }
+    },
+    {
+      "id": "isnull-value-in-value-branch-bool",
+      "template": "{0:isnull:x|[{}]}",
+      "args": [
+        true
+      ],
+      "culture": "",
+      "expected": {
+        "result": "[True]"
+      }
+    },
+    {
+      "id": "isnull-aligned-one-format-null",
+      "template": "{0,10:isnull:N}",
+      "args": [
+        null
+      ],
+      "culture": "",
+      "expected": {
+        "result": "         N"
+      }
+    },
+    {
+      "id": "isnull-aligned-one-format-string",
+      "template": "{0,10:isnull:N}",
+      "args": [
+        "a string"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "          "
+      }
+    },
+    {
+      "id": "isnull-aligned-one-format-empty-string",
+      "template": "{0,10:isnull:N}",
+      "args": [
+        ""
+      ],
+      "culture": "",
+      "expected": {
+        "result": "          "
+      }
+    },
+    {
+      "id": "isnull-aligned-one-format-int",
+      "template": "{0,10:isnull:N}",
+      "args": [
+        123
+      ],
+      "culture": "",
+      "expected": {
+        "result": "          "
+      }
+    },
+    {
+      "id": "isnull-aligned-one-format-bool",
+      "template": "{0,10:isnull:N}",
+      "args": [
+        true
+      ],
+      "culture": "",
+      "expected": {
+        "result": "          "
+      }
+    },
+    {
+      "id": "isnull-aligned-two-formats-null",
+      "template": "{0,10:isnull:N|Y}",
+      "args": [
+        null
+      ],
+      "culture": "",
+      "expected": {
+        "result": "         N"
+      }
+    },
+    {
+      "id": "isnull-aligned-two-formats-string",
+      "template": "{0,10:isnull:N|Y}",
+      "args": [
+        "a string"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "         Y"
+      }
+    },
+    {
+      "id": "isnull-aligned-two-formats-empty-string",
+      "template": "{0,10:isnull:N|Y}",
+      "args": [
+        ""
+      ],
+      "culture": "",
+      "expected": {
+        "result": "         Y"
+      }
+    },
+    {
+      "id": "isnull-aligned-two-formats-int",
+      "template": "{0,10:isnull:N|Y}",
+      "args": [
+        123
+      ],
+      "culture": "",
+      "expected": {
+        "result": "         Y"
+      }
+    },
+    {
+      "id": "isnull-aligned-two-formats-bool",
+      "template": "{0,10:isnull:N|Y}",
+      "args": [
+        true
+      ],
+      "culture": "",
+      "expected": {
+        "result": "         Y"
+      }
+    },
+    {
+      "id": "isnull-aligned-left-null",
+      "template": "{0,-3:isnull:N}",
+      "args": [
+        null
+      ],
+      "culture": "",
+      "expected": {
+        "result": "N  "
+      }
+    },
+    {
+      "id": "isnull-aligned-left-string",
+      "template": "{0,-3:isnull:N}",
+      "args": [
+        "a string"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "   "
+      }
+    },
+    {
+      "id": "isnull-aligned-left-empty-string",
+      "template": "{0,-3:isnull:N}",
+      "args": [
+        ""
+      ],
+      "culture": "",
+      "expected": {
+        "result": "   "
+      }
+    },
+    {
+      "id": "isnull-aligned-left-int",
+      "template": "{0,-3:isnull:N}",
+      "args": [
+        123
+      ],
+      "culture": "",
+      "expected": {
+        "result": "   "
+      }
+    },
+    {
+      "id": "isnull-aligned-left-bool",
+      "template": "{0,-3:isnull:N}",
+      "args": [
+        true
+      ],
+      "culture": "",
+      "expected": {
+        "result": "   "
+      }
+    },
+    {
+      "id": "isnull-nested-null",
+      "template": "{NullableInt:isnull:Was null|{IntValueIfNotNull:choose(1000|2000):1k|{:N2}}}",
+      "args": {
+        "NullableInt": null,
+        "IntValueIfNotNull": 1000
+      },
+      "culture": "",
+      "expected": {
+        "result": "Was null"
+      }
+    },
+    {
+      "id": "isnull-nested-2000",
+      "template": "{NullableInt:isnull:Was null|{IntValueIfNotNull:choose(1000|2000):1k|{:N2}}}",
+      "args": {
+        "NullableInt": 2000,
+        "IntValueIfNotNull": 2000
+      },
+      "culture": "",
+      "expected": {
+        "result": "2,000.00"
+      }
+    },
+    {
+      "id": "isnull-nested-else",
+      "template": "{NullableInt:isnull:Was null|{IntValueIfNotNull:choose(1000|2000):1k|{:N2}}}",
+      "args": {
+        "NullableInt": 1234.5,
+        "IntValueIfNotNull": 1234.5
+      },
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "isnull-nested-substr",
+      "template": "{0:isnull:nothing|{:substr(0,4)}}",
+      "args": [
+        "Long John"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "Long"
+      }
+    },
+    {
+      "id": "isnull-nested-list",
+      "template": "{0:isnull:nothing|{:list:{}|, }}",
+      "args": [
+        [
+          "a",
+          "b"
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "result": "a, b"
+      }
+    },
+    {
+      "id": "isnull-map-value",
+      "template": "{0:isnull:N|Y}",
+      "args": [
+        {
+          "a": 1
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "Y"
+      }
+    },
+    {
+      "id": "isnull-list-value",
+      "template": "{0:isnull:N|Y}",
+      "args": [
+        [
+          1,
+          2
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "result": "Y"
+      }
+    },
+    {
+      "id": "isnull-null-member",
+      "template": "{City:isnull:no city|{}}",
+      "args": {
+        "City": null,
+        "Name": "Alice"
+      },
+      "culture": "",
+      "expected": {
+        "result": "no city"
+      }
+    },
+    {
+      "id": "isnull-nullable-member",
+      "template": "{City?.Length:isnull:N|Y}",
+      "args": {
+        "City": null
+      },
+      "culture": "",
+      "expected": {
+        "result": "N"
+      }
+    },
+    {
+      "id": "isnull-in-list",
+      "template": "{0:list:{:isnull:-|{}}|,}",
+      "args": [
+        [
+          "a",
+          null,
+          "b"
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "result": "a,-,b"
+      }
+    },
+    {
+      "id": "isnull-err-choose-options",
+      "template": "{0:isnull(op|ti|ons):Is null}",
+      "args": [
+        null
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "isnull-err-three-formats",
+      "template": "{0:isnull:1|2|3}",
+      "args": [
+        null
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "isnull-err-escaped-split-char",
+      "template": "{0:isnull:a\\|b|c}",
+      "args": [
+        null
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "isnull-err-short-name",
+      "template": "{0:null:a|b}",
+      "args": [
+        null
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "isnull-errtext-choose-options",
+      "template": "{0:isnull(op|ti|ons):Is null}",
+      "args": [
+        null
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "Formatter named 'isnull' does not allow choose options"
+      }
+    },
+    {
+      "id": "isnull-errtext-three-formats",
+      "template": "{0:isnull:1|2|3}",
+      "args": [
+        null
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "Formatter named 'isnull' must have 1 or 2 format options"
+      }
+    },
+    {
+      "id": "isnull-crossed-first-branch-null",
+      "template": "{0:isnull:\\u12|a}",
+      "args": [
+        null
+      ],
+      "culture": "",
+      "expected": {
+        "result": "\u0012"
+      }
+    },
+    {
+      "id": "isnull-crossed-first-branch-value",
+      "template": "{0:isnull:\\u12|a}",
+      "args": [
+        "v"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "a"
+      }
+    },
+    {
+      "id": "isnull-crossed-second-branch-null",
+      "template": "{0:isnull:a|\\u12}",
+      "args": [
+        null
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "isnull-crossed-second-branch-value",
+      "template": "{0:isnull:a|\\u12}",
+      "args": [
+        "v"
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "isnull-crossed-third-branch",
+      "template": "{0:isnull:a|b|\\u12}",
+      "args": [
+        null
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "ismatch-match-with-value",
+      "template": "{theValue:ismatch(^.+123.+$):Okay - {}|No match content}",
+      "args": {
+        "theValue": "Some123Content"
+      },
+      "culture": "",
+      "expected": {
+        "result": "Okay - Some123Content"
+      }
+    },
+    {
+      "id": "ismatch-match-fixed-text",
+      "template": "{theValue:ismatch(^.+123.+$):Fixed content if match|No match content}",
+      "args": {
+        "theValue": "Some123Content"
+      },
+      "culture": "",
+      "expected": {
+        "result": "Fixed content if match"
+      }
+    },
+    {
+      "id": "ismatch-no-match",
+      "template": "{theValue:ismatch(^.+999.+$):{}|No match content}",
+      "args": {
+        "theValue": "Some123Content"
+      },
+      "culture": "",
+      "expected": {
+        "result": "No match content"
+      }
+    },
+    {
+      "id": "ismatch-match-empty-branch",
+      "template": "{theValue:ismatch(^.+123.+$):|Only content with no match}",
+      "args": {
+        "theValue": "Some123Content"
+      },
+      "culture": "",
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "ismatch-no-match-branch",
+      "template": "{theValue:ismatch(^.+999.+$):|Only content with no match}",
+      "args": {
+        "theValue": "Some123Content"
+      },
+      "culture": "",
+      "expected": {
+        "result": "Only content with no match"
+      }
+    },
+    {
+      "id": "ismatch-groups-all",
+      "template": "{theValue:ismatch(^.+\\(1\\)\\(2\\)\\(3\\).+$):Matches for '{}'\\: {m[0]} - {m[1]} - {m[2]} - {m[3]}|No match}",
+      "args": {
+        "theValue": "Some123Content"
+      },
+      "culture": "",
+      "expected": {
+        "result": "Matches for 'Some123Content': Some123Content - 1 - 2 - 3"
+      }
+    },
+    {
+      "id": "ismatch-groups-two",
+      "template": "{theValue:ismatch(^.+\\(1\\)\\(2\\)\\(3\\).+$):First 2 matches in '{}'\\: {m[1]} and {m[2]}|No match}",
+      "args": {
+        "theValue": "Some123Content"
+      },
+      "culture": "",
+      "expected": {
+        "result": "First 2 matches in 'Some123Content': 1 and 2"
+      }
+    },
+    {
+      "id": "ismatch-groups-no-match",
+      "template": "{theValue:ismatch(^.+\\(9\\)\\(9\\)\\(9\\).+$):Matches for '{}'\\: {m[1]}|No match}",
+      "args": {
+        "theValue": "Some123Content"
+      },
+      "culture": "",
+      "expected": {
+        "result": "No match"
+      }
+    },
+    {
+      "id": "ismatch-group-zero",
+      "template": "{theValue:ismatch(123):[{m[0]}]|no}",
+      "args": {
+        "theValue": "Some123Content"
+      },
+      "culture": "",
+      "expected": {
+        "result": "[123]"
+      }
+    },
+    {
+      "id": "ismatch-group-not-participating",
+      "template": "{theValue:ismatch(\\(123\\)|\\(zzz\\)):[{m[1]}][{m[2]}]|no}",
+      "args": {
+        "theValue": "Some123Content"
+      },
+      "culture": "",
+      "expected": {
+        "result": "[123][]"
+      }
+    },
+    {
+      "id": "ismatch-outer-selector-in-branch",
+      "template": "{theValue:ismatch(123):got {} and {theValue}|no}",
+      "args": {
+        "theValue": "Some123Content"
+      },
+      "culture": "",
+      "expected": {
+        "result": "got Some123Content and Some123Content"
+      }
+    },
+    {
+      "id": "ismatch-group-out-of-range",
+      "template": "{theValue:ismatch(123):[{m[5]}]|no}",
+      "args": {
+        "theValue": "Some123Content"
+      },
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "ismatch-escape-pipe",
+      "template": "{0:ismatch(\\\\|):found {}|}",
+      "args": [
+        "|"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "found |"
+      }
+    },
+    {
+      "id": "ismatch-escape-question",
+      "template": "{0:ismatch(\\\\?):found {}|}",
+      "args": [
+        "?"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "found ?"
+      }
+    },
+    {
+      "id": "ismatch-escape-plus",
+      "template": "{0:ismatch(\\\\+):found {}|}",
+      "args": [
+        "+"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "found +"
+      }
+    },
+    {
+      "id": "ismatch-escape-star",
+      "template": "{0:ismatch(\\\\*):found {}|}",
+      "args": [
+        "*"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "found *"
+      }
+    },
+    {
+      "id": "ismatch-escape-caret",
+      "template": "{0:ismatch(\\\\^):found {}|}",
+      "args": [
+        "^"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "found ^"
+      }
+    },
+    {
+      "id": "ismatch-escape-dollar",
+      "template": "{0:ismatch(\\\\$):found {}|}",
+      "args": [
+        "$"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "found $"
+      }
+    },
+    {
+      "id": "ismatch-escape-dot",
+      "template": "{0:ismatch(\\\\.):found {}|}",
+      "args": [
+        "."
+      ],
+      "culture": "",
+      "expected": {
+        "result": "found ."
+      }
+    },
+    {
+      "id": "ismatch-escape-open-bracket",
+      "template": "{0:ismatch(\\\\[):found {}|}",
+      "args": [
+        "["
+      ],
+      "culture": "",
+      "expected": {
+        "result": "found ["
+      }
+    },
+    {
+      "id": "ismatch-escape-close-bracket",
+      "template": "{0:ismatch(\\\\]):found {}|}",
+      "args": [
+        "]"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "found ]"
+      }
+    },
+    {
+      "id": "ismatch-escape-colon",
+      "template": "{0:ismatch(\\:):found {}|}",
+      "args": [
+        ":"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "found :"
+      }
+    },
+    {
+      "id": "ismatch-escape-backslash",
+      "template": "{0:ismatch(\\\\\\\\):found {}|}",
+      "args": [
+        "\\"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "found \\"
+      }
+    },
+    {
+      "id": "ismatch-escape-open-paren",
+      "template": "{0:ismatch(\\\\\\():found {}|}",
+      "args": [
+        "("
+      ],
+      "culture": "",
+      "expected": {
+        "result": "found ("
+      }
+    },
+    {
+      "id": "ismatch-escape-close-paren",
+      "template": "{0:ismatch(\\\\\\)):found {}|}",
+      "args": [
+        ")"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "found )"
+      }
+    },
+    {
+      "id": "ismatch-escape-open-brace",
+      "template": "{0:ismatch(\\\\\\{):found {}|}",
+      "args": [
+        "{"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "found {"
+      }
+    },
+    {
+      "id": "ismatch-escape-close-brace",
+      "template": "{0:ismatch(\\\\\\}):found {}|}",
+      "args": [
+        "}"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "found }"
+      }
+    },
+    {
+      "id": "ismatch-pattern-parens-group",
+      "template": "{0:ismatch(\\\\\\(\\([^\\\\\\)]*\\)\\\\\\)):found {}|}",
+      "args": [
+        "Text (inside) parenthesis"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "found Text (inside) parenthesis"
+      }
+    },
+    {
+      "id": "ismatch-pattern-parens-group-no-match",
+      "template": "{0:ismatch(\\\\\\(\\([^\\\\\\)]*\\)\\\\\\)):found {}|}",
+      "args": [
+        "No parenthesis"
+      ],
+      "culture": "",
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "ismatch-pattern-lookahead",
+      "template": "{0:ismatch(Lon\\(?=don\\)):found {}|}",
+      "args": [
+        "This is London"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "found This is London"
+      }
+    },
+    {
+      "id": "ismatch-pattern-lookahead-no-match",
+      "template": "{0:ismatch(Lon\\(?=don\\)):found {}|}",
+      "args": [
+        "This is Loando"
+      ],
+      "culture": "",
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "ismatch-pattern-angle-brackets",
+      "template": "{0:ismatch(<[^<>]+>):found {}|}",
+      "args": [
+        "<abcde>"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "found <abcde>"
+      }
+    },
+    {
+      "id": "ismatch-pattern-angle-brackets-no-match",
+      "template": "{0:ismatch(<[^<>]+>):found {}|}",
+      "args": [
+        "<>"
+      ],
+      "culture": "",
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "ismatch-pattern-open-repetition",
+      "template": "{0:ismatch(\\\\d\\{3,\\}):found {}|}",
+      "args": [
+        "1234"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "found 1234"
+      }
+    },
+    {
+      "id": "ismatch-pattern-open-repetition-no-match",
+      "template": "{0:ismatch(\\\\d\\{3,\\}):found {}|}",
+      "args": [
+        "12"
+      ],
+      "culture": "",
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "ismatch-pattern-counted-and-escaped-colon",
+      "template": "{0:ismatch(^.\\{5,\\}\\:,$):found {}|}",
+      "args": [
+        "1z%aW:,"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "found 1z%aW:,"
+      }
+    },
+    {
+      "id": "ismatch-pattern-counted-and-escaped-colon-no-match",
+      "template": "{0:ismatch(^.\\{5,\\}\\:,$):found {}|}",
+      "args": [
+        "1z:,"
+      ],
+      "culture": "",
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "ismatch-pattern-backreference",
+      "template": "{0:ismatch(\\(a\\)\\\\1):found {}|}",
+      "args": [
+        "aa"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "found aa"
+      }
+    },
+    {
+      "id": "ismatch-pattern-named-backreference",
+      "template": "{0:ismatch(\\(?<x>a\\)\\\\k<x>):found {}|}",
+      "args": [
+        "aa"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "found aa"
+      }
+    },
+    {
+      "id": "ismatch-pattern-atomic-group",
+      "template": "{0:ismatch(\\(?>a+\\)b):found {}|}",
+      "args": [
+        "ab"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "found ab"
+      }
+    },
+    {
+      "id": "ismatch-pattern-inline-comment",
+      "template": "{0:ismatch(a\\(?#hi\\)b):found {}|}",
+      "args": [
+        "ab"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "found ab"
+      }
+    },
+    {
+      "id": "ismatch-pattern-conditional",
+      "template": "{0:ismatch(^\\(a\\)?\\(?\\(1\\)b|c\\)$):found {}|}",
+      "args": [
+        "ab"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "found ab"
+      }
+    },
+    {
+      "id": "ismatch-pattern-end-of-string-lower-z",
+      "template": "{0:ismatch(^ab\\\\z):found {}|}",
+      "args": [
+        "ab"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "found ab"
+      }
+    },
+    {
+      "id": "ismatch-pattern-start-of-string-upper-a",
+      "template": "{0:ismatch(\\\\Aab):found {}|}",
+      "args": [
+        "abc"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "found abc"
+      }
+    },
+    {
+      "id": "ismatch-pattern-word-boundary",
+      "template": "{0:ismatch(\\\\bcat\\\\b):found {}|}",
+      "args": [
+        "a cat sat"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "found a cat sat"
+      }
+    },
+    {
+      "id": "ismatch-pattern-word-boundary-no-match",
+      "template": "{0:ismatch(\\\\bcat\\\\b):found {}|}",
+      "args": [
+        "concatenate"
+      ],
+      "culture": "",
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "ismatch-pattern-digit-class",
+      "template": "{0:ismatch(^\\\\d+$):found {}|}",
+      "args": [
+        "1234"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "found 1234"
+      }
+    },
+    {
+      "id": "ismatch-pattern-word-class",
+      "template": "{0:ismatch(^\\\\w+$):found {}|}",
+      "args": [
+        "a_1"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "found a_1"
+      }
+    },
+    {
+      "id": "ismatch-pattern-whitespace-class",
+      "template": "{0:ismatch(^\\\\s+$):found {}|}",
+      "args": [
+        " \t"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "found  \t"
+      }
+    },
+    {
+      "id": "ismatch-pattern-exact-quantifier",
+      "template": "{0:ismatch(^a\\{2\\}$):found {}|}",
+      "args": [
+        "aa"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "found aa"
+      }
+    },
+    {
+      "id": "ismatch-pattern-exact-quantifier-no-match",
+      "template": "{0:ismatch(^a\\{2\\}$):found {}|}",
+      "args": [
+        "aaa"
+      ],
+      "culture": "",
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "ismatch-pattern-lookbehind",
+      "template": "{0:ismatch(\\(?<=a\\)b):found {}|}",
+      "args": [
+        "ab"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "found ab"
+      }
+    },
+    {
+      "id": "ismatch-pattern-negative-lookahead",
+      "template": "{0:ismatch(a\\(?!b\\)):found {}|}",
+      "args": [
+        "ac"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "found ac"
+      }
+    },
+    {
+      "id": "ismatch-pattern-negative-lookahead-no-match",
+      "template": "{0:ismatch(a\\(?!b\\)):found {}|}",
+      "args": [
+        "ab"
+      ],
+      "culture": "",
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "ismatch-pattern-nested-groups",
+      "template": "{0:ismatch(\\(\\(a\\)\\(b\\)\\)):found {}|}",
+      "args": [
+        "ab"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "found ab"
+      }
+    },
+    {
+      "id": "ismatch-pattern-unicode-letter",
+      "template": "{0:ismatch(^\\\\p\\{L\\}+$):found {}|}",
+      "args": [
+        "abcé"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "found abcé"
+      }
+    },
+    {
+      "id": "ismatch-pattern-non-greedy",
+      "template": "{0:ismatch(^<.+?>):found {}|}",
+      "args": [
+        "<a><b>"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "found <a><b>"
+      }
+    },
+    {
+      "id": "ismatch-alternation-groups",
+      "template": "{0:ismatch(^\\(a|b\\)\\(c|d\\)$):[{m[1]}][{m[2]}]|no}",
+      "args": [
+        "ad"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "[a][d]"
+      }
+    },
+    {
+      "id": "ismatch-nested-group-numbers",
+      "template": "{0:ismatch(\\(\\(a\\)\\(b\\)\\)):[{m[1]}][{m[2]}][{m[3]}]|no}",
+      "args": [
+        "ab"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "[ab][a][b]"
+      }
+    },
+    {
+      "id": "ismatch-empty-value",
+      "template": "{0:ismatch(^$):empty|not}",
+      "args": [
+        ""
+      ],
+      "culture": "",
+      "expected": {
+        "result": "empty"
+      }
+    },
+    {
+      "id": "ismatch-nested-ismatch",
+      "template": "{0:ismatch(a):{:ismatch(b):ab|a only}|none}",
+      "args": [
+        "ab"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "ab"
+      }
+    },
+    {
+      "id": "ismatch-in-list",
+      "template": "{0:list:{:ismatch(a):A|B}|,}",
+      "args": [
+        [
+          "a",
+          "b",
+          "a"
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "result": "A,B,A"
+      }
+    },
+    {
+      "id": "ismatch-aligned-group",
+      "template": "[{theValue,12:ismatch(123):{m[0]}|no}]",
+      "args": {
+        "theValue": "Some123Content"
+      },
+      "culture": "",
+      "expected": {
+        "result": "[         123]"
+      }
+    },
+    {
+      "id": "ismatch-matches-as-list",
+      "template": "{theValue:ismatch(^.+\\(1\\)\\(2\\)\\(3\\).+$):[{m:list:{}|-}]|no}",
+      "args": {
+        "theValue": "Some123Content"
+      },
+      "culture": "",
+      "expected": {
+        "result": "[Some123Content-1-2-3]"
+      }
+    },
+    {
+      "id": "ismatch-matches-with-index",
+      "template": "{theValue:ismatch(^.+\\(1\\)\\(2\\)\\(3\\).+$):{m:list:{Index}={}|,}|no}",
+      "args": {
+        "theValue": "Some123Content"
+      },
+      "culture": "",
+      "expected": {
+        "result": "0=Some123Content,1=1,2=2,3=3"
+      }
+    },
+    {
+      "id": "ismatch-group-through-substr",
+      "template": "{theValue:ismatch(\\(Some\\)):{m[1]:substr(0,2)}|no}",
+      "args": {
+        "theValue": "Some123Content"
+      },
+      "culture": "",
+      "expected": {
+        "result": "So"
+      }
+    },
+    {
+      "id": "ismatch-ignore-one-part",
+      "template": "[{theValue:ismatch(123):one}]",
+      "args": {
+        "theValue": "Some123Content"
+      },
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "Ignore"
+      },
+      "expected": {
+        "result": "[]"
+      }
+    },
+    {
+      "id": "ismatch-maintaintokens-one-part",
+      "template": "[{theValue:ismatch(123):one}]",
+      "args": {
+        "theValue": "Some123Content"
+      },
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "MaintainTokens"
+      },
+      "expected": {
+        "result": "[{theValue:ismatch(123):one}]"
+      }
+    },
+    {
+      "id": "ismatch-unicode-category-euro",
+      "template": "{Currency:ismatch(\\\\p\\{Sc\\}):Currency: {m[0]}|Unknown}",
+      "args": {
+        "Currency": "€ Euro"
+      },
+      "culture": "",
+      "expected": {
+        "result": "Currency: €"
+      }
+    },
+    {
+      "id": "ismatch-unicode-category-yen",
+      "template": "{Currency:ismatch(\\\\p\\{Sc\\}):Currency: {m[0]}|Unknown}",
+      "args": {
+        "Currency": "¥ Yen"
+      },
+      "culture": "",
+      "expected": {
+        "result": "Currency: ¥"
+      }
+    },
+    {
+      "id": "ismatch-unicode-category-none",
+      "template": "{Currency:ismatch(\\\\p\\{Sc\\}):Currency: {m[0]}|Unknown}",
+      "args": {
+        "Currency": "none"
+      },
+      "culture": "",
+      "expected": {
+        "result": "Unknown"
+      }
+    },
+    {
+      "id": "ismatch-empty-pattern",
+      "template": "{0:ismatch():yes [{m[0]}]|no}",
+      "args": [
+        "abc"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "yes []"
+      }
+    },
+    {
+      "id": "ismatch-alignment",
+      "template": "{0,10:ismatch(b):Y|N}",
+      "args": [
+        "abc"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "         Y"
+      }
+    },
+    {
+      "id": "ismatch-bool-value",
+      "template": "{0:ismatch(True):yes|no}",
+      "args": [
+        true
+      ],
+      "culture": "",
+      "expected": {
+        "result": "yes"
+      }
+    },
+    {
+      "id": "ismatch-int-value-group",
+      "template": "{0:ismatch(^\\(1\\)2$):a {m[1]}|b}",
+      "args": [
+        12
+      ],
+      "culture": "",
+      "expected": {
+        "result": "a 1"
+      }
+    },
+    {
+      "id": "ismatch-null-value",
+      "template": "{0:ismatch(^.+$):a|b}",
+      "args": [
+        null
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "ismatch-case-sensitive-default",
+      "template": "{theValue:ismatch(^SOME123.+$):Okay - {}|No match content}",
+      "args": {
+        "theValue": "Some123Content"
+      },
+      "culture": "",
+      "expected": {
+        "result": "No match content"
+      }
+    },
+    {
+      "id": "ismatch-ignore-case",
+      "template": "{theValue:ismatch(^SOME123.+$):Okay - {}|No match content}",
+      "args": {
+        "theValue": "Some123Content"
+      },
+      "culture": "",
+      "settings": {
+        "regexOptions": "IgnoreCase"
+      },
+      "expected": {
+        "result": "Okay - Some123Content"
+      }
+    },
+    {
+      "id": "ismatch-ignore-case-alternation",
+      "template": "{0:ismatch(^A|B$):yes|no}",
+      "args": [
+        "b"
+      ],
+      "culture": "",
+      "settings": {
+        "regexOptions": "IgnoreCase"
+      },
+      "expected": {
+        "result": "yes"
+      }
+    },
+    {
+      "id": "ismatch-multiline-default",
+      "template": "{0:ismatch(^b$):yes|no}",
+      "args": [
+        "a\nb\nc"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "no"
+      }
+    },
+    {
+      "id": "ismatch-multiline",
+      "template": "{0:ismatch(^b$):yes|no}",
+      "args": [
+        "a\nb\nc"
+      ],
+      "culture": "",
+      "settings": {
+        "regexOptions": "Multiline"
+      },
+      "expected": {
+        "result": "yes"
+      }
+    },
+    {
+      "id": "ismatch-singleline",
+      "template": "{0:ismatch(^a.b$):yes|no}",
+      "args": [
+        "a\nb"
+      ],
+      "culture": "",
+      "settings": {
+        "regexOptions": "Singleline"
+      },
+      "expected": {
+        "result": "yes"
+      }
+    },
+    {
+      "id": "ismatch-ignore-pattern-whitespace",
+      "template": "{0:ismatch(^a b c$):yes|no}",
+      "args": [
+        "abc"
+      ],
+      "culture": "",
+      "settings": {
+        "regexOptions": "IgnorePatternWhitespace"
+      },
+      "expected": {
+        "result": "yes"
+      }
+    },
+    {
+      "id": "ismatch-ignore-pattern-whitespace-in-class",
+      "template": "{0:ismatch(^[a b]+$):yes|no}",
+      "args": [
+        "a b"
+      ],
+      "culture": "",
+      "settings": {
+        "regexOptions": "IgnorePatternWhitespace"
+      },
+      "expected": {
+        "result": "yes"
+      }
+    },
+    {
+      "id": "ismatch-compiled-is-a-hint",
+      "template": "{theValue:ismatch(^.+123.+$):Okay|No}",
+      "args": {
+        "theValue": "Some123Content"
+      },
+      "culture": "",
+      "settings": {
+        "regexOptions": "Compiled"
+      },
+      "expected": {
+        "result": "Okay"
+      }
+    },
+    {
+      "id": "ismatch-culture-invariant",
+      "template": "{theValue:ismatch(^SOME123.+$):Okay|No}",
+      "args": {
+        "theValue": "Some123Content"
+      },
+      "culture": "",
+      "settings": {
+        "regexOptions": "IgnoreCase, CultureInvariant"
+      },
+      "expected": {
+        "result": "Okay"
+      }
+    },
+    {
+      "id": "ismatch-split-char-match",
+      "template": "{theValue:ismatch(^.+123.+$):|Has match for '{}'|~|No match|}",
+      "args": {
+        "theValue": "Some123Content"
+      },
+      "culture": "",
+      "settings": {
+        "isMatchSplitChar": "~"
+      },
+      "expected": {
+        "result": "|Has match for 'Some123Content'|"
+      }
+    },
+    {
+      "id": "ismatch-split-char-no-match",
+      "template": "{theValue:ismatch(^.+999.+$):|Has match for '{}'|~|No match|}",
+      "args": {
+        "theValue": "Some123Content"
+      },
+      "culture": "",
+      "settings": {
+        "isMatchSplitChar": "~"
+      },
+      "expected": {
+        "result": "|No match|"
+      }
+    },
+    {
+      "id": "ismatch-placeholder-name",
+      "template": "{theValue:ismatch(^\\(123\\)\\(4\\)\\(5\\)$):First match in '{}'\\: {match[1]}|No match}",
+      "args": {
+        "theValue": "12345"
+      },
+      "culture": "",
+      "settings": {
+        "isMatchPlaceholderName": "match"
+      },
+      "expected": {
+        "result": "First match in '12345': 123"
+      }
+    },
+    {
+      "id": "ismatch-err-one-part",
+      "template": "{theValue:ismatch(^.+123.+$):Dummy content}",
+      "args": {
+        "theValue": "Some123Content"
+      },
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "ismatch-err-three-parts",
+      "template": "{theValue:ismatch(^.+123.+$):a|b|c}",
+      "args": {
+        "theValue": "Some123Content"
+      },
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "ismatch-err-empty-format",
+      "template": "{theValue:ismatch(^.+123.+$):}",
+      "args": {
+        "theValue": "Some123Content"
+      },
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "ismatch-err-no-format",
+      "template": "{theValue:ismatch(^.+123.+$)}",
+      "args": {
+        "theValue": "Some123Content"
+      },
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "ismatch-err-bad-escape",
+      "template": "{0:ismatch(a\\qb):yes|no}",
+      "args": [
+        "x"
+      ],
+      "culture": "",
+      "expected": {
+        "error": "ArgumentException"
+      }
+    },
+    {
+      "id": "ismatch-errtext-one-part",
+      "template": "{theValue:ismatch(^.+123.+$):Dummy content}",
+      "args": {
+        "theValue": "Some123Content"
+      },
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "Formatter named 'ismatch' requires at least 2 format options."
+      }
+    },
+    {
+      "id": "ismatch-errtext-no-format",
+      "template": "{theValue:ismatch(^.+123.+$)}",
+      "args": {
+        "theValue": "Some123Content"
+      },
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "Formatter named 'ismatch' requires at least 2 format options."
+      }
+    },
+    {
+      "id": "ismatch-errtext-null-value",
+      "template": "{0:ismatch(^.+$):a|b}",
+      "args": [
+        null
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "Error parsing format string: No suitable Formatter could be found at 0\n{0:ismatch(^.+$):a|b}\n^"
+      }
+    },
+    {
+      "id": "ismatch-dollar-before-final-newline",
+      "template": "{0:ismatch(^abc$):yes|no}",
+      "args": [
+        "abc\n"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "yes"
+      }
+    },
+    {
+      "id": "template-name-in-format",
+      "template": "{:t:firstLast}",
+      "args": {
+        "First": "Scott",
+        "Last": "Rippey"
+      },
+      "culture": "",
+      "settings": {
+        "templates": "Standard"
+      },
+      "expected": {
+        "result": "Scott Rippey"
+      }
+    },
+    {
+      "id": "template-name-in-options",
+      "template": "{:t(firstLast)}",
+      "args": {
+        "First": "Scott",
+        "Last": "Rippey"
+      },
+      "culture": "",
+      "settings": {
+        "templates": "Standard"
+      },
+      "expected": {
+        "result": "Scott Rippey"
+      }
+    },
+    {
+      "id": "template-empty-options-name-in-format",
+      "template": "{:t():firstLast}",
+      "args": {
+        "First": "Scott",
+        "Last": "Rippey"
+      },
+      "culture": "",
+      "settings": {
+        "templates": "Standard"
+      },
+      "expected": {
+        "result": "Scott Rippey"
+      }
+    },
+    {
+      "id": "template-options-win-over-format",
+      "template": "{:t(firstLast):IGNORED}",
+      "args": {
+        "First": "Scott",
+        "Last": "Rippey"
+      },
+      "culture": "",
+      "settings": {
+        "templates": "Standard"
+      },
+      "expected": {
+        "result": "Scott Rippey"
+      }
+    },
+    {
+      "id": "template-long-name-is-unknown",
+      "template": "{:template:firstLast}",
+      "args": {
+        "First": "Scott",
+        "Last": "Rippey"
+      },
+      "culture": "",
+      "settings": {
+        "templates": "Standard"
+      },
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "template-selector-before-name",
+      "template": "{First:t:lastFirst}",
+      "args": {
+        "First": "Scott",
+        "Last": "Rippey"
+      },
+      "culture": "",
+      "settings": {
+        "templates": "Standard"
+      },
+      "expected": {
+        "result": "Rippey, Scott"
+      }
+    },
+    {
+      "id": "template-last-first",
+      "template": "{:t:lastFirst}",
+      "args": {
+        "First": "Scott",
+        "Last": "Rippey"
+      },
+      "culture": "",
+      "settings": {
+        "templates": "Standard"
+      },
+      "expected": {
+        "result": "Rippey, Scott"
+      }
+    },
+    {
+      "id": "template-upper-first",
+      "template": "{:t:FIRST}",
+      "args": {
+        "First": "Scott",
+        "Last": "Rippey"
+      },
+      "culture": "",
+      "settings": {
+        "templates": "Standard"
+      },
+      "expected": {
+        "result": "SCOTT"
+      }
+    },
+    {
+      "id": "template-lower-last",
+      "template": "{:t:last}",
+      "args": {
+        "First": "Scott",
+        "Last": "Rippey"
+      },
+      "culture": "",
+      "settings": {
+        "templates": "Standard"
+      },
+      "expected": {
+        "result": "rippey"
+      }
+    },
+    {
+      "id": "template-upper-last",
+      "template": "{:t:LAST}",
+      "args": {
+        "First": "Scott",
+        "Last": "Rippey"
+      },
+      "culture": "",
+      "settings": {
+        "templates": "Standard"
+      },
+      "expected": {
+        "result": "RIPPEY"
+      }
+    },
+    {
+      "id": "template-nested",
+      "template": "{:t:NESTED}",
+      "args": {
+        "First": "Scott",
+        "Last": "Rippey"
+      },
+      "culture": "",
+      "settings": {
+        "templates": "Standard"
+      },
+      "expected": {
+        "result": "SCOTT rippey"
+      }
+    },
+    {
+      "id": "template-case-insensitive-name",
+      "template": "{:T:firstLast}",
+      "args": {
+        "First": "Scott",
+        "Last": "Rippey"
+      },
+      "culture": "",
+      "settings": {
+        "caseSensitivity": "CaseInsensitive",
+        "templates": "CaseInsensitive"
+      },
+      "expected": {
+        "result": "Scott Rippey"
+      }
+    },
+    {
+      "id": "template-case-insensitive-last",
+      "template": "{:t:LAST}",
+      "args": {
+        "First": "Scott",
+        "Last": "Rippey"
+      },
+      "culture": "",
+      "settings": {
+        "caseSensitivity": "CaseInsensitive",
+        "templates": "CaseInsensitive"
+      },
+      "expected": {
+        "result": "rippey"
+      }
+    },
+    {
+      "id": "template-case-insensitive-nested",
+      "template": "{:t:NeStEd}",
+      "args": {
+        "First": "Scott",
+        "Last": "Rippey"
+      },
+      "culture": "",
+      "settings": {
+        "caseSensitivity": "CaseInsensitive",
+        "templates": "CaseInsensitive"
+      },
+      "expected": {
+        "result": "SCOTT rippey"
+      }
+    },
+    {
+      "id": "template-case-insensitive-nested-lower",
+      "template": "{:t:nested}",
+      "args": {
+        "First": "Scott",
+        "Last": "Rippey"
+      },
+      "culture": "",
+      "settings": {
+        "caseSensitivity": "CaseInsensitive",
+        "templates": "CaseInsensitive"
+      },
+      "expected": {
+        "result": "SCOTT rippey"
+      }
+    },
+    {
+      "id": "template-case-sensitive-wrong-case",
+      "template": "{:t:LaSt}",
+      "args": {
+        "First": "Scott",
+        "Last": "Rippey"
+      },
+      "culture": "",
+      "settings": {
+        "templates": "Standard"
+      },
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "template-unknown-name",
+      "template": "{:t:does-not-exist}",
+      "args": {
+        "First": "Scott",
+        "Last": "Rippey"
+      },
+      "culture": "",
+      "settings": {
+        "templates": "Standard"
+      },
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "template-unknown-name-in-options",
+      "template": "{:t(nope)}",
+      "args": {
+        "First": "Scott",
+        "Last": "Rippey"
+      },
+      "culture": "",
+      "settings": {
+        "templates": "Standard"
+      },
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "template-empty-name-unregistered",
+      "template": "{:t:}",
+      "args": {
+        "First": "Scott",
+        "Last": "Rippey"
+      },
+      "culture": "",
+      "settings": {
+        "templates": "Standard"
+      },
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "template-empty-options-unregistered",
+      "template": "{:t()}",
+      "args": {
+        "First": "Scott",
+        "Last": "Rippey"
+      },
+      "culture": "",
+      "settings": {
+        "templates": "Standard"
+      },
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "template-empty-options-and-format-unregistered",
+      "template": "{:t():}",
+      "args": {
+        "First": "Scott",
+        "Last": "Rippey"
+      },
+      "culture": "",
+      "settings": {
+        "templates": "Standard"
+      },
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "template-empty-name",
+      "template": "{:t:}",
+      "args": {
+        "First": "Scott",
+        "Last": "Rippey"
+      },
+      "culture": "",
+      "settings": {
+        "templates": "WithEmptyName"
+      },
+      "expected": {
+        "result": "EMPTY"
+      }
+    },
+    {
+      "id": "template-empty-options",
+      "template": "{:t()}",
+      "args": {
+        "First": "Scott",
+        "Last": "Rippey"
+      },
+      "culture": "",
+      "settings": {
+        "templates": "WithEmptyName"
+      },
+      "expected": {
+        "result": "EMPTY"
+      }
+    },
+    {
+      "id": "template-empty-options-and-format",
+      "template": "{:t():}",
+      "args": {
+        "First": "Scott",
+        "Last": "Rippey"
+      },
+      "culture": "",
+      "settings": {
+        "templates": "WithEmptyName"
+      },
+      "expected": {
+        "result": "EMPTY"
+      }
+    },
+    {
+      "id": "template-errtext-unknown",
+      "template": "{:t:does-not-exist}",
+      "args": {
+        "First": "Scott",
+        "Last": "Rippey"
+      },
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult",
+        "templates": "Standard"
+      },
+      "expected": {
+        "result": "Formatter named 't' found no registered template named 'does-not-exist'"
+      }
+    },
+    {
+      "id": "template-errtext-empty-name",
+      "template": "{:t:}",
+      "args": {
+        "First": "Scott",
+        "Last": "Rippey"
+      },
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult",
+        "templates": "Standard"
+      },
+      "expected": {
+        "result": "Formatter named 't' found no registered template named ''"
+      }
+    },
+    {
+      "id": "template-errtext-unknown-case-insensitive",
+      "template": "{:T:nope}",
+      "args": {
+        "First": "Scott",
+        "Last": "Rippey"
+      },
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult",
+        "caseSensitivity": "CaseInsensitive",
+        "templates": "CaseInsensitive"
+      },
+      "expected": {
+        "result": "Formatter named 'T' found no registered template named 'nope'"
+      }
+    },
+    {
+      "id": "template-escaped-backslash",
+      "template": "{:t:back\\\\slash}",
+      "args": {
+        "First": "Scott",
+        "Last": "Rippey"
+      },
+      "culture": "",
+      "settings": {
+        "templates": "Standard"
+      },
+      "expected": {
+        "result": "BS"
+      }
+    },
+    {
+      "id": "template-escaped-backslash-in-options",
+      "template": "{:t(back\\\\slash)}",
+      "args": {
+        "First": "Scott",
+        "Last": "Rippey"
+      },
+      "culture": "",
+      "settings": {
+        "templates": "Standard"
+      },
+      "expected": {
+        "result": "BS"
+      }
+    },
+    {
+      "id": "template-escaped-braces",
+      "template": "{:t:\\{brace\\}}",
+      "args": {
+        "First": "Scott",
+        "Last": "Rippey"
+      },
+      "culture": "",
+      "settings": {
+        "templates": "Standard"
+      },
+      "expected": {
+        "result": "BRACE"
+      }
+    },
+    {
+      "id": "template-pipe-in-name",
+      "template": "{:t:a|b}",
+      "args": {
+        "First": "Scott",
+        "Last": "Rippey"
+      },
+      "culture": "",
+      "settings": {
+        "templates": "Standard"
+      },
+      "expected": {
+        "result": "PIPE"
+      }
+    },
+    {
+      "id": "template-pipe-in-options",
+      "template": "{:t(a|b)}",
+      "args": {
+        "First": "Scott",
+        "Last": "Rippey"
+      },
+      "culture": "",
+      "settings": {
+        "templates": "Standard"
+      },
+      "expected": {
+        "result": "PIPE"
+      }
+    },
+    {
+      "id": "template-unresolvable-escape",
+      "template": "{:t:back\\slash}",
+      "args": {
+        "First": "Scott",
+        "Last": "Rippey"
+      },
+      "culture": "",
+      "settings": {
+        "templates": "Standard"
+      },
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "template-crossed-escape",
+      "template": "{:t:a\\u12}",
+      "args": {
+        "First": "Scott",
+        "Last": "Rippey"
+      },
+      "culture": "",
+      "settings": {
+        "templates": "Standard"
+      },
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "template-unicode-escape",
+      "template": "{:t:\\u0041}",
+      "args": {
+        "First": "Scott",
+        "Last": "Rippey"
+      },
+      "culture": "",
+      "settings": {
+        "templates": "Standard"
+      },
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "template-alignment-right",
+      "template": "[{,20:t(firstLast)}]",
+      "args": {
+        "First": "Scott",
+        "Last": "Rippey"
+      },
+      "culture": "",
+      "settings": {
+        "templates": "Standard"
+      },
+      "expected": {
+        "result": "[Scott                    Rippey]"
+      }
+    },
+    {
+      "id": "template-alignment-left",
+      "template": "[{,-20:t(firstLast)}]",
+      "args": {
+        "First": "Scott",
+        "Last": "Rippey"
+      },
+      "culture": "",
+      "settings": {
+        "templates": "Standard"
+      },
+      "expected": {
+        "result": "[Scott                    Rippey]"
+      }
+    },
+    {
+      "id": "template-selected-value",
+      "template": "{Person:t:firstLast}",
+      "args": {
+        "Person": {
+          "First": "Scott",
+          "Last": "Rippey"
+        }
+      },
+      "culture": "",
+      "settings": {
+        "templates": "Standard"
+      },
+      "expected": {
+        "result": "Scott Rippey"
+      }
+    },
+    {
+      "id": "template-twice",
+      "template": "{:t:firstLast} / {:t:lastFirst}",
+      "args": {
+        "First": "Scott",
+        "Last": "Rippey"
+      },
+      "culture": "",
+      "settings": {
+        "templates": "Standard"
+      },
+      "expected": {
+        "result": "Scott Rippey / Rippey, Scott"
+      }
+    },
+    {
+      "id": "template-around-literals",
+      "template": "<{:t:FIRST}>",
+      "args": {
+        "First": "Scott",
+        "Last": "Rippey"
+      },
+      "culture": "",
+      "settings": {
+        "templates": "Standard"
+      },
+      "expected": {
+        "result": "<SCOTT>"
+      }
+    },
+    {
+      "id": "template-name-with-space",
+      "template": "{:t:first Last}",
+      "args": {
+        "First": "Scott",
+        "Last": "Rippey"
+      },
+      "culture": "",
+      "settings": {
+        "templates": "Standard"
+      },
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "template-name-with-colon",
+      "template": "{:t:a\\:b}",
+      "args": {
+        "First": "Scott",
+        "Last": "Rippey"
+      },
+      "culture": "",
+      "settings": {
+        "templates": "Standard"
+      },
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "template-cond-formal",
+      "template": "{0:t(salutation)}:",
+      "args": [
+        {
+          "First": "Joe",
+          "Last": "Doe"
+        },
+        true
+      ],
+      "culture": "",
+      "settings": {
+        "templates": "Standard"
+      },
+      "expected": {
+        "result": "Dear Mr Doe:"
+      }
+    },
+    {
+      "id": "template-cond-informal",
+      "template": "{0:t(salutation)}:",
+      "args": [
+        {
+          "First": "Joe",
+          "Last": "Doe"
+        },
+        false
+      ],
+      "culture": "",
+      "settings": {
+        "templates": "Standard"
+      },
+      "expected": {
+        "result": "Hi Joe:"
+      }
+    },
+    {
+      "id": "template-in-list",
+      "template": "{:{:t:NESTED}|, }",
+      "args": [
+        [
+          {
+            "First": "Jim",
+            "Last": "Halpert"
+          },
+          {
+            "First": "Pam",
+            "Last": "Beasley"
+          },
+          {
+            "First": "Dwight",
+            "Last": "Schrute"
+          }
+        ]
+      ],
+      "culture": "",
+      "settings": {
+        "templates": "Standard"
+      },
+      "expected": {
+        "result": "JIM halpert, PAM beasley, DWIGHT schrute"
+      }
+    },
+    {
+      "id": "template-in-list-with-index",
+      "template": "{:{:t:indexed}|, }",
+      "args": [
+        [
+          {
+            "First": "Jim"
+          },
+          {
+            "First": "Pam"
+          }
+        ]
+      ],
+      "culture": "",
+      "settings": {
+        "templates": "Standard"
+      },
+      "expected": {
+        "result": "[0] Jim, [1] Pam"
+      }
+    },
+    {
+      "id": "template-ignore-unknown",
+      "template": "[{:t:nope}]",
+      "args": {
+        "First": "Scott",
+        "Last": "Rippey"
+      },
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "Ignore",
+        "templates": "Standard"
+      },
+      "expected": {
+        "result": "[]"
+      }
+    },
+    {
+      "id": "template-maintaintokens-unknown",
+      "template": "[{:t:nope}]",
+      "args": {
+        "First": "Scott",
+        "Last": "Rippey"
+      },
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "MaintainTokens",
+        "templates": "Standard"
+      },
+      "expected": {
+        "result": "[{:t:nope}]"
+      }
+    },
+    {
+      "id": "template-compatibility-mode",
+      "template": "{0:t:x}",
+      "args": [
+        "a string"
+      ],
+      "culture": "",
+      "settings": {
+        "stringFormatCompatibility": true,
+        "templates": "Simple"
+      },
+      "expected": {
+        "result": "a string"
+      }
+    },
+    {
+      "id": "template-error-inside",
+      "template": "x{:t:bad}y",
+      "args": {
+        "First": "Scott",
+        "Last": "Rippey"
+      },
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult",
+        "templates": "Standard"
+      },
+      "expected": {
+        "result": "xError parsing format string: No source extension could handle the selector named \"Nope\" at 1\n{Nope}\n-^y"
+      }
+    },
+    {
+      "id": "list-spacer-bad-escape",
+      "template": ">{0:list:{}|a\\qb}<",
+      "args": [
+        [
+          "a",
+          "b",
+          "c"
+        ]
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": ">aUnrecognized escape sequence \"\\q\" in literal.<"
       }
     }
   ]

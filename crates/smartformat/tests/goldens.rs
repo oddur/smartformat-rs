@@ -11,8 +11,17 @@ use std::collections::BTreeMap;
 
 use serde_json::{Map, Value as Json};
 use smartformat::fmt::culture;
+use smartformat::formatter::{DefaultFormatter, FormatterRegistry};
 use smartformat::parsing::ParserSettings;
-use smartformat::{CaseSensitivity, Error, ErrorAction, SmartFormatter, SmartSettings, Value};
+#[cfg(feature = "plural")]
+use smartformat::PluralLocalizationFormatter;
+use smartformat::{
+    CaseSensitivity, ChooseFormatter, ConditionalFormatter, Error, ErrorAction, ListFormatter,
+    NullFormatter, SmartFormatter, SmartSettings, SubStringFormatter, SubStringOutOfRangeBehavior,
+    Value,
+};
+#[cfg(feature = "regex-formatters")]
+use smartformat::{IsMatchFormatter, RegexOptions};
 
 const GOLDENS: &str = include_str!("../../../goldens/m1.json");
 
@@ -134,6 +143,23 @@ const SKIPPED: &[(&str, &str)] = &[
     (
         "culture-fmt-choose-soft-hyphen-option",
         "choose compares its options ordinally; .NET compares them with the culture's CompareInfo, which ignores a soft hyphen",
+    ),
+    (
+        "list-map-is-enumerable",
+        "a .NET dictionary is IEnumerable, so `list` renders it as its KeyValuePairs; a map is not a list here",
+    ),
+    ("list-no-format", COLLECTION_TYPE_NAME),
+    (
+        "list-item-custom-pattern",
+        "a custom numeric pattern as the item format is the documented custom-pattern non-goal; `D2` is the standard-specifier equivalent",
+    ),
+    (
+        "ismatch-dollar-before-final-newline",
+        "regex engines: .NET's `$` also matches before a final newline, where fancy-regex's does not (`\\z` agrees in both)",
+    ),
+    (
+        "template-error-inside",
+        "an error inside a registered template quotes the template's own text in .NET; the engine here quotes the string being rendered",
     ),
 ];
 
@@ -274,6 +300,12 @@ fn skip_reason(id: &str, case: &Json) -> Option<&'static str> {
     if has_datetime(&case["args"]) {
         return Some("date/time values need the \"time\" feature");
     }
+    // Without IsMatchFormatter registered, every `ismatch` placeholder reports
+    // "No suitable Formatter could be found" instead of matching anything.
+    #[cfg(not(feature = "regex-formatters"))]
+    if id.starts_with("ismatch-") {
+        return Some("the ismatch formatter needs the \"regex-formatters\" feature");
+    }
     None
 }
 
@@ -282,6 +314,7 @@ fn skip_reason(id: &str, case: &Json) -> Option<&'static str> {
 fn formatter_for(node: &Json) -> SmartFormatter {
     let mut settings = SmartSettings::default();
     let mut parser_settings = ParserSettings::default();
+    let mut extensions = Extensions::default();
 
     if let Some(entries) = node.as_object() {
         for (key, value) in entries {
@@ -311,6 +344,24 @@ fn formatter_for(node: &Json) -> SmartFormatter {
                     parser_settings.convert_character_string_literals =
                         value.as_bool().expect("a boolean setting");
                 }
+                "regexOptions" => extensions.regex_options = Some(text().to_owned()),
+                "isMatchSplitChar" => {
+                    extensions.is_match_split_char = text().chars().next();
+                }
+                "isMatchPlaceholderName" => {
+                    extensions.is_match_placeholder_name = Some(text().to_owned());
+                }
+                "subStringOutOfRangeBehavior" => {
+                    extensions.substring_out_of_range = Some(match text() {
+                        "ReturnEmptyString" => SubStringOutOfRangeBehavior::ReturnEmptyString,
+                        "ReturnStartIndexToEndOfString" => {
+                            SubStringOutOfRangeBehavior::ReturnStartIndexToEndOfString
+                        }
+                        "ThrowException" => SubStringOutOfRangeBehavior::ThrowException,
+                        other => panic!("unknown out-of-range behavior {other}"),
+                    });
+                }
+                "templates" => extensions.templates = Some(text().to_owned()),
                 other => panic!("unknown setting {other}"),
             }
         }
@@ -318,7 +369,147 @@ fn formatter_for(node: &Json) -> SmartFormatter {
 
     parser_settings.error_action = settings.parse_error_action;
     parser_settings.string_format_compatibility = settings.string_format_compatibility;
-    SmartFormatter::with_parser_settings(settings, parser_settings)
+    let mut smart = SmartFormatter::with_parser_settings(settings, parser_settings);
+
+    // The extension properties are not settings, so they cannot be passed to
+    // the constructor: .NET reaches into the built registry with
+    // `GetFormatterExtension<T>()` and assigns them. There is no downcast from
+    // `dyn Formatter` here, so a case that configures one rebuilds the whole
+    // registry instead, letting `FormatterRegistry::add` put each extension at
+    // its .NET rank.
+    if extensions.needs_custom_registry() {
+        *smart.formatters_mut() = extensions.registry();
+    }
+    if let Some(set) = &extensions.templates {
+        for (name, template) in template_fixture(set) {
+            smart
+                .register_template(name, template)
+                .expect("the template fixture registers");
+        }
+    }
+
+    smart
+}
+
+/// The extension configuration a case's `settings` object asks for, mirroring
+/// the same keys in the harness's `CaseSettings`. `None` means "as
+/// [`FormatterRegistry::new`] builds it".
+#[derive(Default)]
+struct Extensions {
+    regex_options: Option<String>,
+    is_match_split_char: Option<char>,
+    is_match_placeholder_name: Option<String>,
+    substring_out_of_range: Option<SubStringOutOfRangeBehavior>,
+    templates: Option<String>,
+}
+
+impl Extensions {
+    fn needs_custom_registry(&self) -> bool {
+        self.regex_options.is_some()
+            || self.is_match_split_char.is_some()
+            || self.is_match_placeholder_name.is_some()
+            || self.substring_out_of_range.is_some()
+    }
+
+    /// The default registry, with the configured extensions in place of the
+    /// ones [`FormatterRegistry::new`] would have built. Every formatter here
+    /// is well known to [`FormatterRegistry::add`], so the order is the same
+    /// one `CreateDefaultSmartFormat` ends up with whatever order they are
+    /// added in.
+    fn registry(&self) -> FormatterRegistry {
+        let mut registry = FormatterRegistry::empty();
+        registry.add(Box::new(ListFormatter::new()));
+        #[cfg(feature = "plural")]
+        registry.add(Box::new(PluralLocalizationFormatter::new()));
+        registry.add(Box::new(ConditionalFormatter::new()));
+        #[cfg(feature = "regex-formatters")]
+        {
+            let mut is_match = IsMatchFormatter::new();
+            if let Some(options) = &self.regex_options {
+                is_match.set_regex_options(regex_options(options));
+            }
+            if let Some(split_char) = self.is_match_split_char {
+                is_match
+                    .set_split_char(split_char)
+                    .expect("a valid split character");
+            }
+            if let Some(name) = &self.is_match_placeholder_name {
+                is_match.set_placeholder_name_for_matches(name.clone());
+            }
+            registry.add(Box::new(is_match));
+        }
+        registry.add(Box::new(NullFormatter::new()));
+        registry.add(Box::new(ChooseFormatter::new()));
+        let mut substring = SubStringFormatter::new();
+        if let Some(behavior) = self.substring_out_of_range {
+            substring.set_out_of_range_behavior(behavior);
+        }
+        registry.add(Box::new(substring));
+        registry.add(Box::new(DefaultFormatter));
+        registry
+    }
+}
+
+/// .NET writes a `[Flags]` enum as its comma-separated member names.
+#[cfg(feature = "regex-formatters")]
+fn regex_options(text: &str) -> RegexOptions {
+    text.split(',')
+        .map(str::trim)
+        .fold(RegexOptions::NONE, |options, name| {
+            let flag = match name {
+                "None" => RegexOptions::NONE,
+                "IgnoreCase" => RegexOptions::IGNORE_CASE,
+                "Multiline" => RegexOptions::MULTILINE,
+                "ExplicitCapture" => RegexOptions::EXPLICIT_CAPTURE,
+                "Compiled" => RegexOptions::COMPILED,
+                "Singleline" => RegexOptions::SINGLELINE,
+                "IgnorePatternWhitespace" => RegexOptions::IGNORE_PATTERN_WHITESPACE,
+                "RightToLeft" => RegexOptions::RIGHT_TO_LEFT,
+                "ECMAScript" => RegexOptions::ECMA_SCRIPT,
+                "CultureInvariant" => RegexOptions::CULTURE_INVARIANT,
+                "NonBacktracking" => RegexOptions::NON_BACKTRACKING,
+                other => panic!("unknown RegexOptions member {other}"),
+            };
+            RegexOptions::from_bits(options.bits() | flag.bits())
+        })
+}
+
+/// The named template sets the harness's `TemplateFixture` registers, in the
+/// same order — the two must agree name for name, because .NET fixes the
+/// registry's comparer at construction and rejects a duplicate.
+fn template_fixture(set: &str) -> Vec<(&'static str, &'static str)> {
+    let standard: Vec<(&'static str, &'static str)> = vec![
+        ("firstLast", "{First} {Last}"),
+        ("lastFirst", "{Last}, {First}"),
+        ("FIRST", "{First.ToUpper}"),
+        ("last", "{Last.ToLower}"),
+        ("LAST", "{Last.ToUpper}"),
+        ("NESTED", "{:t:FIRST} {:t:last}"),
+        (r"back\slash", "BS"),
+        ("{brace}", "BRACE"),
+        ("a|b", "PIPE"),
+        ("indexed", "[{Index}] {First}"),
+        ("salutation", "{1:cond:{:t:sal_formal}|{:t:sal_informal}}"),
+        ("sal_formal", "Dear Mr {Last}"),
+        ("sal_informal", "Hi {First}"),
+        ("bad", "{Nope}"),
+    ];
+    match set {
+        "Standard" => standard,
+        "WithEmptyName" => {
+            let mut fixture = standard;
+            fixture.push(("", "EMPTY"));
+            fixture
+        }
+        // `LAST` collides with `last` under OrdinalIgnoreCase, and .NET's
+        // `Dictionary.Add` throws rather than overwriting.
+        "CaseInsensitive" => standard
+            .into_iter()
+            .filter(|(name, _)| *name != "LAST")
+            .collect(),
+        "Simple" => vec![("firstLast", "{First} {Last}"), ("x", "X-TEMPLATE")],
+        other => panic!("unknown template set {other}"),
+    }
 }
 
 fn error_action(name: &str) -> ErrorAction {
