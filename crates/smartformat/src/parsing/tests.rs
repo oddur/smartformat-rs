@@ -160,11 +160,18 @@ fn error_count_matches_dotnet() {
 }
 
 #[test]
-fn error_positions_are_byte_offsets() {
-    // The 'ä' takes two bytes, so byte and character offsets differ.
+fn error_positions_are_utf16_offsets() {
+    // 'ä' is two UTF-8 bytes but one UTF-16 code unit, and .NET counts the
+    // latter: the space sits at index 5, not at byte 7.
     let issues = errors(parser().parse("äöü{a b}"));
     assert_eq!(issues.len(), 1);
-    assert_eq!(issues[0].position, "äöü{a".len());
+    assert_eq!(issues[0].position, 5);
+    assert_ne!(issues[0].position, "äöü{a".len());
+
+    // An astral character is two UTF-16 code units but one `char`.
+    let issues = errors(parser().parse("\u{1f600}{a b}"));
+    assert_eq!(issues.len(), 1);
+    assert_eq!(issues[0].position, 4);
 }
 
 #[test]
@@ -229,6 +236,51 @@ fn error_action_maintain_tokens_keeps_the_text() {
         // Nothing is lost, whatever the recovery.
         let restored: String = parsed.items.iter().map(|item| item.raw()).collect();
         assert_eq!(restored, template);
+    }
+}
+
+#[test]
+fn error_carets_are_positioned_in_utf16_code_units() {
+    let parser = parser_with(ParserSettings {
+        error_action: ErrorAction::OutputErrorInResult,
+        ..ParserSettings::default()
+    });
+
+    // Every one of these messages is what SmartFormat.NET 3.6.1 produces.
+    for (template, expected) in [
+        (
+            "äöü{a b}",
+            concat!(
+                "The format string has 1 issue:\n",
+                "'0x20': Invalid character in the selector\n",
+                "In: \"äöü{a b}\"\n",
+                "At:  -----^ "
+            ),
+        ),
+        (
+            "\u{1f600}{a b}",
+            concat!(
+                "The format string has 1 issue:\n",
+                "'0x20': Invalid character in the selector\n",
+                "In: \"\u{1f600}{a b}\"\n",
+                "At:  ----^ "
+            ),
+        ),
+        (
+            "\u{1f600}0}",
+            concat!(
+                "The format string has 1 issue:\n",
+                "Format string has too many closing braces\n",
+                "In: \"\u{1f600}0}\"\n",
+                "At:  ---^ "
+            ),
+        ),
+    ] {
+        assert_eq!(
+            parser.parse(template).unwrap().to_string(),
+            expected,
+            "message for {template:?}"
+        );
     }
 }
 
@@ -681,6 +733,60 @@ fn parse_unicode_surrogate_pair() {
 }
 
 #[test]
+fn high_surrogate_pairs_only_with_a_low_surrogate() {
+    // A lone high surrogate followed by a *complete* pair: the lone unit must
+    // not swallow the high half of the pair, or the emoji straddles a literal
+    // boundary and three replacement characters come out. .NET writes the
+    // unpaired code unit and then the emoji.
+    let parsed = parse(r"a\ud83d\ud83d\ude00");
+    assert_eq!(parsed.literal_text(), "a\u{fffd}\u{1f600}");
+    assert_eq!(parsed.items.len(), 3);
+    assert_eq!(parsed.items[1].raw(), r"\ud83d");
+    assert_eq!(parsed.items[2].raw(), r"\ud83d\ude00");
+
+    // A low surrogate never starts a pair.
+    let parsed = parse(r"a\ude00\ud83d\ude00");
+    assert_eq!(parsed.literal_text(), "a\u{fffd}\u{1f600}");
+    assert_eq!(parsed.items.len(), 3);
+    assert_eq!(parsed.items[2].raw(), r"\ud83d\ude00");
+
+    // Nor does a high surrogate pair with an escape that is not a surrogate.
+    let parsed = parse(r"a\ud83d\u0041b");
+    assert_eq!(parsed.literal_text(), "a\u{fffd}Ab");
+    assert_eq!(parsed.items[1].raw(), r"\ud83d");
+    assert_eq!(parsed.items[2].raw(), r"\u0041");
+}
+
+#[test]
+fn unicode_escape_parses_hex_the_way_dotnet_does() {
+    // .NET parses the four characters with `NumberStyles.HexNumber`, which
+    // skips leading and trailing whitespace — space and 0x09..=0x0D only.
+    assert_eq!(parse(r"\u 123").literal_text(), "\u{123}");
+    assert_eq!(parse(r"x\u 123y").literal_text(), "x\u{123}y");
+    assert_eq!(parse(r"\u  12").literal_text(), "\u{12}");
+    assert_eq!(parse("\\u123\tz").literal_text(), "\u{123}z");
+    // A window shortened by the end of the input is parsed as it stands.
+    assert_eq!(parse(r"abc\u12").literal_text(), "abc\u{12}");
+
+    // `NumberStyles.HexNumber` allows neither a sign nor a `0x` prefix, and
+    // whitespace only around the digits.
+    for template in [
+        r"\u+123",
+        r"\u-123",
+        r"\u0x12",
+        r"\u12 3",
+        r"\u    ",
+        r"abc\u",
+        "\\u\u{a0}123",
+    ] {
+        assert!(
+            parser().parse(template).is_err(),
+            "{template:?} should not parse"
+        );
+    }
+}
+
+#[test]
 fn placeholder_display_rebuilds_the_placeholder() {
     // .NET `Placeholder.ToString()` normalizes the alignment, unescapes the
     // formatter options, and always ends a non-null format with a colon —
@@ -715,6 +821,97 @@ fn unrecognized_escape_sequence_fails_when_converting() {
     let issues = errors(parser().parse(r"abc\xyz"));
     assert_eq!(issues.len(), 1);
     assert!(issues[0].message.contains(r"\x"));
+    // The position is the escape character, and the caret spans the sequence.
+    assert_eq!(issues[0].position, 3);
+}
+
+#[test]
+fn unrecognized_escape_sequences_obey_the_error_action() {
+    // Every escape error is an issue like any other, so the error action
+    // decides what happens to it — the parser never fails outright unless the
+    // action says so.
+    let templates = [
+        r"abc\xyz",         // unknown sequence in literal text
+        r"abc\",            // escape character at the very end
+        r"a\uwxyz",         // unparsable \u sequence
+        r"{0:d(a\qb):txt}", // unknown sequence in formatter options
+    ];
+
+    for template in templates {
+        assert!(
+            parser().parse(template).is_err(),
+            "{template:?} should fail with ErrorAction::Error"
+        );
+
+        for action in [
+            ErrorAction::Ignore,
+            ErrorAction::MaintainTokens,
+            ErrorAction::OutputErrorInResult,
+        ] {
+            let parsed = parser_with(ParserSettings {
+                error_action: action,
+                ..ParserSettings::default()
+            })
+            .parse(template);
+            assert!(
+                parsed.is_ok(),
+                "{template:?} should recover with {action:?}, got {:?}",
+                parsed.err()
+            );
+        }
+    }
+}
+
+#[test]
+fn recovered_escape_sequences_stay_as_written() {
+    // Outside a placeholder there is nothing to drop, so the sequence itself
+    // is what stays in the output, whichever lenient action is chosen.
+    for action in [ErrorAction::Ignore, ErrorAction::MaintainTokens] {
+        let parser = parser_with(ParserSettings {
+            error_action: action,
+            ..ParserSettings::default()
+        });
+        assert_eq!(parser.parse(r"abc\xyz").unwrap().to_string(), r"abc\xyz");
+        assert_eq!(parser.parse(r"abc\").unwrap().to_string(), r"abc\");
+    }
+
+    // Inside a placeholder the ordinary recovery applies.
+    let template = r"{0:d(a\qb)}";
+    let dropped = parser_with(ParserSettings {
+        error_action: ErrorAction::Ignore,
+        ..ParserSettings::default()
+    })
+    .parse(template)
+    .unwrap();
+    assert_eq!(dropped.to_string(), "");
+
+    let kept = parser_with(ParserSettings {
+        error_action: ErrorAction::MaintainTokens,
+        ..ParserSettings::default()
+    })
+    .parse(template)
+    .unwrap();
+    assert_eq!(kept.to_string(), template);
+}
+
+#[test]
+fn escape_errors_are_reported_like_other_issues() {
+    let parsed = parser_with(ParserSettings {
+        error_action: ErrorAction::OutputErrorInResult,
+        ..ParserSettings::default()
+    })
+    .parse(r"abc\xyz")
+    .unwrap();
+
+    assert_eq!(
+        parsed.to_string(),
+        concat!(
+            "The format string has 1 issue:\n",
+            "Unrecognized escape sequence \"\\x\" in literal.\n",
+            "In: \"abc\\xyz\"\n",
+            "At:  ---^^ "
+        )
+    );
 }
 
 #[test]

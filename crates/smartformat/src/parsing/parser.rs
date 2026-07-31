@@ -60,10 +60,13 @@ impl Parser {
 
     /// Parses a format string.
     ///
-    /// Syntax errors are collected and then handled according to
-    /// [`ParserSettings::error_action`]: they are returned as
-    /// [`Error::Parse`] only for [`ErrorAction::Error`]; the other actions
-    /// recover and return a [`Format`].
+    /// Syntax errors — including escape sequences that resolve to nothing,
+    /// which .NET only rejects when the literal is rendered — are collected
+    /// and then handled according to [`ParserSettings::error_action`]: they
+    /// are returned as [`Error::Parse`] only for [`ErrorAction::Error`]; the
+    /// other actions recover and return a [`Format`].
+    ///
+    /// The position of an error counts UTF-16 code units, as .NET does.
     pub fn parse(&self, input: &str) -> Result<Format, Error> {
         State::new(self, input).run()
     }
@@ -78,11 +81,16 @@ enum Context {
     SelectorHeader,
 }
 
-/// A syntax error, positioned in characters (as in .NET) rather than bytes.
+/// A syntax error, spanning `index..end` in *characters* — the unit the parser
+/// counts in. Both ends are converted before they leave the parser: to a byte
+/// offset where an issue is matched against the byte ranges of the tree
+/// ([`State::issue_positions`]), and to a UTF-16 code unit offset wherever the
+/// position is reported ([`State::parse_errors`], [`State::error_message`]),
+/// which is the unit .NET counts in.
 struct Issue {
     message: String,
     index: usize,
-    length: usize,
+    end: usize,
 }
 
 struct State<'a> {
@@ -91,6 +99,8 @@ struct State<'a> {
     chars: Vec<char>,
     /// Byte offset of every character, plus the length of the input.
     offsets: Vec<usize>,
+    /// UTF-16 offset of every character, plus the length of the input.
+    utf16_offsets: Vec<usize>,
     len: usize,
 
     current: usize,
@@ -117,11 +127,20 @@ impl<'a> State<'a> {
         offsets.push(input.len());
         let len = chars.len();
 
+        let mut utf16_offsets = Vec::with_capacity(len + 1);
+        let mut units = 0;
+        for character in &chars {
+            utf16_offsets.push(units);
+            units += character.len_utf16();
+        }
+        utf16_offsets.push(units);
+
         Self {
             parser,
             input,
             chars,
             offsets,
+            utf16_offsets,
             len,
             current: 0,
             last_end: 0,
@@ -150,12 +169,12 @@ impl<'a> State<'a> {
             let input_char = self.chars[self.current];
             match context {
                 Context::SelectorHeader => self.process_selector(input_char, &mut context),
-                Context::LiteralText => self.process_literal_text(input_char, &mut context)?,
+                Context::LiteralText => self.process_literal_text(input_char, &mut context),
             }
             self.current += 1;
         }
 
-        self.finalize()?;
+        self.finalize();
         set_raw(&mut self.result, self.input);
 
         if self.issues.is_empty() {
@@ -176,6 +195,12 @@ impl<'a> State<'a> {
         self.offsets[index.min(self.len)]
     }
 
+    /// The UTF-16 code unit offset of a character index — what .NET, whose
+    /// strings are UTF-16, reports as the position of a parsing issue.
+    fn utf16(&self, index: usize) -> usize {
+        self.utf16_offsets[index.min(self.len)]
+    }
+
     fn text(&self, start: usize, end: usize) -> String {
         let start = start.min(self.len);
         let end = end.clamp(start, self.len);
@@ -186,101 +211,95 @@ impl<'a> State<'a> {
         self.issues.push(Issue {
             message,
             index: start,
-            length: end.saturating_sub(start),
+            end: end.max(start),
         });
-    }
-
-    fn fatal(&self, message: impl Into<String>, index: usize) -> Error {
-        Error::Parse {
-            errors: vec![ParseError {
-                message: message.into(),
-                position: self.byte(index),
-            }],
-        }
     }
 
     // ----- literal text --------------------------------------------------
 
     /// Handles a character of literal text: the start of a placeholder, the end
     /// of a nested placeholder's format, an escape sequence, or a formatter name.
-    fn process_literal_text(
-        &mut self,
-        input_char: char,
-        context: &mut Context,
-    ) -> Result<(), Error> {
+    fn process_literal_text(&mut self, input_char: char, context: &mut Context) {
         if input_char == PLACEHOLDER_BEGIN_CHAR {
-            self.add_literal_chars_parsed_before()?;
+            self.add_literal_chars_parsed_before();
             if self.escape_like_string_format(PLACEHOLDER_BEGIN_CHAR) {
-                return Ok(());
+                return;
             }
             self.create_new_placeholder();
             *context = Context::SelectorHeader;
         } else if input_char == PLACEHOLDER_END_CHAR {
-            self.add_literal_chars_parsed_before()?;
+            self.add_literal_chars_parsed_before();
             if self.escape_like_string_format(PLACEHOLDER_END_CHAR) {
-                return Ok(());
+                return;
             }
             if self.has_processed_too_many_closing_braces() {
-                return Ok(());
+                return;
             }
             self.finish_placeholder_format();
         } else if input_char == CHAR_LITERAL_ESCAPE_CHAR
             && (self.parser.settings.convert_character_string_literals
                 || !self.parser.settings.string_format_compatibility)
         {
-            self.parse_alternative_escaping()?;
+            self.parse_alternative_escaping();
         } else if self.named_formatter_start.is_some() {
-            self.parse_named_formatter()?;
+            self.parse_named_formatter();
         }
-
-        Ok(())
     }
 
     /// Builds a literal item, resolving an escape sequence if the text is one.
     /// The parser gives every escape sequence a literal item of its own.
-    fn make_literal(&self, start: usize, end: usize) -> Result<LiteralText, Error> {
+    ///
+    /// An escape sequence that resolves to nothing is an issue like any other,
+    /// so [`ParserSettings::error_action`] decides what happens to it; the
+    /// sequence itself stays in the output as written.
+    fn make_literal(&mut self, start: usize, end: usize) -> LiteralText {
         let start = start.min(self.len);
         let end = end.clamp(start, self.len);
-        let span = &self.chars[start..end];
-        let raw: String = span.iter().collect();
+        let raw: String = self.chars[start..end].iter().collect();
         let convert = self.parser.settings.convert_character_string_literals;
 
-        let text = if span.is_empty() {
-            String::new()
-        } else if convert && span[0] == CHAR_LITERAL_ESCAPE_CHAR {
-            unescape(span, false, true).map_err(|message| self.fatal(message, start))?
-        } else if !convert
-            && span.len() == 2
-            && span[0] == span[1]
-            && span[0] == CHAR_LITERAL_ESCAPE_CHAR
-        {
-            // Special case: the escape character escaping itself.
-            CHAR_LITERAL_ESCAPE_CHAR.to_string()
-        } else {
-            raw.clone()
+        let resolved = {
+            let span = &self.chars[start..end];
+            if span.is_empty() {
+                Ok(String::new())
+            } else if convert && span[0] == CHAR_LITERAL_ESCAPE_CHAR {
+                unescape(span, false, true)
+            } else if !convert
+                && span.len() == 2
+                && span[0] == span[1]
+                && span[0] == CHAR_LITERAL_ESCAPE_CHAR
+            {
+                // Special case: the escape character escaping itself.
+                Ok(CHAR_LITERAL_ESCAPE_CHAR.to_string())
+            } else {
+                Ok(raw.clone())
+            }
         };
 
-        Ok(LiteralText {
+        let text = resolved.unwrap_or_else(|message| {
+            self.add_issue(message, start, end);
+            raw.clone()
+        });
+
+        LiteralText {
             text,
             raw,
             start: self.byte(start),
             end: self.byte(end),
-        })
+        }
     }
 
-    fn push_literal(&mut self, start: usize, end: usize) -> Result<(), Error> {
-        let literal = self.make_literal(start, end)?;
+    fn push_literal(&mut self, start: usize, end: usize) {
+        let literal = self.make_literal(start, end);
         self.result.items.push(FormatItem::Literal(literal));
-        Ok(())
     }
 
     /// Closes the literal text that ends at the current character.
-    fn add_literal_chars_parsed_before(&mut self) -> Result<(), Error> {
+    fn add_literal_chars_parsed_before(&mut self) {
         if self.current != self.last_end {
-            self.push_literal(self.last_end, self.current)?;
+            self.push_literal(self.last_end, self.current);
         }
         self.last_end = self.safe_add(self.current, 1);
-        Ok(())
     }
 
     /// With `string.Format` compatibility, `{{` and `}}` are escaped braces.
@@ -320,10 +339,16 @@ impl<'a> State<'a> {
     }
 
     /// Handles `\{`, `\}` and character literals such as `\n` or `•`.
-    fn parse_alternative_escaping(&mut self) -> Result<(), Error> {
+    fn parse_alternative_escaping(&mut self) {
         let index_next_char = self.current + 1;
         if index_next_char >= self.len {
-            return Err(self.fatal(UNRECOGNIZED_ESCAPE_AT_END, self.current));
+            // The trailing escape character stays in the output as written.
+            self.add_issue(
+                UNRECOGNIZED_ESCAPE_AT_END.to_owned(),
+                self.current,
+                self.len,
+            );
+            return;
         }
 
         if self.chars[index_next_char] == PLACEHOLDER_BEGIN_CHAR
@@ -331,44 +356,31 @@ impl<'a> State<'a> {
         {
             // The brace itself starts the next run of literal text.
             if self.current != self.last_end {
-                self.push_literal(self.last_end, self.current)?;
+                self.push_literal(self.last_end, self.current);
             }
             self.last_end = self.safe_add(self.current, 1);
             self.current += 1;
         } else {
             if self.current != self.last_end {
-                self.push_literal(self.last_end, self.current)?;
+                self.push_literal(self.last_end, self.current);
             }
 
             self.last_end = if self.chars[index_next_char] == 'u' {
                 // The escape character, the 'u' and 4 hex digits — twice when
                 // the sequence is the high half of a surrogate pair, so both
                 // halves land in one literal and can be joined.
-                self.safe_add(self.current, self.unicode_escape_len())
+                self.safe_add(
+                    self.current,
+                    escaped_literal::unicode_escape_len(&self.chars, self.current),
+                )
             } else {
                 self.safe_add(self.current, 2)
             };
 
-            self.push_literal(self.current, self.last_end)?;
+            self.push_literal(self.current, self.last_end);
             // Resume at the end of the sequence: a surrogate pair contains a
             // second escape character, which must not start another sequence.
             self.current = self.last_end - 1;
-        }
-
-        Ok(())
-    }
-
-    /// How many characters the `\uXXXX` sequence at [`current`](Self::current)
-    /// spans: 12 for a surrogate pair, 6 otherwise.
-    fn unicode_escape_len(&self) -> usize {
-        let is_pair = escaped_literal::unicode(&self.chars, self.current + 2)
-            .is_ok_and(escaped_literal::is_high_surrogate)
-            && self.chars.get(self.current + 6) == Some(&CHAR_LITERAL_ESCAPE_CHAR)
-            && self.chars.get(self.current + 7) == Some(&'u');
-        if is_pair {
-            12
-        } else {
-            6
         }
     }
 
@@ -547,24 +559,24 @@ impl<'a> State<'a> {
     /// Handles `name`, `name(options)` and the `:` that ends either of them.
     /// Anything unexpected leaves the placeholder without a formatter name, and
     /// the text stays literal.
-    fn parse_named_formatter(&mut self) -> Result<(), Error> {
+    fn parse_named_formatter(&mut self) {
         let Some(name_start) = self.named_formatter_start else {
-            return Ok(());
+            return;
         };
         let input_char = self.chars[self.current];
 
         if input_char == FORMATTER_OPTIONS_BEGIN_CHAR {
             if name_start == self.current {
                 self.named_formatter_start = None;
-                return Ok(());
+                return;
             }
             // Short-circuits the main loop.
             self.parse_format_options();
-            return Ok(());
+            return;
         }
 
         if input_char != FORMATTER_OPTIONS_END_CHAR && input_char != FORMATTER_NAME_SEPARATOR {
-            return Ok(());
+            return;
         }
 
         if input_char == FORMATTER_OPTIONS_END_CHAR {
@@ -576,7 +588,7 @@ impl<'a> State<'a> {
 
             if !has_opening_parenthesis || !next_char_is_valid {
                 self.named_formatter_start = None;
-                return Ok(());
+                return;
             }
 
             self.named_formatter_options_end = Some(self.current);
@@ -591,7 +603,7 @@ impl<'a> State<'a> {
             && self.named_formatter_options_end.is_none();
         if name_is_empty || missing_closing_parenthesis {
             self.named_formatter_start = None;
-            return Ok(());
+            return;
         }
 
         self.last_end = self.safe_add(self.current, 1);
@@ -606,17 +618,19 @@ impl<'a> State<'a> {
                 let options_end = self.named_formatter_options_end.unwrap_or(options_start);
                 let start = options_start + 1;
                 let end = options_end.max(start);
-                let options = unescape(
+                let raw = self.text(start, end);
+                // As in a literal, an unresolvable escape sequence is an issue
+                // and stays in the options as written.
+                let unescaped = unescape(
                     &self.chars[start.min(self.len)..end.min(self.len)],
                     true,
                     self.parser.settings.convert_character_string_literals,
-                )
-                .map_err(|message| self.fatal(message, start))?;
-                (
-                    self.text(name_start, options_start),
-                    self.text(start, end),
-                    options,
-                )
+                );
+                let options = unescaped.unwrap_or_else(|message| {
+                    self.add_issue(message, start, end);
+                    raw.clone()
+                });
+                (self.text(name_start, options_start), raw, options)
             }
         };
 
@@ -630,8 +644,6 @@ impl<'a> State<'a> {
         // is the second colon.
         self.result.start = self.byte(self.last_end);
         self.named_formatter_start = None;
-
-        Ok(())
     }
 
     /// Consumes the formatter options up to the terminating character.
@@ -680,7 +692,7 @@ impl<'a> State<'a> {
 
     // ----- finishing up --------------------------------------------------
 
-    fn finalize(&mut self) -> Result<(), Error> {
+    fn finalize(&mut self) {
         // 1. Is the last item a placeholder that was never closed?
         if !self.stack.is_empty() || self.current_placeholder.is_some() {
             self.add_issue(MISSING_CLOSING_BRACE.to_owned(), self.len, self.len);
@@ -692,7 +704,7 @@ impl<'a> State<'a> {
             }
         } else if self.last_end != self.len {
             // 2. The last item must be literal text.
-            self.push_literal(self.last_end, self.len)?;
+            self.push_literal(self.last_end, self.len);
         }
 
         // Unwind the formats left open by missing closing braces.
@@ -703,8 +715,6 @@ impl<'a> State<'a> {
             self.finish_placeholder(placeholder, end);
             self.result.end = self.byte(self.len);
         }
-
-        Ok(())
     }
 
     fn parse_errors(&self) -> Vec<ParseError> {
@@ -712,7 +722,7 @@ impl<'a> State<'a> {
             .iter()
             .map(|issue| ParseError {
                 message: issue.message.clone(),
-                position: self.byte(issue.index),
+                position: self.utf16(issue.index),
             })
             .collect()
     }
@@ -727,16 +737,20 @@ impl<'a> State<'a> {
             .map(|issue| issue.message.as_str())
             .collect();
 
+        // The arrows are laid out in UTF-16 code units, which is how .NET
+        // indexes the template it prints above them.
         let mut arrows = String::new();
         let mut last_arrow = 0;
         for issue in &self.issues {
-            arrows.push_str(&"-".repeat(issue.index.saturating_sub(last_arrow)));
-            if issue.length > 0 {
-                arrows.push_str(&"^".repeat(issue.length));
-                last_arrow = issue.index + issue.length;
+            let index = self.utf16(issue.index);
+            let length = self.utf16(issue.end) - index;
+            arrows.push_str(&"-".repeat(index.saturating_sub(last_arrow)));
+            if length > 0 {
+                arrows.push_str(&"^".repeat(length));
+                last_arrow = index + length;
             } else {
                 arrows.push('^');
-                last_arrow = issue.index + 1;
+                last_arrow = index + 1;
             }
         }
 
@@ -785,6 +799,8 @@ impl<'a> State<'a> {
         }
     }
 
+    /// Where the issues are, in *bytes* — these are matched against the byte
+    /// ranges the tree carries, not reported to the caller.
     fn issue_positions(&self) -> Vec<usize> {
         self.issues
             .iter()

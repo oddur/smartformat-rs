@@ -58,32 +58,56 @@ pub(crate) fn try_get_char(
         })
 }
 
+/// Whether `input` is one of the characters .NET's number parser skips for
+/// `NumberStyles.AllowLeadingWhite` / `AllowTrailingWhite`: the space and the
+/// ASCII controls `0x09..=0x0D`. Unicode whitespace is *not* included, so
+/// `\u\u{a0}123` is an error in .NET as it is here.
+fn is_dotnet_white(input: char) -> bool {
+    input == ' ' || ('\u{9}'..='\u{d}').contains(&input)
+}
+
+/// The number the (up to) four characters of a `\uXXXX` sequence stand for,
+/// parsed the way .NET's `int.TryParse(…, NumberStyles.HexNumber, …)` does:
+/// leading and trailing whitespace is skipped, and neither a sign nor a `0x`
+/// prefix is allowed. `\u 123` is therefore `0x123`, and `\u+123` an error.
+fn parse_hex(digits: &[char]) -> Option<u16> {
+    let start = digits
+        .iter()
+        .position(|&input| !is_dotnet_white(input))
+        .unwrap_or(digits.len());
+    let end = digits
+        .iter()
+        .rposition(|&input| !is_dotnet_white(input))
+        .map_or(start, |last| last + 1);
+
+    let body = &digits[start..end];
+    if body.is_empty() {
+        return None;
+    }
+
+    let mut value: u16 = 0;
+    for &digit in body {
+        let digit = u16::try_from(digit.to_digit(16)?).ok()?;
+        // At most four hex digits are ever parsed, so this cannot overflow.
+        value = value.checked_mul(16)?.checked_add(digit)?;
+    }
+    Some(value)
+}
+
 /// The UTF-16 code unit a `\uXXXX` sequence stands for. .NET casts the parsed
 /// number to `char`, so the sequence may well be one half of a surrogate pair;
 /// [`unescape`] joins the halves back together.
-pub(crate) fn unicode(input: &[char], start_index: usize) -> Result<u16, String> {
+fn unicode(input: &[char], start_index: usize) -> Result<u16, String> {
     let end = (start_index + 4).min(input.len());
-    let digits: String = input
-        .get(start_index..end)
-        .unwrap_or_default()
-        .iter()
-        .collect();
-    u32::from_str_radix(&digits, 16)
-        .ok()
-        .and_then(|value| u16::try_from(value).ok())
-        .ok_or_else(|| format!("Unrecognized escape sequence in literal: \"\\u{digits}\""))
-}
-
-/// The `\uXXXX` sequence starting at `index`, if there is one.
-fn unicode_escape_at(input: &[char], index: usize) -> Option<u16> {
-    if input.get(index) != Some(&CHAR_LITERAL_ESCAPE_CHAR) || input.get(index + 1) != Some(&'u') {
-        return None;
-    }
-    unicode(input, index + 2).ok()
+    let digits = input.get(start_index..end).unwrap_or_default();
+    parse_hex(digits).ok_or_else(|| {
+        let digits: String = digits.iter().collect();
+        format!("Unrecognized escape sequence in literal: \"\\u{digits}\"")
+    })
 }
 
 /// Whether `unit` is a high surrogate that can start a pair.
-pub(crate) fn is_high_surrogate(unit: u16) -> bool {
+fn is_high_surrogate(unit: u16) -> bool {
     (0xd800..0xdc00).contains(&unit)
 }
 
@@ -91,19 +115,40 @@ fn is_low_surrogate(unit: u16) -> bool {
     (0xdc00..0xe000).contains(&unit)
 }
 
-/// The character `unit` stands for, or, for the second half of a pair, the
-/// character `unit` and `low` stand for together.
+/// The `\uXXXX` sequence starting at `index`, if there is one *and* it is a low
+/// surrogate — the only sequence a high surrogate joins with.
+fn low_surrogate_escape_at(input: &[char], index: usize) -> Option<u16> {
+    if input.get(index) != Some(&CHAR_LITERAL_ESCAPE_CHAR) || input.get(index + 1) != Some(&'u') {
+        return None;
+    }
+    unicode(input, index + 2)
+        .ok()
+        .filter(|&unit| is_low_surrogate(unit))
+}
+
+/// How many characters the `\uXXXX` sequence at `index` spans: 12 when a high
+/// surrogate is followed by an escaped low surrogate, 6 otherwise.
+///
+/// The parser uses this to keep both halves of a pair in one literal item, so
+/// it has to agree with the pairing [`unescape`] does.
+pub(crate) fn unicode_escape_len(input: &[char], index: usize) -> usize {
+    let is_pair = unicode(input, index + 2).is_ok_and(is_high_surrogate)
+        && low_surrogate_escape_at(input, index + 6).is_some();
+    if is_pair {
+        12
+    } else {
+        6
+    }
+}
+
+/// Appends the character `units` stand for.
 ///
 /// A lone surrogate has no `char`, and lands in the output as the replacement
 /// character; .NET keeps it as an unpaired UTF-16 code unit, which a Rust
 /// `String` cannot hold.
-fn from_code_units(unit: u16, low: Option<u16>) -> char {
-    match low {
-        Some(low) => {
-            let code = 0x1_0000 + ((u32::from(unit) - 0xd800) << 10) + (u32::from(low) - 0xdc00);
-            char::from_u32(code).unwrap_or(char::REPLACEMENT_CHARACTER)
-        }
-        None => char::from_u32(u32::from(unit)).unwrap_or(char::REPLACEMENT_CHARACTER),
+fn push_code_units(result: &mut String, units: &[u16]) {
+    for decoded in char::decode_utf16(units.iter().copied()) {
+        result.push(decoded.unwrap_or(char::REPLACEMENT_CHARACTER));
     }
 }
 
@@ -130,17 +175,20 @@ pub(crate) fn unescape(
             if input[index + 1] == 'u' {
                 let unit = unicode(input, index + 2)?;
                 index += 6;
-                // A high surrogate takes the following `\uXXXX` with it, the
-                // way the two code units join in a .NET string.
+                // A high surrogate takes a following escaped low surrogate with
+                // it, the way the two code units join in a .NET string.
                 let low = if is_high_surrogate(unit) {
-                    unicode_escape_at(input, index).filter(|&next| is_low_surrogate(next))
+                    low_surrogate_escape_at(input, index)
                 } else {
                     None
                 };
-                if low.is_some() {
-                    index += 6;
+                match low {
+                    Some(low) => {
+                        index += 6;
+                        push_code_units(&mut result, &[unit, low]);
+                    }
+                    None => push_code_units(&mut result, &[unit]),
                 }
-                result.push(from_code_units(unit, low));
             } else if let Some(real) = try_get_char(
                 input[index + 1],
                 include_formatter_option_chars,
