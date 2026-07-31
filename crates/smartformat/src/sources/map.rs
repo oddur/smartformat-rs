@@ -21,23 +21,26 @@ impl Source for MapSource {
             return None;
         };
 
-        let found = match info.settings.case_sensitive {
-            CaseSensitivity::CaseSensitive => map.get(info.text()),
-            comparison => map
-                .iter()
-                .find(|(key, _)| comparison.eq(key, info.text()))
-                .map(|(_, value)| value),
-        };
-
-        if let Some(value) = found {
+        // An exactly spelled key wins under either setting: it is the cheap
+        // lookup, and the answer a reader expects when a map holds several
+        // case-variants of one key.
+        if let Some(value) = map.get(info.text()) {
             return Some(Cow::Borrowed(value));
         }
 
-        // A missing key is not an error when the selector is null-conditional.
-        if info.has_nullable_operator() {
-            return Some(Cow::Owned(Value::Null));
+        if info.settings.case_sensitive == CaseSensitivity::CaseInsensitive {
+            let found = map
+                .iter()
+                .find(|(key, _)| CaseSensitivity::CaseInsensitive.eq(key, info.text()))
+                .map(|(_, value)| value);
+            if let Some(value) = found {
+                return Some(Cow::Borrowed(value));
+            }
         }
 
+        // A missing key is *not* handled here, even when the selector chain is
+        // null-conditional: .NET only null-guards a null current value, so
+        // `{Person?.Missing}` on a non-null map is a formatting error.
         None
     }
 }

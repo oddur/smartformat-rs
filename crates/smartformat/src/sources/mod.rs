@@ -67,14 +67,19 @@ impl<'a> SelectorInfo<'a> {
         self.settings.case_sensitive.eq(self.text(), name)
     }
 
-    /// Whether any selector up to and including this one carries the nullable
+    /// Whether *any* selector of the placeholder carries the nullable
     /// operator (.NET `Source.HasNullableOperator`).
+    ///
+    /// The whole chain counts, not just the selectors up to this one, so
+    /// `{City.Length?.Nope}` short-circuits to empty when `City` is null even
+    /// though the `?.` sits on a later selector. That is what SmartFormat.NET
+    /// 3.6.1 — the version the goldens are generated with — does; later .NET
+    /// revisions restrict the scan to selectors up to the current one.
     pub fn has_nullable_operator(&self) -> bool {
-        self.placeholder.selectors.iter().any(|s| {
-            s.index <= self.index()
-                && s.operator.starts_with(NULLABLE_OPERATOR)
-                && s.operator.len() > 1
-        })
+        self.placeholder
+            .selectors
+            .iter()
+            .any(|s| s.operator.starts_with(NULLABLE_OPERATOR) && s.operator.len() > 1)
     }
 
     /// `Some(null)` when the selector chain is null-conditional and the current
