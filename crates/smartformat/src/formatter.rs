@@ -510,9 +510,11 @@ impl SmartFormatter {
     /// `AddExtensions(new PersistentVariablesSource())`).
     ///
     /// The source is slotted where .NET's `WellKnownExtensionTypes.Sources`
-    /// ranks it — ahead of every other source, so a group name wins over a
-    /// selector any of them would have answered. `CreateDefaultSmartFormat`
-    /// does not register it, here or in .NET.
+    /// ranks it — ahead of every other source, so a *group name* wins over a
+    /// selector any of them would have answered. Nothing else changes: a
+    /// selector this source declines is answered exactly as it is without it,
+    /// map arguments included. `CreateDefaultSmartFormat` does not register it,
+    /// here or in .NET.
     ///
     /// The source owns its groups and the registry hands out no way back to it,
     /// so fill it before registering. [`register_global_variables`] takes a

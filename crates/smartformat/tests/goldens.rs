@@ -204,10 +204,31 @@ const SKIPPED: &[(&str, &str)] = &[
         "a variable name is ordinal in .NET, whose IDictionary<string, IVariable> no other source can read; a group is a map here, so MapSource answers it when the settings ignore case",
     ),
     (
-        "var-precedence-map-argument",
-        "a group and a map argument are one type here, so the documented rule — the argument wins — applies; .NET only lets an IVariablesGroup argument win, and a Dictionary loses to the registered group",
+        "var-child-format-of-a-group-shadowed-name",
+        "a group is a map here, told from an ordinary one by the selector that reached it; a child format has no such selector, so the variable is answered by MapSource (5000) rather than the variables source (2000)",
+    ),
+    (
+        "time-culture-iso-639-2",
+        "a three-letter ISO 639-2 language code is mapped to its two-letter equivalent by ICU; we take the culture name as written, so the fallback language answers",
+    ),
+    (
+        "loc-error-inside-translation-outputerrorinresult",
+        ERROR_INSIDE_A_FOREIGN_FORMAT,
+    ),
+    (
+        "loc-error-inside-nested-translation-outputerrorinresult",
+        ERROR_INSIDE_A_FOREIGN_FORMAT,
     ),
 ];
+
+/// An error raised while a `Format` parsed somewhere else is being rendered:
+/// .NET builds the report from the failing item's own `BaseString` — the
+/// template text, or the localized string — and the engine here quotes the
+/// string it was called with. The issue, the index and every other error
+/// action agree; only the quoted line of the `OutputErrorInResult` report
+/// differs (and with it where the caret lands in that line).
+const ERROR_INSIDE_A_FOREIGN_FORMAT: &str =
+    "an error inside a localized string quotes the string being rendered here and the translation in .NET";
 
 /// `ListFormatter` does not change these: it declines a placeholder that
 /// carries no format at all, so a bare `{0}` on a list still reaches
@@ -502,6 +523,7 @@ fn formatter_for(node: &Json, now: &str) -> SmartFormatter {
                 }
                 "templates" => extensions.templates = Some(text().to_owned()),
                 "variables" => extensions.variables = Some(text().to_owned()),
+                "localization" => extensions.localization = Some(text().to_owned()),
                 other => panic!("unknown setting {other}"),
             }
         }
@@ -533,7 +555,9 @@ fn formatter_for(node: &Json, now: &str) -> SmartFormatter {
     // `{…:time:…}` or `{…:L:…}` placeholder reaches them.
     #[cfg(feature = "time")]
     smart.formatters_mut().add(Box::new(TimeFormatter::new()));
-    smart.register_localization(Box::new(localization_fixture()));
+    smart.register_localization(Box::new(localization_fixture(
+        extensions.localization.as_deref().unwrap_or("Standard"),
+    )));
 
     // A variables source *is* per case: it is ranked ahead of every other
     // source, so a group named like a selector another source answers would
@@ -545,13 +569,16 @@ fn formatter_for(node: &Json, now: &str) -> SmartFormatter {
     smart
 }
 
-/// The table in the harness's `LocalizationFixture`, entry for entry.
-fn localization_fixture() -> HashMapLocalizationProvider {
-    HashMapLocalizationProvider::from_triples([
+/// The table in the harness's `LocalizationFixture`, entry for entry, with the
+/// `LocalizationProvider` knobs the case's `localization` set asks for.
+fn localization_fixture(set: &str) -> HashMapLocalizationProvider {
+    let provider = HashMapLocalizationProvider::from_triples([
         ("", "WeTranslateText", "We translate text"),
         ("es", "WeTranslateText", "Traducimos el texto"),
         ("fr", "WeTranslateText", "Nous traduisons des textes"),
         ("de", "WeTranslateText", "Wir übersetzen Text"),
+        ("zh-Hans", "WeTranslateText", "我们翻译文本"),
+        ("de", "OnlyGerman", "Nur auf Deutsch"),
         (
             "",
             "OnlyExistForInvariantCulture",
@@ -583,11 +610,20 @@ fn localization_fixture() -> HashMapLocalizationProvider {
         ("de", "greet", "Hallo, {Name}!"),
         ("", "Outer", "<{:L:Inner}>"),
         ("", "Inner", "INNER"),
+        ("", "OuterMissingInner", "<{:L:NoSuchInner}>"),
+        ("", "greetNobody", "Hello {Nope}!"),
         ("", "a{b", "escaped"),
         ("", "BadParse", "{0:"),
         ("", "K1", "abc {0}"),
         ("", "K2", "ABC {0}"),
-    ])
+    ]);
+    match set {
+        "Standard" => provider,
+        // `LocalizationFixture.FallbackCultureName`.
+        "Fallback" => provider.with_fallback_culture(culture::get("de").expect("de is shipped")),
+        "ReturnName" => provider.with_return_name_if_not_found(true),
+        other => panic!("unknown localization set {other}"),
+    }
 }
 
 /// The groups the harness's `VariablesFixture` registers, group for group.
@@ -604,6 +640,7 @@ fn variables_fixture(set: &str) -> PersistentVariablesSource {
                         Value::Map(variables::group([("inner", Value::Int(42))])),
                     ),
                     ("nullVar", Value::Null),
+                    ("Index", Value::Int(7)),
                 ]),
             );
             source.add(
@@ -665,6 +702,7 @@ struct Extensions {
     list_can_auto_detect: Option<bool>,
     templates: Option<String>,
     variables: Option<String>,
+    localization: Option<String>,
 }
 
 impl Extensions {

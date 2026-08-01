@@ -30783,6 +30783,32 @@
       }
     },
     {
+      "id": "time-culture-iso-639-2",
+      "template": "{0:time(deu):weeks}",
+      "args": [
+        {
+          "$ts": "00:00:00"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "weniger als 1 Woche"
+      }
+    },
+    {
+      "id": "time-culture-iso-639-2-english",
+      "template": "{0:time(eng):weeks}",
+      "args": [
+        {
+          "$ts": "00:00:00"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "less than 1 week"
+      }
+    },
+    {
       "id": "time-wrong-type-string-format",
       "template": "ab {0:time:hours}",
       "args": [
@@ -32475,6 +32501,33 @@
       }
     },
     {
+      "id": "loc-call-culture-zh-cn",
+      "template": "{:L:WeTranslateText}",
+      "args": [],
+      "culture": "zh-CN",
+      "expected": {
+        "result": "我们翻译文本"
+      }
+    },
+    {
+      "id": "loc-option-culture-zh-cn",
+      "template": "{:L(zh-CN):WeTranslateText}",
+      "args": [],
+      "culture": "",
+      "expected": {
+        "result": "我们翻译文本"
+      }
+    },
+    {
+      "id": "loc-option-culture-zh-hans",
+      "template": "{:L(zh-Hans):WeTranslateText}",
+      "args": [],
+      "culture": "",
+      "expected": {
+        "result": "我们翻译文本"
+      }
+    },
+    {
       "id": "loc-option-culture-empty",
       "template": "{:L():WeTranslateText}",
       "args": [],
@@ -32778,6 +32831,203 @@
       },
       "expected": {
         "result": "Unrecognized escape sequence \"\\q\" in literal."
+      }
+    },
+    {
+      "id": "loc-error-inside-translation",
+      "template": "{:L:greetNobody}",
+      "args": [],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "loc-error-inside-translation-ignore",
+      "template": "{:L:greetNobody}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "Ignore"
+      },
+      "expected": {
+        "result": "Hello !"
+      }
+    },
+    {
+      "id": "loc-error-inside-translation-maintaintokens",
+      "template": "{:L:greetNobody}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "MaintainTokens"
+      },
+      "expected": {
+        "result": "Hello {Nope}!"
+      }
+    },
+    {
+      "id": "loc-error-inside-translation-outputerrorinresult",
+      "template": "{:L:greetNobody}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "Hello Error parsing format string: No source extension could handle the selector named \"Nope\" at 7\nHello {Nope}!\n-------^!"
+      }
+    },
+    {
+      "id": "loc-error-inside-nested-translation",
+      "template": "{:L:OuterMissingInner}",
+      "args": [],
+      "culture": "",
+      "expected": {
+        "error": "LocalizationFormattingException"
+      }
+    },
+    {
+      "id": "loc-error-inside-nested-translation-ignore",
+      "template": "{:L:OuterMissingInner}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "Ignore"
+      },
+      "expected": {
+        "result": "<>"
+      }
+    },
+    {
+      "id": "loc-error-inside-nested-translation-maintaintokens",
+      "template": "{:L:OuterMissingInner}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "MaintainTokens"
+      },
+      "expected": {
+        "result": "<{:L:NoSuchInner}>"
+      }
+    },
+    {
+      "id": "loc-error-inside-nested-translation-outputerrorinresult",
+      "template": "{:L:OuterMissingInner}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "<Error parsing format string: No localized string found for 'NoSuchInner' at 5\n<{:L:NoSuchInner}>\n-----^>"
+      }
+    },
+    {
+      "id": "loc-fallback-culture-used",
+      "template": "{:L:OnlyGerman}",
+      "args": [],
+      "culture": "es",
+      "settings": {
+        "localization": "Fallback"
+      },
+      "expected": {
+        "result": "Nur auf Deutsch"
+      }
+    },
+    {
+      "id": "loc-fallback-culture-not-needed",
+      "template": "{:L:WeTranslateText}",
+      "args": [],
+      "culture": "es",
+      "settings": {
+        "localization": "Fallback"
+      },
+      "expected": {
+        "result": "Traducimos el texto"
+      }
+    },
+    {
+      "id": "loc-fallback-culture-invariant-call",
+      "template": "{:L:OnlyGerman}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "localization": "Fallback"
+      },
+      "expected": {
+        "result": "Nur auf Deutsch"
+      }
+    },
+    {
+      "id": "loc-fallback-culture-option",
+      "template": "{:L(fr):OnlyGerman}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "localization": "Fallback"
+      },
+      "expected": {
+        "result": "Nur auf Deutsch"
+      }
+    },
+    {
+      "id": "loc-fallback-culture-still-missing",
+      "template": "{:L:NonExisting}",
+      "args": [],
+      "culture": "es",
+      "settings": {
+        "localization": "Fallback"
+      },
+      "expected": {
+        "error": "LocalizationFormattingException"
+      }
+    },
+    {
+      "id": "loc-fallback-culture-off",
+      "template": "{:L:OnlyGerman}",
+      "args": [],
+      "culture": "es",
+      "expected": {
+        "error": "LocalizationFormattingException"
+      }
+    },
+    {
+      "id": "loc-return-name-missing-key",
+      "template": "{:L:NonExisting}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "localization": "ReturnName"
+      },
+      "expected": {
+        "result": "NonExisting"
+      }
+    },
+    {
+      "id": "loc-return-name-found-key",
+      "template": "{:L(es):WeTranslateText}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "localization": "ReturnName"
+      },
+      "expected": {
+        "result": "Traducimos el texto"
+      }
+    },
+    {
+      "id": "loc-return-name-is-a-template",
+      "template": "{:L:Hi {0}}",
+      "args": [
+        "Joe"
+      ],
+      "culture": "",
+      "settings": {
+        "localization": "ReturnName"
+      },
+      "expected": {
+        "result": "Hi Joe"
       }
     },
     {
@@ -33126,6 +33376,45 @@
       }
     },
     {
+      "id": "var-missing-variable-ignore",
+      "template": "{global.missing}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "Ignore",
+        "variables": "Standard"
+      },
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "var-missing-variable-maintaintokens",
+      "template": "{global.missing}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "MaintainTokens",
+        "variables": "Standard"
+      },
+      "expected": {
+        "result": "{global.missing}"
+      }
+    },
+    {
+      "id": "var-missing-variable-outputerrorinresult",
+      "template": "{global.missing}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult",
+        "variables": "Standard"
+      },
+      "expected": {
+        "result": "Error parsing format string: No source extension could handle the selector named \"missing\" at 8\n{global.missing}\n--------^"
+      }
+    },
+    {
       "id": "var-missing-group",
       "template": "{missingGroup}",
       "args": [],
@@ -33135,6 +33424,45 @@
       },
       "expected": {
         "error": "FormattingException"
+      }
+    },
+    {
+      "id": "var-missing-group-ignore",
+      "template": "{missingGroup}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "Ignore",
+        "variables": "Standard"
+      },
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "var-missing-group-maintaintokens",
+      "template": "{missingGroup}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "MaintainTokens",
+        "variables": "Standard"
+      },
+      "expected": {
+        "result": "{missingGroup}"
+      }
+    },
+    {
+      "id": "var-missing-group-outputerrorinresult",
+      "template": "{missingGroup}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult",
+        "variables": "Standard"
+      },
+      "expected": {
+        "result": "Error parsing format string: No source extension could handle the selector named \"missingGroup\" at 1\n{missingGroup}\n-^"
       }
     },
     {
@@ -33150,6 +33478,45 @@
       }
     },
     {
+      "id": "var-missing-variable-nullable-group-ignore",
+      "template": "{global?.missing}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "Ignore",
+        "variables": "Standard"
+      },
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "var-missing-variable-nullable-group-maintaintokens",
+      "template": "{global?.missing}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "MaintainTokens",
+        "variables": "Standard"
+      },
+      "expected": {
+        "result": "{global?.missing}"
+      }
+    },
+    {
+      "id": "var-missing-variable-nullable-group-outputerrorinresult",
+      "template": "{global?.missing}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult",
+        "variables": "Standard"
+      },
+      "expected": {
+        "result": "Error parsing format string: No source extension could handle the selector named \"missing\" at 9\n{global?.missing}\n---------^"
+      }
+    },
+    {
       "id": "var-missing-nested-variable",
       "template": "{global.nested.missing}",
       "args": [],
@@ -33159,6 +33526,45 @@
       },
       "expected": {
         "error": "FormattingException"
+      }
+    },
+    {
+      "id": "var-missing-nested-variable-ignore",
+      "template": "{global.nested.missing}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "Ignore",
+        "variables": "Standard"
+      },
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "var-missing-nested-variable-maintaintokens",
+      "template": "{global.nested.missing}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "MaintainTokens",
+        "variables": "Standard"
+      },
+      "expected": {
+        "result": "{global.nested.missing}"
+      }
+    },
+    {
+      "id": "var-missing-nested-variable-outputerrorinresult",
+      "template": "{global.nested.missing}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult",
+        "variables": "Standard"
+      },
+      "expected": {
+        "result": "Error parsing format string: No source extension could handle the selector named \"missing\" at 15\n{global.nested.missing}\n---------------^"
       }
     },
     {
@@ -33183,6 +33589,32 @@
       },
       "expected": {
         "error": "FormattingException"
+      }
+    },
+    {
+      "id": "var-group-name-wrong-case-outputerrorinresult",
+      "template": "{GLOBAL.theVariable}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult",
+        "variables": "Standard"
+      },
+      "expected": {
+        "result": "Error parsing format string: No source extension could handle the selector named \"GLOBAL\" at 1\n{GLOBAL.theVariable}\n-^"
+      }
+    },
+    {
+      "id": "var-variable-name-wrong-case-outputerrorinresult",
+      "template": "{global.THEVARIABLE}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult",
+        "variables": "Standard"
+      },
+      "expected": {
+        "result": "Error parsing format string: No source extension could handle the selector named \"THEVARIABLE\" at 8\n{global.THEVARIABLE}\n--------^"
       }
     },
     {
@@ -33350,6 +33782,24 @@
       }
     },
     {
+      "id": "var-precedence-map-argument-positional",
+      "template": "{0.global.theVariable}",
+      "args": [
+        {
+          "global": {
+            "theVariable": "val-from-argument"
+          }
+        }
+      ],
+      "culture": "",
+      "settings": {
+        "variables": "Precedence"
+      },
+      "expected": {
+        "result": "val-from-persistent-source"
+      }
+    },
+    {
       "id": "var-precedence-map-other-key",
       "template": "{other}",
       "args": {
@@ -33362,6 +33812,113 @@
       },
       "expected": {
         "result": "dict-other"
+      }
+    },
+    {
+      "id": "var-list-index-over-map-items",
+      "template": "{0:list:{Index}|,}",
+      "args": [
+        [
+          {
+            "Index": "X",
+            "Name": "a"
+          },
+          {
+            "Index": "Y",
+            "Name": "b"
+          }
+        ]
+      ],
+      "culture": "",
+      "settings": {
+        "variables": "Standard"
+      },
+      "expected": {
+        "result": "0,1"
+      }
+    },
+    {
+      "id": "var-list-index-over-map-items-with-key",
+      "template": "{0:list:{Name}{Index}|,}",
+      "args": [
+        [
+          {
+            "Index": "X",
+            "Name": "a"
+          },
+          {
+            "Index": "Y",
+            "Name": "b"
+          }
+        ]
+      ],
+      "culture": "",
+      "settings": {
+        "variables": "Standard"
+      },
+      "expected": {
+        "result": "a0,b1"
+      }
+    },
+    {
+      "id": "var-list-index-no-source",
+      "template": "{0:list:{Index}|,}",
+      "args": [
+        [
+          {
+            "Index": "X",
+            "Name": "a"
+          },
+          {
+            "Index": "Y",
+            "Name": "b"
+          }
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "result": "0,1"
+      }
+    },
+    {
+      "id": "var-list-index-from-a-group",
+      "template": "{0:list:{global.Index}|,}",
+      "args": [
+        [
+          "a",
+          "b"
+        ]
+      ],
+      "culture": "",
+      "settings": {
+        "variables": "Standard"
+      },
+      "expected": {
+        "result": "7,7"
+      }
+    },
+    {
+      "id": "var-child-format-of-a-group",
+      "template": "{global:{theVariable}}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "variables": "Standard"
+      },
+      "expected": {
+        "result": "persistent-value"
+      }
+    },
+    {
+      "id": "var-child-format-of-a-group-shadowed-name",
+      "template": "{global:{Index}}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "variables": "Standard"
+      },
+      "expected": {
+        "result": "7"
       }
     },
     {
@@ -33432,6 +33989,19 @@
       }
     },
     {
+      "id": "conddate-four-now",
+      "template": "{0:cond:Past|Today|Unreachable|Future}",
+      "args": [
+        {
+          "$dt": "2026-07-31T12:00:00.0000000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "Past"
+      }
+    },
+    {
       "id": "conddate-two-earlier-today",
       "template": "{0:cond:Past|Future}",
       "args": [
@@ -33468,6 +34038,19 @@
       "culture": "",
       "expected": {
         "result": "Today"
+      }
+    },
+    {
+      "id": "conddate-four-earlier-today",
+      "template": "{0:cond:Past|Today|Unreachable|Future}",
+      "args": [
+        {
+          "$dt": "2026-07-31T10:00:00.0000000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "Past"
       }
     },
     {
@@ -33510,6 +34093,19 @@
       }
     },
     {
+      "id": "conddate-four-later-today",
+      "template": "{0:cond:Past|Today|Unreachable|Future}",
+      "args": [
+        {
+          "$dt": "2026-07-31T14:00:00.0000000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "Future"
+      }
+    },
+    {
       "id": "conddate-two-yesterday",
       "template": "{0:cond:Past|Future}",
       "args": [
@@ -33538,6 +34134,19 @@
     {
       "id": "conddate-auto-yesterday",
       "template": "{0:Past|Today|Future}",
+      "args": [
+        {
+          "$dt": "2026-07-30T12:00:00.0000000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "Past"
+      }
+    },
+    {
+      "id": "conddate-four-yesterday",
+      "template": "{0:cond:Past|Today|Unreachable|Future}",
       "args": [
         {
           "$dt": "2026-07-30T12:00:00.0000000"
@@ -33588,6 +34197,19 @@
       }
     },
     {
+      "id": "conddate-four-tomorrow",
+      "template": "{0:cond:Past|Today|Unreachable|Future}",
+      "args": [
+        {
+          "$dt": "2026-08-01T12:00:00.0000000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "Future"
+      }
+    },
+    {
       "id": "conddate-two-long-past",
       "template": "{0:cond:Past|Future}",
       "args": [
@@ -33616,6 +34238,19 @@
     {
       "id": "conddate-auto-long-past",
       "template": "{0:Past|Today|Future}",
+      "args": [
+        {
+          "$dt": "1111-01-01T01:01:01.0000000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "Past"
+      }
+    },
+    {
+      "id": "conddate-four-long-past",
+      "template": "{0:cond:Past|Today|Unreachable|Future}",
       "args": [
         {
           "$dt": "1111-01-01T01:01:01.0000000"
@@ -33666,6 +34301,19 @@
       }
     },
     {
+      "id": "conddate-four-long-future",
+      "template": "{0:cond:Past|Today|Unreachable|Future}",
+      "args": [
+        {
+          "$dt": "5555-05-05T05:05:05.0000000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "Future"
+      }
+    },
+    {
       "id": "conddate-nested-format",
       "template": "{0:cond:was {:d}|is {:d}|will be {:d}}",
       "args": [
@@ -33676,6 +34324,32 @@
       "culture": "",
       "expected": {
         "result": "is 07/31/2026"
+      }
+    },
+    {
+      "id": "conddate-complex-condition",
+      "template": "{0:cond:>0?a|b}",
+      "args": [
+        {
+          "$dt": "2026-07-31T12:00:00.0000000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": ">0?a"
+      }
+    },
+    {
+      "id": "conddate-complex-condition-three",
+      "template": "{0:cond:>0?a|b|c}",
+      "args": [
+        {
+          "$dt": "2026-08-01T12:00:00.0000000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "c"
       }
     },
     {
@@ -33707,6 +34381,19 @@
     {
       "id": "condts-auto-neg",
       "template": "{0:overdue|due now|left}",
+      "args": [
+        {
+          "$ts": "-01:00:00"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "overdue"
+      }
+    },
+    {
+      "id": "condts-four-neg",
+      "template": "{0:cond:overdue|due now|unreachable|left}",
       "args": [
         {
           "$ts": "-01:00:00"
@@ -33757,6 +34444,19 @@
       }
     },
     {
+      "id": "condts-four-zero",
+      "template": "{0:cond:overdue|due now|unreachable|left}",
+      "args": [
+        {
+          "$ts": "00:00:00"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "overdue"
+      }
+    },
+    {
       "id": "condts-two-pos",
       "template": "{0:cond:overdue|left}",
       "args": [
@@ -33796,6 +34496,19 @@
       }
     },
     {
+      "id": "condts-four-pos",
+      "template": "{0:cond:overdue|due now|unreachable|left}",
+      "args": [
+        {
+          "$ts": "01:00:00"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "left"
+      }
+    },
+    {
       "id": "condts-nested-format",
       "template": "{0:cond:overdue by {:g}|due now|{:g} left}",
       "args": [
@@ -33806,6 +34519,32 @@
       "culture": "",
       "expected": {
         "result": "1:00:00 left"
+      }
+    },
+    {
+      "id": "condts-complex-condition",
+      "template": "{0:cond:>0?a|b}",
+      "args": [
+        {
+          "$ts": "01:00:00"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "b"
+      }
+    },
+    {
+      "id": "condts-complex-condition-three",
+      "template": "{0:cond:>0?a|b|c}",
+      "args": [
+        {
+          "$ts": "-01:00:00"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": ">0?a"
       }
     },
     {

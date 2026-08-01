@@ -116,8 +116,14 @@ impl TimeFormatter {
         self
     }
 
-    /// The options a time format inherits whatever it does not name
-    /// (.NET `DefaultFormatOptions`).
+    /// The options a time format inherits whatever it does not name.
+    ///
+    /// .NET has two of these and this is both: the live one is the `static`
+    /// `TimeSpanUtility.DefaultFormatOptions`, which `ToTimeParts` merges into
+    /// every call, while the instance property `TimeFormatter.DefaultFormatOptions`
+    /// is a copy the constructor takes of it and nothing ever reads. Here the
+    /// live knob belongs to the formatter — see DESIGN.md, "Deliberate policy
+    /// differences".
     pub fn default_format_options(&self) -> TimeSpanFormatOptions {
         self.default_format_options
     }
@@ -125,6 +131,11 @@ impl TimeFormatter {
     /// Changes the options a time format inherits. Any group left empty is
     /// still filled in from [`ABSOLUTE_DEFAULTS`], which is the safeguard .NET
     /// keeps for exactly this.
+    ///
+    /// This is what setting .NET's `static
+    /// TimeSpanUtility.DefaultFormatOptions` does, minus the process-wide
+    /// reach: setting .NET's instance property of the same name changes
+    /// nothing at all.
     pub fn set_default_format_options(&mut self, options: TimeSpanFormatOptions) {
         self.default_format_options = options;
     }
@@ -164,6 +175,15 @@ impl TimeFormatter {
     /// shipped one of the same name — .NET looks in its custom dictionary
     /// first too — but it belongs to this formatter rather than to a static
     /// dictionary the whole process shares.
+    ///
+    /// It also *replaces* rather than throws. .NET's `AddLanguage` is
+    /// `Dictionary.Add` on that static dictionary, into which `GetTimeTextInfo`
+    /// also caches every shipped language it loads, so re-adding a name — or
+    /// adding one that some earlier format call already used — throws
+    /// `ArgumentException` there (probed: `AddLanguage("EN", …)` after any
+    /// `{0:time:}` under `en`). A per-formatter dictionary has no such
+    /// process-wide history to collide with, so nothing is gained by making
+    /// the second call fail. DESIGN.md, "Deliberate policy differences".
     pub fn add_language(&mut self, two_letter_iso_language_name: &str, info: TimeTextInfo) {
         let code = two_letter_iso_language_name.to_ascii_lowercase();
         match self.languages.iter_mut().find(|(known, _)| *known == code) {
@@ -458,6 +478,14 @@ fn two_letter_iso_language_name(culture_name: &str) -> String {
 /// The language of the culture a `time(…)` option names, .NET
 /// `CultureInfo.GetCultureInfo(options).TwoLetterISOLanguageName`, or the
 /// message of the `CultureNotFoundException` .NET throws for a name it rejects.
+///
+/// The primary subtag is taken as written, which is the
+/// `TwoLetterISOLanguageName` of every culture .NET knows except a three-letter
+/// ISO 639-2/T code with a two-letter equivalent: ICU folds `deu` to `de` and
+/// this does not, so `{0:time(deu):weeks}` writes German in .NET and English
+/// here. That is the `language_subtag` gap DESIGN.md records under
+/// "A culture name is validated, not resolved", and it is louder for this
+/// formatter than for `plural(…)`, because a whole language's words change.
 fn named_culture_language(name: &str) -> Result<String, String> {
     match culture::language_subtag(name) {
         Some(language) => Ok(language.to_ascii_lowercase()),
@@ -1005,7 +1033,11 @@ mod tests {
 
     #[test]
     fn a_custom_language_wins_over_a_shipped_one() {
-        // The counterpart of .NET's CommonLanguagesTimeTextInfo.AddLanguage.
+        // The counterpart of .NET's CommonLanguagesTimeTextInfo.AddLanguage,
+        // which is a static dictionary and whose `Add` throws on a name
+        // already in it — including one an earlier format call cached there.
+        // This one is the formatter's own and replaces instead; DESIGN.md,
+        // "Deliberate policy differences".
         let mut formatter = TimeFormatter::new();
         let mut pirate = common_language("en").expect("English is shipped").clone();
         pirate.day = vec!["{0} sun".to_owned(), "{0} suns".to_owned()];
@@ -1029,7 +1061,14 @@ mod tests {
 
     #[test]
     fn the_default_options_can_be_changed() {
-        // The .NET test `DefaultFormatOptions_Can_Be_Set`.
+        // .NET's `DefaultFormatOptions_Can_Be_Set` only asserts that its
+        // instance property round-trips, because that property is inert:
+        // `GetTimeParts` never reads it, and the options a call merges come
+        // from the *static* `TimeSpanUtility.DefaultFormatOptions`. The
+        // rendering assertions below are that static's behaviour, probed with
+        // `TimeSpanUtility.DefaultFormatOptions = RangeDays` on 3.6.1, which
+        // this formatter's field stands for; DESIGN.md, "Deliberate policy
+        // differences".
         let mut formatter = TimeFormatter::new();
         formatter.set_default_format_options(TimeSpanFormatOptions::RANGE_DAYS);
         assert_eq!(

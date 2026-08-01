@@ -108,7 +108,8 @@ where
 /// 1. a null current value under a null-conditional chain short-circuits, as
 ///    in every other source;
 /// 2. a *group* as the current value answers from its own variables, which is
-///    what makes an argument override a registered group of the same name;
+///    what makes a `VariablesGroup` argument override a registered group of
+///    the same name;
 /// 3. otherwise the selector is looked up among the registered group names —
 ///    unconditionally, whatever the current value is, so a group named `Length`
 ///    answers `{0.Length}` on a string before [`StringSource`] gets to see it
@@ -120,13 +121,31 @@ where
 /// set, 3.6.1 still fails `{GLOBAL.theVariable}`.
 ///
 /// Step 2 is where the port cannot be exact, because a group is a
-/// [`Value::Map`] and so is every other map. .NET tells a `VariablesGroup`
-/// from a `Dictionary` by its interface, and gives only the former the right
-/// to answer before the group names; here both do, and a map argument
-/// therefore shadows a registered group of the same name. The same one map
-/// type also leaves a variable name to [`MapSource`](super::MapSource) after
-/// this source declines it, which under case-insensitive settings finds what
-/// .NET would not. Both are in DESIGN.md, "Known divergences".
+/// [`Value::Map`] and so is every other map, where .NET tells the two apart by
+/// the `IVariablesGroup` interface. A `Dictionary` reaching step 2 in .NET
+/// *declines*, and is answered later by `DictionarySource` (rank 5000) — after
+/// `StringSource` (3000) and the `list` formatter's `{Index}` (4000). So the
+/// test cannot be "the current value is a map": that would answer any map
+/// argument's key at rank 2000 and, for instance, turn `{Index}` inside
+/// `{0:list:…}` over a list of maps into the map's own `Index` key. What is
+/// asked instead is where the map *came from*: step 2 fires only when an
+/// earlier selector of the same placeholder named a registered group, which is
+/// the only way this source can have handed the value out. `{global.user}`
+/// and `{global.nested.inner}` therefore resolve at .NET's rank, and a map
+/// argument answers no differently than it does without this source
+/// registered.
+///
+/// Two residues stay, both in DESIGN.md, "Known divergences": a real
+/// `VariablesGroup` *argument* is a plain map here, so it no longer wins over
+/// a registered group of the same name (it does in .NET, and a `Dictionary`
+/// does not — we follow the `Dictionary`); and a group reached as the current
+/// value of a *child format*, `{global:{user}}`, has no earlier selector to
+/// root it, so [`MapSource`](super::MapSource) answers it at rank 5000 rather
+/// than this source at 2000 — same value, unless a source in between claims
+/// the name, which makes `{global:{Index}}` `7` in .NET and `-1` here. The one
+/// map type also leaves a variable name to `MapSource` after this source
+/// declines it, which under case-insensitive settings finds what .NET would
+/// not.
 ///
 /// [`StringSource`]: super::StringSource
 /// [`SmartSettings::case_sensitive`]: crate::SmartSettings::case_sensitive
@@ -136,8 +155,10 @@ fn evaluate<'a>(groups: &VariablesGroup, info: SelectorInfo<'a>) -> Option<Cow<'
     }
 
     if let Value::Map(current) = info.current {
-        if let Some(value) = current.get(info.text()) {
-            return Some(Cow::Borrowed(value));
+        if descends_from_a_group(groups, &info) {
+            if let Some(value) = current.get(info.text()) {
+                return Some(Cow::Borrowed(value));
+            }
         }
     }
 
@@ -148,6 +169,19 @@ fn evaluate<'a>(groups: &VariablesGroup, info: SelectorInfo<'a>) -> Option<Cow<'
     groups
         .get(info.text())
         .map(|group| Cow::Owned(group.clone()))
+}
+
+/// Whether the current value can only have come out of a registered group:
+/// an earlier selector of this placeholder named one, so this source answered
+/// it and everything below it is the group's own tree.
+///
+/// This stands in for .NET's `is IVariablesGroup` test — see [`evaluate`].
+fn descends_from_a_group(groups: &VariablesGroup, info: &SelectorInfo<'_>) -> bool {
+    info.placeholder
+        .selectors
+        .iter()
+        .take_while(|selector| selector.index < info.index())
+        .any(|selector| groups.contains_key(&selector.text))
 }
 
 /// Variables that templates can name without them being passed as arguments,
@@ -680,10 +714,14 @@ mod tests {
     /// what a `Dictionary` argument is — which 3.6.1 keeps apart: probed
     /// there, a `Dictionary` holding `global` loses to a registered group of
     /// that name, because only an `IVariablesGroup` is consulted before the
-    /// group names. With one map type there is one answer, and it is the
-    /// documented one: the argument wins. See DESIGN.md, "Known divergences".
+    /// group names, while a `VariablesGroup` holding it wins. With one map
+    /// type there is one answer, and it is the `Dictionary`'s: a map argument
+    /// is read by the sources that read maps, and only a value this source
+    /// itself handed out is treated as a group. .NET's own test passes a
+    /// `VariablesGroup`, so this half of it is the divergence — see DESIGN.md,
+    /// "Known divergences".
     #[test]
-    fn arguments_override_registered_groups() {
+    fn a_map_argument_does_not_override_registered_groups() {
         let smart = smart_with(PersistentVariablesSource::from_iter([(
             "global",
             group([("theVariable", Value::from("val-from-persistent-source"))]),
@@ -695,7 +733,14 @@ mod tests {
         )]));
         assert_eq!(
             smart.format("{global.theVariable}", &argument).unwrap(),
-            "val-from-argument"
+            "val-from-persistent-source"
+        );
+        // A group name shadows the argument wherever it appears, which is
+        // .NET's step 3 and needs no group to have been seen first.
+        let positional = Value::List(vec![argument]);
+        assert_eq!(
+            smart.format("{0.global.theVariable}", &positional).unwrap(),
+            "val-from-persistent-source"
         );
 
         let unrelated = Value::Map(group([("somethingElse", Value::from("x"))]));
@@ -728,6 +773,64 @@ mod tests {
             smart.format("{0.Length}", &args),
             Err(Error::Format { .. })
         ));
+    }
+
+    /// Registering this source must not change a template that never mentions
+    /// a variable. .NET gets that for free: a `Dictionary` is not an
+    /// `IVariablesGroup`, so it falls through this source (rank 2000) to
+    /// `DictionarySource` (5000), behind the `list` formatter's `{Index}`
+    /// (4000). Probed against 3.6.1 with a list of dictionaries that each hold
+    /// an `Index` key: `{0:list:{Index}|,}` is `0,1` and
+    /// `{0:list:{Name}{Index}|,}` is `a0,b1`, registered or not.
+    #[test]
+    fn a_map_argument_answers_no_differently_for_this_source_being_registered() {
+        let items = Value::List(vec![Value::List(vec![
+            Value::Map(group([
+                ("Index", Value::from("X")),
+                ("Name", Value::from("a")),
+            ])),
+            Value::Map(group([
+                ("Index", Value::from("Y")),
+                ("Name", Value::from("b")),
+            ])),
+        ])]);
+
+        let with_source = smart_with(source());
+        let without = SmartFormatter::new(settings());
+        for template in ["{0:list:{Index}|,}", "{0:list:{Name}{Index}|,}"] {
+            assert_eq!(
+                with_source.format(template, &items).unwrap(),
+                without.format(template, &items).unwrap(),
+                "{template} changed meaning when the variables source was registered"
+            );
+        }
+        assert_eq!(
+            with_source.format("{0:list:{Index}|,}", &items).unwrap(),
+            "0,1"
+        );
+        assert_eq!(
+            with_source
+                .format("{0:list:{Name}{Index}|,}", &items)
+                .unwrap(),
+            "a0,b1"
+        );
+    }
+
+    /// The other side of the rule: a value this source handed out *is* read as
+    /// a group, at this source's rank, so a variable named like a selector
+    /// another source answers still wins. Probed in 3.6.1, where the group is
+    /// an `IVariablesGroup` and wins for the same reason.
+    #[test]
+    fn a_variable_of_a_group_wins_over_a_lower_ranked_source() {
+        let smart = smart_with(PersistentVariablesSource::from_iter([(
+            "global",
+            group([("Index", Value::from("from-the-group"))]),
+        )]));
+        let items = Value::List(vec![Value::List(vec![Value::from("a"), Value::from("b")])]);
+        assert_eq!(
+            smart.format("{0:list:{global.Index}|,}", &items).unwrap(),
+            "from-the-group,from-the-group"
+        );
     }
 
     /// Probed in 3.6.1: this source looks names up in a plain `Dictionary`

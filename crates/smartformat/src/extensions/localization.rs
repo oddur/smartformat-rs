@@ -120,9 +120,11 @@ pub trait LocalizationProvider: Send + Sync {
 /// `ResourceManager` behaviors that are observable through the formatter are
 /// reproduced by hand:
 ///
-/// * the **culture chain**: `es-MX` → `es` → the invariant culture `""`, each
-///   step dropping the last subtag, so an entry only present in the invariant
-///   table answers a request for any culture;
+/// * the **culture chain**: `es-MX` → `es` → the invariant culture `""`, the
+///   chain of .NET's `CultureInfo.Parent` ([`culture::parent_name`]), so an
+///   entry only present in the invariant table answers a request for any
+///   culture — and `zh-CN` reaches a translation filed under `zh-Hans`, which
+///   is a step no rule about subtags would take;
 /// * the **fallback culture** ([`with_fallback_culture`](Self::with_fallback_culture)),
 ///   a second chain walked when the first one comes up empty
 ///   (.NET `LocalizationProvider.FallbackCulture`);
@@ -253,7 +255,7 @@ impl HashMapLocalizationProvider {
             if current.is_empty() {
                 return None;
             }
-            current = parent_culture_name(current);
+            current = culture::parent_name(current);
         }
     }
 }
@@ -294,15 +296,6 @@ where
 /// as written when it does not.
 fn canonical_culture_name(culture: &str) -> String {
     culture::get(culture).map_or_else(|| culture.to_owned(), |data| data.name.to_owned())
-}
-
-/// The parent of a culture name: `"zh-Hans-CN"` → `"zh-Hans"` → `"zh"` → `""`,
-/// which is .NET's `CultureInfo.Parent` for the names this crate ships.
-fn parent_culture_name(culture_name: &str) -> &str {
-    match culture_name.rfind('-') {
-        Some(separator) => &culture_name[..separator],
-        None => "",
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1328,12 +1321,60 @@ mod tests {
         assert_eq!(provider.get_string("key", culture::invariant()), None);
     }
 
+    /// A divergence, and the same one `TemplateFormatter` has: .NET builds the
+    /// `FormattingException` from the failing item's own `BaseString`, which
+    /// for a placeholder parsed out of a translation is *the translation*, so
+    /// under `OutputErrorInResult` .NET quotes `Hello {Nope}!` where the engine
+    /// here quotes the template it was called with. The issue and the index
+    /// agree — the index is an offset into the translation on both sides,
+    /// which is why our caret lands on the wrong character of the line we
+    /// quote. DESIGN.md, "Known divergences".
     #[test]
-    fn parent_culture_names_drop_one_subtag_at_a_time() {
-        assert_eq!(parent_culture_name("zh-Hans-CN"), "zh-Hans");
-        assert_eq!(parent_culture_name("zh-Hans"), "zh");
-        assert_eq!(parent_culture_name("zh"), "");
-        assert_eq!(parent_culture_name(""), "");
+    fn an_error_inside_a_translation_is_reported_against_the_outer_template() {
+        let smart = smart_with_settings(
+            HashMapLocalizationProvider::from_triples([("", "greetNobody", "Hello {Nope}!")]),
+            SmartSettings {
+                format_error_action: ErrorAction::OutputErrorInResult,
+                ..SmartSettings::default()
+            },
+        );
+
+        let rendered = format(&smart, "{:L:greetNobody}");
+        assert_eq!(
+            rendered,
+            concat!(
+                "Hello Error parsing format string: No source extension could handle ",
+                "the selector named \"Nope\" at 7\n{:L:greetNobody}\n-------^!"
+            )
+        );
+    }
+
+    /// The chain is .NET's `CultureInfo.Parent`, which is *not* "drop the last
+    /// subtag" for a language written in more than one script: probed on
+    /// .NET 10, `zh-CN`'s parent is `zh-Hans`, and an `ILocalizationProvider`
+    /// backed by `ResourceManager` finds a `zh-Hans` translation from `zh-CN`.
+    /// Both cultures are in the generated table, so this is reachable with the
+    /// data this crate ships.
+    #[test]
+    fn the_culture_chain_walks_dotnets_parents() {
+        let provider = HashMapLocalizationProvider::from_triples([
+            ("zh-Hans", "Hello", "\u{4f60}\u{597d}"),
+            ("", "Hello", "Hello"),
+        ]);
+        assert_eq!(
+            provider
+                .get_string("Hello", culture::get("zh-CN").expect("zh-CN"))
+                .as_deref(),
+            Some("\u{4f60}\u{597d}")
+        );
+        // A culture with no script culture between it and its language still
+        // walks one subtag at a time.
+        assert_eq!(
+            provider
+                .get_string("Hello", culture::get("es-MX").expect("es-MX"))
+                .as_deref(),
+            Some("Hello")
+        );
     }
 
     #[test]

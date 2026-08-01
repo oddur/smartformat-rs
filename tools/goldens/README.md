@@ -91,10 +91,14 @@ them and no other case changes. `AddExtensions` slots each one where
 Rust side.
 
 The localization provider is `LocalizationFixture` in `Program.cs`: a table keyed by
-culture name, looked up specific culture → parent → invariant, with no fallback culture.
+culture name, looked up along `CultureInfo.Parent` — specific culture → parent →
+invariant, which for `zh-CN` goes through the script culture `zh-Hans`.
 It is *not* the resx-backed `SmartFormat.Utilities.LocalizationProvider` — the table has
 to be in source, because `localization_fixture` in the Rust runner mirrors it entry for
-entry.
+entry. Its two knobs are, though: the `localization` settings key picks a fixture with
+`FallbackCulture` set (to `de`) or with `ReturnNameIfNotFound`, each applied exactly where
+`LocalizationProvider.GetString` applies it — the requested culture's chain first, then
+the fallback culture's, then the name itself.
 
 A variables source is per case instead, under the `variables` settings key, because it is
 ranked ahead of every other source: a fixture holding a group named `Length` would answer
@@ -142,6 +146,7 @@ exactly the same way, so they ride along in the same record and the same JSON ob
 | `listCanAutoDetect` | `ListFormatter.CanAutoDetect` | `false` |
 | `templates` | which set `TemplateFormatter.Register` is called with | `Standard`, `WithEmptyName`, `CaseInsensitive`, `Simple` |
 | `variables` | which set of groups a `PersistentVariablesSource` is registered with | `Standard`, `Precedence`, `Shadowing` |
+| `localization` | how the `ILocalizationProvider` is configured | `Fallback`, `ReturnName` |
 
 `SplitChar` is validated by `Utilities.Validation.GetValidSplitCharOrThrow`, which accepts
 only `|`, `,` and `~`, so those are the only values a case may ask for.

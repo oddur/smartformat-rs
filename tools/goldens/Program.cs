@@ -2962,6 +2962,12 @@ static void TimeCases(List<GoldenCase> cases)
     Add("culture-uppercase", "{0:time(EN):hours minutes}", oneOfEach, "de");
     Add("culture-specific", "{0:time(en-US):hours minutes}", oneOfEach, "de");
     Add("culture-alt-sort", "{0:time(en_US):hours minutes}", oneOfEach, "de");
+    // A three-letter ISO 639-2/T code, which ICU folds to its two-letter
+    // equivalent and `fmt::culture::language_subtag` takes as written: German
+    // in .NET, the English fallback here. The documented `language_subtag`
+    // gap, seen from this formatter.
+    Add("culture-iso-639-2", "{0:time(deu):weeks}", zero);
+    Add("culture-iso-639-2-english", "{0:time(eng):weeks}", zero);
 
     // A value the formatter cannot process. The exception is built from the
     // format's *first item*, so the message quotes the template when the
@@ -3082,6 +3088,11 @@ static void LocalizationCases(List<GoldenCase> cases)
     Add("option-culture-beats-call", "{:L(de):WeTranslateText}", culture: "fr-FR");
     // A specific culture falls back to its language's table.
     Add("option-culture-specific", "{:L(es-MX):WeTranslateText}");
+    // … through `CultureInfo.Parent`, which for `zh-CN` is the *script*
+    // culture `zh-Hans` and not `zh`.
+    Add("call-culture-zh-cn", "{:L:WeTranslateText}", culture: "zh-CN");
+    Add("option-culture-zh-cn", "{:L(zh-CN):WeTranslateText}");
+    Add("option-culture-zh-hans", "{:L(zh-Hans):WeTranslateText}");
     // Empty options are no options, and the options are trimmed.
     Add("option-culture-empty", "{:L():WeTranslateText}");
     Add("option-culture-empty-es", "{:L():WeTranslateText}", culture: "es");
@@ -3099,6 +3110,13 @@ static void LocalizationCases(List<GoldenCase> cases)
                  ("missing-key", "{:L(es):NonExisting}"),
                  ("unparsable-translation", "{:L:BadParse}"),
                  ("bad-escape-in-key", @"{:L:a\qb}"),
+                 // A translation that is found and then fails while being
+                 // rendered: a selector no source answers, and a nested
+                 // `{:L:…}` whose own key has no translation. .NET quotes the
+                 // *translation* in the error message and we quote the outer
+                 // template, which only the OutputErrorInResult twins see.
+                 ("inside-translation", "{:L:greetNobody}"),
+                 ("inside-nested-translation", "{:L:OuterMissingInner}"),
              })
     {
         Add($"error-{slug}", template);
@@ -3110,6 +3128,28 @@ static void LocalizationCases(List<GoldenCase> cases)
             Add($"error-{slug}-{action.ToString().ToLowerInvariant()}", template,
                 settings: new CaseSettings(FormatErrorAction: action));
     }
+
+    // The two knobs of `LocalizationProvider`. The fallback culture is walked
+    // as a chain of its own, and only after the requested culture's chain has
+    // come up empty, so a key both tables hold still answers from the
+    // requested one.
+    var fallback = new CaseSettings(Localization: LocalizationSet.Fallback);
+    Add("fallback-culture-used", "{:L:OnlyGerman}", culture: "es", settings: fallback);
+    Add("fallback-culture-not-needed", "{:L:WeTranslateText}", culture: "es",
+        settings: fallback);
+    Add("fallback-culture-invariant-call", "{:L:OnlyGerman}", settings: fallback);
+    Add("fallback-culture-option", "{:L(fr):OnlyGerman}", settings: fallback);
+    Add("fallback-culture-still-missing", "{:L:NonExisting}", culture: "es",
+        settings: fallback);
+    // Without it, the same key is an error.
+    Add("fallback-culture-off", "{:L:OnlyGerman}", culture: "es");
+
+    // `ReturnNameIfNotFound` makes a miss render the key — as a template, so
+    // the key's own placeholders resolve.
+    var returnName = new CaseSettings(Localization: LocalizationSet.ReturnName);
+    Add("return-name-missing-key", "{:L:NonExisting}", settings: returnName);
+    Add("return-name-found-key", "{:L(es):WeTranslateText}", settings: returnName);
+    Add("return-name-is-a-template", "{:L:Hi {0}}", """["Joe"]""", settings: returnName);
 
     // The key is the format's RawText, so escape sequences are resolved into
     // it before the lookup.
@@ -3183,16 +3223,40 @@ static void VariablesCases(List<GoldenCase> cases)
     Add("null-variable-nullable-operator", "{global.nullVar?.Any}");
 
     // What is not there is an error, and the nullable operator on the *group*
-    // does not excuse a missing variable.
-    Add("missing-variable", "{global.missing}");
-    Add("missing-group", "{missingGroup}");
-    Add("missing-variable-nullable-group", "{global?.missing}");
-    Add("missing-nested-variable", "{global.nested.missing}");
+    // does not excuse a missing variable. Each one gets the twins under the
+    // other error actions, so the message and the caret column are pinned too
+    // and not just the exception type.
+    foreach (var (slug, template) in new (string, string)[]
+             {
+                 ("missing-variable", "{global.missing}"),
+                 ("missing-group", "{missingGroup}"),
+                 ("missing-variable-nullable-group", "{global?.missing}"),
+                 ("missing-nested-variable", "{global.nested.missing}"),
+             })
+    {
+        Add(slug, template);
+        foreach (var action in new[]
+                 {
+                     FormatErrorAction.Ignore, FormatErrorAction.MaintainTokens,
+                     FormatErrorAction.OutputErrorInResult,
+                 })
+            Add($"{slug}-{action.ToString().ToLowerInvariant()}", template,
+                settings: new CaseSettings(FormatErrorAction: action, Variables: VariableSet.Standard));
+    }
 
     // Group and variable names are matched ordinally, whatever the settings
     // say — .NET's group dictionaries never consult CaseSensitivity.
     Add("group-name-wrong-case", "{GLOBAL.theVariable}");
     Add("variable-name-wrong-case", "{global.THEVARIABLE}");
+    foreach (var (slug, template) in new (string, string)[]
+             {
+                 ("group-name-wrong-case", "{GLOBAL.theVariable}"),
+                 ("variable-name-wrong-case", "{global.THEVARIABLE}"),
+             })
+        Add($"{slug}-outputerrorinresult", template,
+            settings: new CaseSettings(
+                FormatErrorAction: FormatErrorAction.OutputErrorInResult,
+                Variables: VariableSet.Standard));
     Add("group-name-wrong-case-ignoring-case", "{GLOBAL.theVariable}", settings: standardIgnoringCase);
     Add("variable-name-wrong-case-ignoring-case", "{global.THEVARIABLE}",
         settings: standardIgnoringCase);
@@ -3218,8 +3282,30 @@ static void VariablesCases(List<GoldenCase> cases)
         precedence);
     Add("precedence-map-argument", "{global.theVariable}",
         """{"global":{"theVariable":"val-from-argument"}}""", precedence);
+    Add("precedence-map-argument-positional", "{0.global.theVariable}",
+        """[{"global":{"theVariable":"val-from-argument"}}]""", precedence);
     Add("precedence-map-other-key", "{other}",
         """{"global":"dict-value","other":"dict-other"}""", precedence);
+
+    // Registering the source must not change a template that names no
+    // variable: a dictionary argument is not an IVariablesGroup, so it falls
+    // through this source (rank 2000) to DictionarySource (5000) — behind the
+    // list formatter's `{Index}` (4000).
+    const string mapItems = """[[{"Index":"X","Name":"a"},{"Index":"Y","Name":"b"}]]""";
+    Add("list-index-over-map-items", "{0:list:{Index}|,}", mapItems);
+    Add("list-index-over-map-items-with-key", "{0:list:{Name}{Index}|,}", mapItems);
+    // The same template without the source registered, which must agree.
+    cases.Add(new GoldenCase("var-list-index-no-source", "{0:list:{Index}|,}", mapItems));
+    // A variable, on the other hand, is read at this source's rank and wins
+    // over the list formatter's `{Index}`, because the group it belongs to is
+    // an IVariablesGroup.
+    Add("list-index-from-a-group", "{0:list:{global.Index}|,}", """[["a","b"]]""");
+    // A group as the current value of a *child format* has no selector to root
+    // it, which is how the port tells a group from a map: the variable is
+    // still found, but by MapSource (5000) rather than this source (2000), so
+    // a name a source in between answers goes to that source instead.
+    Add("child-format-of-a-group", "{global:{theVariable}}");
+    Add("child-format-of-a-group-shadowed-name", "{global:{Index}}");
 
     // A group named like a selector another source would answer wins, because
     // the source is ranked ahead of all of them.
@@ -3259,8 +3345,16 @@ static void ClockConditionCases(List<GoldenCase> cases)
         AddDate($"three-{slug}", "{0:cond:Past|Today|Future}", value);
         // The formatter auto-detects, so the name is optional.
         AddDate($"auto-{slug}", "{0:Past|Today|Future}", value);
+        // More than three parts: the arm is `paramCount - 1`, so the last one
+        // is what a date that is neither past nor today takes, and the parts
+        // between `Today` and it are unreachable.
+        AddDate($"four-{slug}", "{0:cond:Past|Today|Unreachable|Future}", value);
     }
     AddDate("nested-format", "{0:cond:was {:d}|is {:d}|will be {:d}}", now.AddHours(2));
+    // A date is not IConvertible for the condition parser, so a complex
+    // condition is not a condition at all: the text is written as it stands.
+    AddDate("complex-condition", "{0:cond:>0?a|b}", now);
+    AddDate("complex-condition-three", "{0:cond:>0?a|b|c}", now.AddDays(1));
 
     void AddSpan(string id, string template, string span) =>
         cases.Add(new GoldenCase("condts-" + id, template, TimeSpanArgs(span)));
@@ -3273,8 +3367,14 @@ static void ClockConditionCases(List<GoldenCase> cases)
         AddSpan($"two-{slug}", "{0:cond:overdue|left}", span);
         AddSpan($"three-{slug}", "{0:cond:overdue|due now|left}", span);
         AddSpan($"auto-{slug}", "{0:overdue|due now|left}", span);
+        // Four parts: zero folds into the first arm again, and a positive span
+        // takes `paramCount - 1`.
+        AddSpan($"four-{slug}", "{0:cond:overdue|due now|unreachable|left}", span);
     }
     AddSpan("nested-format", "{0:cond:overdue by {:g}|due now|{:g} left}", "01:00:00");
+    // Not IConvertible either, so the condition text is written verbatim.
+    AddSpan("complex-condition", "{0:cond:>0?a|b}", "01:00:00");
+    AddSpan("complex-condition-three", "{0:cond:>0?a|b|c}", "-01:00:00");
 }
 
 /// <summary>
@@ -3291,6 +3391,9 @@ static PersistentVariablesSource VariablesFixture(VariableSet set) => set switch
                 { "theVariable", new StringVariable("persistent-value") },
                 { "nested", new VariablesGroup { { "inner", new IntVariable(42) } } },
                 { "nullVar", new ObjectVariable(null) },
+                // Named like the selector the `list` formatter answers, to
+                // show that a group's variable is read before it.
+                { "Index", new IntVariable(7) },
             }
         },
         {
@@ -3453,7 +3556,8 @@ internal sealed record CaseSettings(
     char ListSplitChar = '|',
     bool ListCanAutoDetect = true,
     TemplateSet Templates = TemplateSet.None,
-    VariableSet Variables = VariableSet.None)
+    VariableSet Variables = VariableSet.None,
+    LocalizationSet Localization = LocalizationSet.Standard)
 {
     public static readonly CaseSettings Default = new();
 
@@ -3473,9 +3577,10 @@ internal sealed record CaseSettings(
                 ErrorAction = ParseErrorAction,
                 ConvertCharacterStringLiterals = ConvertCharacterStringLiterals,
             },
-            // Not a per-case knob: the provider is the same fixed table for
-            // every case, and only a `{:L:…}` placeholder ever reaches it.
-            Localization = { LocalizationProvider = LocalizationFixture.Instance },
+            // The same fixed table for every case — only a `{:L:…}`
+            // placeholder ever reaches it — with the two knobs of
+            // `LocalizationProvider` a case can ask for.
+            Localization = { LocalizationProvider = LocalizationFixture.For(Localization) },
         };
         if (CustomSelectorChars.Length > 0)
             settings.Parser.AddCustomSelectorChars(CustomSelectorChars.ToCharArray());
@@ -3528,6 +3633,8 @@ internal sealed record CaseSettings(
             json["templates"] = Templates.ToString();
         if (Variables != Default.Variables)
             json["variables"] = Variables.ToString();
+        if (Localization != Default.Localization)
+            json["localization"] = Localization.ToString();
         return json;
     }
 }
@@ -3538,6 +3645,12 @@ internal sealed record CaseSettings(
 /// SmartFormat ships a resx-backed provider; this one keeps the table in the
 /// harness, where the Rust runner mirrors it entry for entry into a
 /// <c>HashMapLocalizationProvider</c>.
+///
+/// <see cref="FallbackCulture"/> and <see cref="ReturnNameIfNotFound"/> are the
+/// two knobs of <c>SmartFormat.Utilities.LocalizationProvider</c>, applied here
+/// exactly as its <c>GetString</c> applies them over a single
+/// <c>ResourceManager</c>: the requested culture's chain first, then the
+/// fallback culture's chain, then the name itself.
 /// </summary>
 internal sealed class LocalizationFixture : ILocalizationProvider
 {
@@ -3548,6 +3661,12 @@ internal sealed class LocalizationFixture : ILocalizationProvider
         ("es", "WeTranslateText", "Traducimos el texto"),
         ("fr", "WeTranslateText", "Nous traduisons des textes"),
         ("de", "WeTranslateText", "Wir übersetzen Text"),
+        // A script culture, which `zh-CN` only reaches through
+        // `CultureInfo.Parent` — 'zh-CN'.Parent is 'zh-Hans', not 'zh'.
+        ("zh-Hans", "WeTranslateText", "我们翻译文本"),
+        // A key no culture chain of another culture reaches, so only the
+        // fallback culture can find it.
+        ("de", "OnlyGerman", "Nur auf Deutsch"),
         ("", "OnlyExistForInvariantCulture", "This entry only exists in the invariant culture resource"),
         ("", "has {:N0} inhabitants", "has {:N0} inhabitants"),
         ("es", "has {:N0} inhabitants", "tiene {:N0} habitantes"),
@@ -3568,6 +3687,10 @@ internal sealed class LocalizationFixture : ILocalizationProvider
         // A translation that localizes again.
         ("", "Outer", "<{:L:Inner}>"),
         ("", "Inner", "INNER"),
+        // Translations that are found and then fail while being rendered: the
+        // inner key has no translation, and the selector has no source.
+        ("", "OuterMissingInner", "<{:L:NoSuchInner}>"),
+        ("", "greetNobody", "Hello {Nope}!"),
         // The key an escape sequence in the format resolves to.
         ("", "a{b", "escaped"),
         // A translation that does not parse.
@@ -3578,14 +3701,34 @@ internal sealed class LocalizationFixture : ILocalizationProvider
         ("", "K2", "ABC {0}"),
     ];
 
+    /// <summary>The fallback culture of <see cref="LocalizationSet.Fallback"/>.</summary>
+    public const string FallbackCultureName = "de";
+
     // Declared after the table it reads: static fields are initialized in
     // declaration order.
-    public static readonly LocalizationFixture Instance = new();
+    public static readonly LocalizationFixture Instance = new(null, false);
+
+    private static readonly LocalizationFixture WithFallbackCulture =
+        new(CultureInfo.GetCultureInfo(FallbackCultureName), false);
+
+    private static readonly LocalizationFixture ReturningTheName = new(null, true);
+
+    public static LocalizationFixture For(LocalizationSet set) => set switch
+    {
+        LocalizationSet.Standard => Instance,
+        LocalizationSet.Fallback => WithFallbackCulture,
+        LocalizationSet.ReturnName => ReturningTheName,
+        _ => throw new InvalidOperationException("unknown localization set: " + set),
+    };
 
     private readonly Dictionary<string, Dictionary<string, string>> _tables;
+    private readonly CultureInfo? _fallbackCulture;
+    private readonly bool _returnNameIfNotFound;
 
-    private LocalizationFixture()
+    private LocalizationFixture(CultureInfo? fallbackCulture, bool returnNameIfNotFound)
     {
+        _fallbackCulture = fallbackCulture;
+        _returnNameIfNotFound = returnNameIfNotFound;
         _tables = new Dictionary<string, Dictionary<string, string>>(StringComparer.Ordinal);
         foreach (var (culture, key, value) in Entries)
         {
@@ -3602,7 +3745,17 @@ internal sealed class LocalizationFixture : ILocalizationProvider
 
     public string? GetString(string name, CultureInfo cultureInfo) => Lookup(name, cultureInfo);
 
+    // `LocalizationProvider.GetString`, for one resource: the culture's own
+    // chain, then the fallback culture's, then the name itself.
     private string? Lookup(string name, CultureInfo culture)
+    {
+        var value = WalkChain(name, culture);
+        if (value is null && _fallbackCulture != null) value = WalkChain(name, _fallbackCulture);
+        if (value is null && _returnNameIfNotFound) return name;
+        return value;
+    }
+
+    private string? WalkChain(string name, CultureInfo culture)
     {
         for (var c = culture;; c = c.Parent)
         {
@@ -3611,6 +3764,21 @@ internal sealed class LocalizationFixture : ILocalizationProvider
             if (c.Equals(CultureInfo.InvariantCulture)) return null;
         }
     }
+}
+
+/// <summary>
+/// How the <c>ILocalizationProvider</c> a case runs with is configured. The
+/// table is the same either way; what changes are the two knobs
+/// <c>SmartFormat.Utilities.LocalizationProvider</c> carries.
+/// </summary>
+internal enum LocalizationSet
+{
+    /// <summary>No fallback culture, a miss is a miss.</summary>
+    Standard,
+    /// <summary>A fallback culture, walked when the requested chain misses.</summary>
+    Fallback,
+    /// <summary>A miss answers with the requested name.</summary>
+    ReturnName,
 }
 
 /// <summary>Which set of named templates a case has registered, if any.</summary>

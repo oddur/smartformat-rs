@@ -40,7 +40,7 @@ Everything in SmartFormat's core plus the built-in extensions, in this order:
   at .NET's rank.
 
 **The port's original scope is now complete.** Everything M1–M4 lists is
-implemented and pinned against SmartFormat.NET 3.6.1 by 2742 golden cases and
+implemented and pinned against SmartFormat.NET 3.6.1 by 2799 golden cases and
 the ported NUnit tests. What is left is written down: the entries under "Known
 divergences" and "Deferred, not divergent" below, and the non-goals above.
 
@@ -323,17 +323,38 @@ answer is not reproducible.
   \"ismatch\" is not supported; select a value from it". The same call as the
   default-formatting entry above.
   *Pin:* `extensions::ismatch::tests::a_list_value_fails_loudly`.
-- **An error inside a registered template quotes the wrong string.** .NET
+- **An error inside a `Format` parsed elsewhere quotes the wrong string.** .NET
   builds the `FormattingException` from the failing item's own `BaseString`,
-  which for a template is the *template* text; the engine here quotes the
-  string being rendered. With a template `bad` = `{Nope}` and the outer
-  `x{:t:bad}y` under `OutputErrorInResult`, both write the same issue and the
-  same index, and .NET's caret block quotes `{Nope}` where ours quotes
-  `x{:t:bad}y`. Closing it means letting a child `Format` carry the base string
-  it was parsed from; it will bite any later formatter that renders a `Format`
-  parsed elsewhere.
-  *Pins:* `template-error-inside` (skipped) and
-  `extensions::template::tests::an_error_inside_a_template_is_reported_against_the_outer_template`.
+  which for a template is the *template* text and for a localized string is the
+  *translation*; the engine here quotes the string being rendered. Two
+  formatters render a `Format` parsed somewhere else, and both are affected:
+  - `TemplateFormatter`. With a template `bad` = `{Nope}` and the outer
+    `x{:t:bad}y` under `OutputErrorInResult`, both sides write the same issue
+    and the same index, and .NET's caret block quotes `{Nope}` where ours
+    quotes `x{:t:bad}y`.
+  - `LocalizationFormatter`. With the translation `greetNobody` =
+    `Hello {Nope}!`, `{:L:greetNobody}` under `OutputErrorInResult` quotes
+    `Hello {Nope}!` in .NET and `{:L:greetNobody}` here; same for a nested
+    `{:L:…}` whose own key has no translation. The index stays an offset into
+    the *translation* either way, so our caret also lands on the wrong
+    character of the line we quote.
+
+  Every other error action agrees byte for byte, and so does the error's issue
+  and index, which is why only the `OutputErrorInResult` cases are skipped.
+  Closing it means letting a child `Format` carry the base string it was parsed
+  from — the engine's `base` is one string per format call, and neither
+  `FormattingInfo::format_as_child` nor `Error::Format` can name another
+  without a lifetime that a locally-owned `Format` (a translation out of the
+  parse cache) cannot satisfy.
+  *Pins:* `template-error-inside`,
+  `loc-error-inside-translation-outputerrorinresult` and
+  `loc-error-inside-nested-translation-outputerrorinresult` (skipped); the
+  agreeing `loc-error-inside-translation`,
+  `loc-error-inside-translation-ignore`,
+  `loc-error-inside-translation-maintaintokens` and the three
+  `loc-error-inside-nested-translation*` twins; and
+  `extensions::template::tests::an_error_inside_a_template_is_reported_against_the_outer_template`,
+  `extensions::localization::tests::an_error_inside_a_translation_is_reported_against_the_outer_template`.
 - **`substr` option parsing is culture-invariant.** .NET's `int.Parse(string)`
   uses `NumberFormatInfo.CurrentInfo`, so the sign characters it accepts are
   the *thread* culture's; we parse the invariant `+` / `-`. Only a culture
@@ -378,7 +399,10 @@ answer is not reproducible.
   *Pins:* `plural-i64-beyond-double`, `plural-f64-beyond-double`,
   `extensions::plural::tests::an_integer_beyond_the_precision_of_a_double_is_a_known_divergence`
   and `…::a_large_double_is_the_same_known_divergence`.
-- **A `plural(…)` culture name is validated, not resolved.** .NET hands the
+- **A culture name in formatter options is validated, not resolved.** Both
+  extensions that read a language out of their options — `plural(…)` and
+  `time(…)` — go through `fmt::culture::language_subtag`, so both inherit this.
+  .NET hands the
   name to `CultureInfo.GetCultureInfo` and reads `TwoLetterISOLanguageName` off
   the result; we validate the name the way ICU does — `fmt::culture::language_subtag`,
   the crate's one notion of a .NET culture name, shared with `culture::get`:
@@ -388,9 +412,17 @@ answer is not reproducible.
   knows. A rejected name reproduces the `CultureNotFoundException` message .NET
   wraps at index 0 — text that belongs to the *runtime*, not to SmartFormat, so
   a .NET version that rewords it moves the pin. Two ICU behaviors are out of
-  reach: a three-letter ISO 639-2 code with a two-letter equivalent (`eng` is
+  reach: a three-letter ISO 639-2/T code with a two-letter equivalent (`eng` is
   English in .NET, unknown here) and `und` (the invariant culture, whose
-  language is `iv`). A name with an underscore and more than two subtags is
+  language is `iv`). The three-letter gap is louder for `time(…)` than for
+  `plural(…)`, because a whole language's words change rather than a plural
+  index: `{0:time(deu):weeks}` is `weniger als 1 Woche` in .NET and
+  `less than 1 week` here, the English *fallback language* — the name resolves
+  to the language `deu`, which no `TimeTextInfo` is filed under. `fra`, `ita`,
+  `spa` and `por` behave the same way; `eng` agrees only because English is
+  also the fallback. Everything else probed agrees, `zh-Hans`, `sr-Latn-RS`,
+  `de-DE-1996`, `es-419`, `qps-ploc` and the legacy aliases `iw`/`in`/`ji`/`sh`
+  included. A name with an underscore and more than two subtags is
   *not* a third: probed on .NET 10, `en_US_POSIX` is two underscores and both
   sides reject it, and `en_US-POSIX` is one underscore and both sides read it
   as `en`.
@@ -398,8 +430,11 @@ answer is not reproducible.
   `plural-option-long-name`, `plural-option-sort-order-subtag`, the eleven
   `plural-err-culture-name-*` cases (`plural-err-culture-name-en-us-posix`
   included), `errtext-plural-invalid-culture-name`,
-  `errtext-plural-invalid-culture-name-upper`, `plural-option-iso-639-2` (the
-  divergence, skipped) and
+  `errtext-plural-invalid-culture-name-upper`, `plural-option-iso-639-2` and
+  `time-culture-iso-639-2` (the divergence, both skipped),
+  `time-culture-iso-639-2-english`, `time-culture-uppercase`,
+  `time-culture-specific`, `time-culture-alt-sort`, `time-culture-malformed`
+  and
   `extensions::plural::tests::a_malformed_culture_name_is_the_dotnet_culture_error`.
 - **`choose` compares its options ordinally.** .NET uses
   `culture.CompareInfo.Compare`, which ignores collation-ignorable characters:
@@ -474,13 +509,35 @@ answer is not reproducible.
   The same case mapping divergence as `str-to-upper-eszett`.
   *Pins:* `loc-cache-case-insensitive` (the collision itself, which agrees) and
   `extensions::localization::tests::the_cache_collides_when_names_are_matched_case_insensitively`.
-- **A map argument shadows a registered variables group.** .NET looks for an
-  `IVariablesGroup` current value before it looks at the group names, so a
-  `Dictionary` argument holding `global` loses to a registered group named
-  `global` while a `VariablesGroup` argument wins. `Value::Map` is both, and the
-  port keeps the documented rule — the argument wins.
-  *Pins:* `var-precedence-map-argument` (skipped),
-  `sources::variables::tests::arguments_override_registered_groups`.
+- **A `VariablesGroup` argument does not shadow a registered group.** .NET
+  looks for an `IVariablesGroup` current value before it looks at the group
+  names, so a `Dictionary` argument holding `global` loses to a registered
+  group named `global` while a `VariablesGroup` argument wins. `Value::Map` is
+  both, so one of the two has to give, and it is the `VariablesGroup`: the
+  source answers out of the current value only when an earlier selector of the
+  same placeholder named a registered group — the only way this source can have
+  handed that value out — and a map argument is therefore read by the sources
+  that read maps, exactly as it is with no variables source registered.
+  Following the `Dictionary` is what keeps registering the extension from
+  changing unrelated templates: the variables source is ranked 2000, ahead of
+  `StringSource` (3000) and the `list` formatter's `{Index}` (4000), so
+  answering any map's key there would turn `{Index}` inside `{0:list:…}` over a
+  list of maps into the map's own `Index` key.
+  The residue is the group that arrives as the current value of a *child
+  format*, `{global:{user}}`: no selector of that placeholder rooted it, so
+  `MapSource` answers the variable at 5000 rather than this source at 2000. The
+  value is the same — until a source in between claims the name, and
+  `{global:{Index}}` with a variable named `Index` is `7` in .NET and `-1` here,
+  the `list` formatter's out-of-list sentinel.
+  *Pins:* `var-child-format-of-a-group-shadowed-name` (the residue, skipped),
+  `var-child-format-of-a-group`, `var-precedence-map-argument`,
+  `var-precedence-map-argument-positional`,
+  `var-list-index-over-map-items`, `var-list-index-over-map-items-with-key`,
+  `var-list-index-no-source` and `var-list-index-from-a-group` (all agreeing,
+  which is the point), plus
+  `sources::variables::tests::a_map_argument_does_not_override_registered_groups`,
+  `…::a_map_argument_answers_no_differently_for_this_source_being_registered`
+  and `…::a_variable_of_a_group_wins_over_a_lower_ranked_source`.
 - **A case-insensitive setting reaches variable names.** The source itself
   declines a wrong-cased variable name, ordinally, as .NET's plain `Dictionary`
   does. But the group is a `Value::Map`, so `MapSource` answers it afterwards
@@ -564,6 +621,28 @@ as an explicit input instead.
   *Pins:* `list-spacer-bad-escape` (the failing iteration itself, which does
   agree) and
   `extensions::list::tests::a_spacer_whose_escape_sequence_does_not_resolve_fails_where_it_is_written`.
+- **The default time-format options are a field of the formatter.** .NET has
+  two of them and this is both. The live one is the `static`
+  `TimeSpanUtility.DefaultFormatOptions`, which `ToTimeParts` merges into every
+  call, process-wide; the other is the instance property
+  `TimeFormatter.DefaultFormatOptions`, which the constructor copies from the
+  static and which *nothing ever reads* — `GetTimeParts` goes straight from
+  `TimeSpanFormatOptionsConverter.Parse` to `ToTimeParts`. Probed against
+  3.6.1: setting the instance property to `RangeDays` renders
+  `1 day 1 hour 1 minute 1 second`, and setting the static renders `1 day`.
+  `TimeFormatter::set_default_format_options` is the static's behaviour on the
+  instance, which is where the knob belongs in a crate with no process-wide
+  state. Not reachable from a template, so no golden can pin it.
+  *Pin:* `extensions::time::tests::the_default_options_can_be_changed`.
+- **A time language is added to the formatter, and replaces.** .NET's
+  `CommonLanguagesTimeTextInfo.AddLanguage` writes into a `static` dictionary
+  with `Dictionary.Add`, and `GetTimeTextInfo` caches every shipped language it
+  loads into that same dictionary — so adding a name that any earlier format
+  call has used throws (probed: `AddLanguage("EN", …)` after one `{0:time:}`
+  under `en` is `ArgumentException: An item with the same key has already been
+  added. Key: en`). `TimeFormatter::add_language` owns its dictionary, so there
+  is no shared history to collide with and a second call simply replaces.
+  *Pin:* `extensions::time::tests::a_custom_language_wins_over_a_shipped_one`.
 - **A template registry's comparer is fixed at construction.** .NET's
   `TemplateFormatter.Initialize` builds its dictionary with
   `Settings.GetCaseSensitivityComparer()` and never revisits it, so a settings

@@ -131,6 +131,51 @@ pub fn get(name: &str) -> Option<&'static CultureData> {
     generated::lookup(culture)
 }
 
+/// The name of the culture .NET's `CultureInfo.Parent` gives this one, `""`
+/// for a neutral culture (whose parent is the invariant culture) and for the
+/// invariant culture itself.
+///
+/// It is *usually* the name with its last subtag dropped, but not always: a
+/// language written in more than one script has a neutral culture per script
+/// between the specific culture and the language, so `zh-CN` walks up through
+/// `zh-Hans` and not straight to `zh` (`SCRIPT_PARENTS` in this module).
+/// Anything that walks the chain — [`LocalizationProvider`], which stands in
+/// for .NET's `ResourceManager.GetString(name, culture)` — has to walk .NET's,
+/// or a translation filed under the script culture is unreachable from the
+/// specific one.
+///
+/// [`LocalizationProvider`]: crate::extensions::localization::LocalizationProvider
+pub fn parent_name(name: &str) -> &str {
+    if let Some((_, parent)) = SCRIPT_PARENTS
+        .iter()
+        .find(|(child, _)| child.eq_ignore_ascii_case(name))
+    {
+        return parent;
+    }
+    match name.rfind('-') {
+        Some(separator) => &name[..separator],
+        None => "",
+    }
+}
+
+/// The cultures whose `CultureInfo.Parent` is *not* the name with its last
+/// subtag dropped, probed on .NET 10 (ICU). The list covers the one such
+/// culture this crate ships (`zh-CN`) and its siblings, which cost nothing to
+/// carry and are what a caller reaching for a Chinese name is likely to write;
+/// `parents_are_dotnets` pins the parent of every generated culture, so adding
+/// one whose parent needs an entry here fails that test rather than silently
+/// walking the wrong chain.
+///
+/// The legacy aliases `zh-CHS` and `zh-CHT` need no entry: .NET answers `zh`
+/// for both, which is what dropping the last subtag gives.
+const SCRIPT_PARENTS: &[(&str, &str)] = &[
+    ("zh-CN", "zh-Hans"),
+    ("zh-SG", "zh-Hans"),
+    ("zh-TW", "zh-Hant"),
+    ("zh-HK", "zh-Hant"),
+    ("zh-MO", "zh-Hant"),
+];
+
 /// The characters .NET allows between the subtags of a culture name: `-`
 /// between the subtags proper, and one [`SORT_ORDER_SEPARATOR`] before the
 /// name of an alternate sort order (`de-DE_phoneb`).
@@ -329,6 +374,71 @@ mod tests {
                 culture.name
             );
         }
+    }
+
+    /// The parent of every culture this crate ships, probed on .NET 10 with
+    /// `CultureInfo.GetCultureInfo(name).Parent.Name`. A culture added to
+    /// `tools/culturegen` fails here until its parent is written down, which
+    /// is the point: `zh-CN`'s parent is `zh-Hans`, not `zh`, and nothing in
+    /// the name says so.
+    #[test]
+    fn parents_are_dotnets() {
+        let parents: &[(&str, &str)] = &[
+            ("", ""),
+            ("ar", ""),
+            ("ar-SA", "ar"),
+            ("cs", ""),
+            ("da", ""),
+            ("de", ""),
+            ("de-AT", "de"),
+            ("de-CH", "de"),
+            ("de-DE", "de"),
+            ("en", ""),
+            ("en-GB", "en"),
+            ("en-US", "en"),
+            ("es", ""),
+            ("es-ES", "es"),
+            ("es-MX", "es"),
+            ("fi", ""),
+            ("fr", ""),
+            ("fr-FR", "fr"),
+            ("is", ""),
+            ("is-IS", "is"),
+            ("it", ""),
+            ("ja", ""),
+            ("ko", ""),
+            ("nb", ""),
+            ("nl", ""),
+            ("pl", ""),
+            ("pt", ""),
+            ("pt-BR", "pt"),
+            ("pt-PT", "pt"),
+            ("ru", ""),
+            ("sv", ""),
+            ("tr", ""),
+            ("uk", ""),
+            ("zh-CN", "zh-Hans"),
+            ("zh-Hans", "zh"),
+        ];
+
+        let listed: Vec<&str> = generated::CULTURES.iter().map(|c| c.name).collect();
+        let pinned: Vec<&str> = parents.iter().map(|(name, _)| *name).collect();
+        assert_eq!(
+            listed, pinned,
+            "the generated culture list changed; probe the new cultures' parents"
+        );
+        for (name, parent) in parents {
+            assert_eq!(parent_name(name), *parent, "parent of {name:?}");
+        }
+
+        // The rest of the chain above a shipped culture, which is .NET's too
+        // even where we ship no data for the culture itself.
+        assert_eq!(parent_name("zh"), "");
+        assert_eq!(parent_name("zh-TW"), "zh-Hant");
+        assert_eq!(parent_name("zh-Hant"), "zh");
+        assert_eq!(parent_name("sr-Latn-RS"), "sr-Latn");
+        // Case-insensitively, as every other culture name lookup is.
+        assert_eq!(parent_name("ZH-cn"), "zh-Hans");
     }
 
     #[test]
