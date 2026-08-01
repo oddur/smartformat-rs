@@ -20,7 +20,9 @@ derive = ["dep:smartformat-derive"]
 # dependency and no CLDR data — the point is to agree with .NET, not with CLDR.
 plural = []
 # Value::DateTime and .NET date/time format patterns, backed by jiff.
-time = ["dep:jiff"]
+# The TimeFormatter picks its unit words with the plural rules, as .NET's
+# TimeTextInfo does, so time implies plural.
+time = ["dep:jiff", "plural"]
 # IsMatchFormatter, backed by fancy-regex: the Rust regex engine closest to
 # .NET's (lookarounds, backreferences). Divergences are documented in DESIGN.md.
 regex-formatters = ["dep:fancy-regex"]
