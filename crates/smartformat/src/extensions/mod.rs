@@ -30,6 +30,7 @@ pub use conditional::ConditionalFormatter;
 #[cfg(feature = "regex-formatters")]
 pub use ismatch::{IsMatchFormatter, RegexOptions};
 pub use list::ListFormatter;
+pub use localization::{HashMapLocalizationProvider, LocalizationFormatter, LocalizationProvider};
 pub use null::NullFormatter;
 #[cfg(feature = "plural")]
 pub use plural::PluralLocalizationFormatter;
