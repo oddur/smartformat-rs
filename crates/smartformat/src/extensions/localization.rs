@@ -992,7 +992,7 @@ mod tests {
             "", "BadParse", "{0:",
         )]));
         match smart.format("{:L:BadParse}", &none()) {
-            Err(Error::Parse { errors }) => {
+            Err(Error::Parse { errors, .. }) => {
                 assert_eq!(errors.len(), 1);
                 assert!(
                     errors[0].message.contains("closing brace"),

@@ -13,8 +13,12 @@ use serde_json::{Map, Value as Json};
 use smartformat::fmt::culture;
 use smartformat::formatter::{DefaultFormatter, FormatterRegistry};
 use smartformat::parsing::ParserSettings;
+use smartformat::sources::variables::{self, PersistentVariablesSource};
+use smartformat::HashMapLocalizationProvider;
 #[cfg(feature = "plural")]
 use smartformat::PluralLocalizationFormatter;
+#[cfg(feature = "time")]
+use smartformat::TimeFormatter;
 use smartformat::{
     CaseSensitivity, ChooseFormatter, ConditionalFormatter, Error, ErrorAction, ListFormatter,
     NullFormatter, SmartFormatter, SmartSettings, SubStringFormatter, SubStringOutOfRangeBehavior,
@@ -190,6 +194,19 @@ const SKIPPED: &[(&str, &str)] = &[
         "template-error-inside",
         "an error inside a registered template quotes the template's own text in .NET; the engine here quotes the string being rendered",
     ),
+    ("tsdefault-custom-pattern", TIMESPAN_CUSTOM_PATTERN),
+    ("tsdefault-custom-pattern-one-char", TIMESPAN_CUSTOM_PATTERN),
+    ("var-group-as-value", VARIABLES_GROUP_TYPE_NAME),
+    ("var-nested-group-as-value", VARIABLES_GROUP_TYPE_NAME),
+    ("var-shadow-string-length-alone", VARIABLES_GROUP_TYPE_NAME),
+    (
+        "var-variable-name-wrong-case-ignoring-case",
+        "a variable name is ordinal in .NET, whose IDictionary<string, IVariable> no other source can read; a group is a map here, so MapSource answers it when the settings ignore case",
+    ),
+    (
+        "var-precedence-map-argument",
+        "a group and a map argument are one type here, so the documented rule — the argument wins — applies; .NET only lets an IVariablesGroup argument win, and a Dictionary loses to the registered group",
+    ),
 ];
 
 /// `ListFormatter` does not change these: it declines a placeholder that
@@ -214,6 +231,27 @@ const REGEX_WORD_CHARACTER: &str =
 const REGEX_CASE_FOLDING: &str =
     "regex engines: IgnoreCase is Unicode simple case folding here and simple case mapping in .NET, which also never folds across a surrogate pair; CultureInvariant does not reconcile them";
 
+/// Cases whose .NET exception is a `FormattingException` only because an
+/// extension raised something else and the evaluator wrapped it. The message
+/// is pinned by the `OutputErrorInResult` twin of each id, which is where the
+/// two really have to agree.
+const WRAPPED_BY_AN_EXTENSION: &[&str] = &[
+    // `LocalizationFormatter` parses the translation it found, and `{0:` does
+    // not parse.
+    "loc-error-unparsable-translation",
+    // The key is the format's raw text, and resolving `\q` to build it fails.
+    "loc-error-bad-escape-in-key",
+];
+
+const TIMESPAN_CUSTOM_PATTERN: &str =
+    "a custom TimeSpan pattern renders in .NET and is the documented custom-pattern non-goal here";
+
+/// The same divergence as `sel-default-format-map`: a variables group is a
+/// `Value::Map`, and default-formatting a map is refused rather than writing
+/// something a template can only have got by accident.
+const VARIABLES_GROUP_TYPE_NAME: &str =
+    "a group written on its own renders the CLR type name in .NET; a map is refused here";
+
 const REGEX_CHARACTER_CLASS: &str =
     "regex engines: .NET has no class intersection, no POSIX class name and no nesting, so it reads `&&`, `[[:alpha:]]` and `[a[bc]]` as literal characters";
 
@@ -226,6 +264,11 @@ fn goldens_match_smartformat_net() {
     let mut failures = Vec::new();
     let mut passed = 0;
     let mut skipped = 0;
+
+    // The wall clock the harness pinned with `SystemTime.SetDateTime`, which
+    // `TimeFormatter` on a `DateTime` and the date conditions read. Every case
+    // runs with it, whether or not it needs one.
+    let now = document["now"].as_str().expect("the pinned clock");
 
     for case in cases {
         let id = case["id"].as_str().expect("id");
@@ -251,7 +294,7 @@ fn goldens_match_smartformat_net() {
             continue;
         };
         let args = to_value(&case["args"]);
-        let smart = formatter_for(&case["settings"]);
+        let smart = formatter_for(&case["settings"], now);
         let actual = smart.format_with_culture(template, &args, culture);
 
         let outcome = match (expected.get("result"), expected.get("error")) {
@@ -272,11 +315,23 @@ fn goldens_match_smartformat_net() {
                     // resolution throws: from the parser for a trailing escape
                     // character, and from `LiteralText.AsSpan()` when a literal
                     // that cannot be resolved is written.
+                    // An exception a formatter *extension* raises is caught
+                    // and re-thrown as a `FormattingException` wrapping it, so
+                    // a parse or escape error from inside one arrives under
+                    // that name in .NET while `Error` keeps its own kind.
+                    (Err(Error::Parse { .. } | Error::Escape { .. }), "FormattingException")
+                        if WRAPPED_BY_AN_EXTENSION.contains(&id) =>
+                    {
+                        Ok(())
+                    }
                     (Err(Error::Parse { .. }), "ParsingErrors" | "ArgumentException") => Ok(()),
                     (Err(Error::Escape { .. }), "ArgumentException") => Ok(()),
+                    // `LocalizationFormattingException` derives from
+                    // `FormattingException`; the harness writes the derived
+                    // name because it writes `GetType().Name`.
                     (
                         Err(Error::Format { .. } | Error::UnsupportedSpec { .. }),
-                        "FormattingException",
+                        "FormattingException" | "LocalizationFormattingException",
                     ) => Ok(()),
                     (Err(error), expected_kind) => Err(format!(
                         "expected a {expected_kind}, got a different error: {error}"
@@ -346,6 +401,14 @@ fn skip_reason(id: &str, case: &Json) -> Option<&'static str> {
     if has_datetime(&case["args"]) {
         return Some("date/time values need the \"time\" feature");
     }
+    // Without `TimeFormatter` registered, a `{…:time:…}` placeholder reports
+    // "No suitable Formatter could be found" whatever its value is — including
+    // the cases whose value is the wrong type on purpose. `var-value-date` is
+    // the one variable of the fixture that needs a `Value::DateTime`.
+    #[cfg(not(feature = "time"))]
+    if id.starts_with("time-") || id == "var-value-date" {
+        return Some("the time formatter needs the \"time\" feature");
+    }
     // Without IsMatchFormatter registered, every `ismatch` placeholder reports
     // "No suitable Formatter could be found" instead of matching anything.
     #[cfg(not(feature = "regex-formatters"))]
@@ -357,8 +420,14 @@ fn skip_reason(id: &str, case: &Json) -> Option<&'static str> {
 
 /// Builds the formatter a case runs with. A case without a `settings` object
 /// runs with the .NET defaults; the keys mirror `CaseSettings` in the harness.
-fn formatter_for(node: &Json) -> SmartFormatter {
+fn formatter_for(node: &Json, now: &str) -> SmartFormatter {
     let mut settings = SmartSettings::default();
+    #[cfg(feature = "time")]
+    {
+        settings.now = Some(now.parse().expect("the pinned clock is a round-trip date"));
+    }
+    #[cfg(not(feature = "time"))]
+    let _ = now;
     let mut parser_settings = ParserSettings::default();
     let mut extensions = Extensions::default();
 
@@ -432,6 +501,7 @@ fn formatter_for(node: &Json) -> SmartFormatter {
                     extensions.list_can_auto_detect = value.as_bool();
                 }
                 "templates" => extensions.templates = Some(text().to_owned()),
+                "variables" => extensions.variables = Some(text().to_owned()),
                 other => panic!("unknown setting {other}"),
             }
         }
@@ -458,7 +528,122 @@ fn formatter_for(node: &Json) -> SmartFormatter {
         }
     }
 
+    // Neither of these two is in `CreateDefaultSmartFormat`, and neither ever
+    // auto-detects, so the harness gives every formatter both and only a
+    // `{…:time:…}` or `{…:L:…}` placeholder reaches them.
+    #[cfg(feature = "time")]
+    smart.formatters_mut().add(Box::new(TimeFormatter::new()));
+    smart.register_localization(Box::new(localization_fixture()));
+
+    // A variables source *is* per case: it is ranked ahead of every other
+    // source, so a group named like a selector another source answers would
+    // change unrelated cases.
+    if let Some(set) = &extensions.variables {
+        smart.register_variables(variables_fixture(set));
+    }
+
     smart
+}
+
+/// The table in the harness's `LocalizationFixture`, entry for entry.
+fn localization_fixture() -> HashMapLocalizationProvider {
+    HashMapLocalizationProvider::from_triples([
+        ("", "WeTranslateText", "We translate text"),
+        ("es", "WeTranslateText", "Traducimos el texto"),
+        ("fr", "WeTranslateText", "Nous traduisons des textes"),
+        ("de", "WeTranslateText", "Wir übersetzen Text"),
+        (
+            "",
+            "OnlyExistForInvariantCulture",
+            "This entry only exists in the invariant culture resource",
+        ),
+        ("", "has {:N0} inhabitants", "has {:N0} inhabitants"),
+        ("es", "has {:N0} inhabitants", "tiene {:N0} habitantes"),
+        ("fr", "has {:N0} inhabitants", "compte {:N0} habitants"),
+        ("de", "has {:N0} inhabitants", "hat {:N0} Einwohner"),
+        (
+            "",
+            "{0} has {1:N0} inhabitants",
+            "{0} has {1:N0} inhabitants",
+        ),
+        (
+            "es",
+            "{0} has {1:N0} inhabitants",
+            "{0} tiene {1:N0} habitantes",
+        ),
+        ("", "{} item", "{} item"),
+        ("", "{} items", "{} items"),
+        ("es", "{} item", "{} elemento"),
+        ("es", "{} items", "{} elementos"),
+        ("fr", "{} item", "{} élément"),
+        ("fr", "{} items", "{} éléments"),
+        ("de", "{} item", "{} Element"),
+        ("de", "{} items", "{} Elemente"),
+        ("", "greet", "Hello, {Name}!"),
+        ("de", "greet", "Hallo, {Name}!"),
+        ("", "Outer", "<{:L:Inner}>"),
+        ("", "Inner", "INNER"),
+        ("", "a{b", "escaped"),
+        ("", "BadParse", "{0:"),
+        ("", "K1", "abc {0}"),
+        ("", "K2", "ABC {0}"),
+    ])
+}
+
+/// The groups the harness's `VariablesFixture` registers, group for group.
+fn variables_fixture(set: &str) -> PersistentVariablesSource {
+    let mut source = PersistentVariablesSource::new();
+    match set {
+        "Standard" => {
+            source.add(
+                "global",
+                variables::group([
+                    ("theVariable", Value::from("persistent-value")),
+                    (
+                        "nested",
+                        Value::Map(variables::group([("inner", Value::Int(42))])),
+                    ),
+                    ("nullVar", Value::Null),
+                ]),
+            );
+            source.add(
+                "v",
+                variables::group([
+                    ("i", Value::Int(1234)),
+                    ("b", Value::Bool(true)),
+                    ("s", Value::from("str")),
+                    ("dt", date_time_variable()),
+                    (
+                        "list",
+                        Value::List(vec![Value::from("a"), Value::from("b"), Value::from("c")]),
+                    ),
+                ]),
+            );
+        }
+        "Precedence" => {
+            source.add(
+                "global",
+                variables::group([("theVariable", Value::from("val-from-persistent-source"))]),
+            );
+        }
+        "Shadowing" => {
+            source.add("Length", variables::group([("v", Value::Int(7))]));
+        }
+        other => panic!("unknown variable set {other}"),
+    }
+    source
+}
+
+/// The `dt` variable of the standard set. Without the `time` feature there is
+/// no `Value::DateTime`, and the one case that reads it is skipped.
+#[cfg(feature = "time")]
+fn date_time_variable() -> Value {
+    datetime("2024-12-31T00:00:00.0000000")
+}
+
+#[cfg(not(feature = "time"))]
+fn date_time_variable() -> Value {
+    Value::Null
 }
 
 /// The extension configuration a case's `settings` object asks for, mirroring
@@ -479,6 +664,7 @@ struct Extensions {
     list_split_char: Option<char>,
     list_can_auto_detect: Option<bool>,
     templates: Option<String>,
+    variables: Option<String>,
 }
 
 impl Extensions {
@@ -655,6 +841,7 @@ fn to_value(node: &Json) -> Value {
         Json::Array(items) => Value::List(items.iter().map(to_value).collect()),
         Json::Object(entries) => match marker(entries) {
             Some(("$dt", text)) => datetime(text),
+            Some(("$ts", text)) => time_span(text),
             // A 32-bit .NET int, which `Value` widens to i64 — the marker
             // exists only for the cases pinning that difference.
             Some(("$i32", text)) => Value::Int(text.parse::<i32>().expect("int literal").into()),
@@ -696,13 +883,61 @@ fn datetime(_text: &str) -> Value {
     unreachable!("date/time cases are skipped without the \"time\" feature")
 }
 
+/// A `TimeSpan` in .NET's round-trip (`c`) format, `[-][d.]hh:mm:ss[.fffffff]`.
+/// The seven fractional digits are 100 ns ticks, so the wire form is exact and
+/// so is the [`jiff::SignedDuration`] it becomes.
+#[cfg(feature = "time")]
+fn time_span(text: &str) -> Value {
+    const TICKS_PER_SECOND: i128 = 10_000_000;
+
+    let (negative, text) = match text.strip_prefix('-') {
+        Some(rest) => (true, rest),
+        None => (false, text),
+    };
+    // The day part is present only when a '.' comes before the first ':'.
+    let (days, rest) = match text.split_once('.') {
+        Some((days, rest)) if !days.contains(':') => (days.parse::<i128>().expect("days"), rest),
+        _ => (0, text),
+    };
+    let (clock, fraction) = match rest.split_once('.') {
+        Some((clock, fraction)) => (clock, fraction),
+        None => (rest, "0000000"),
+    };
+    let mut parts = clock
+        .split(':')
+        .map(|part| part.parse::<i128>().expect("a clock part"));
+    let hours = parts.next().expect("hours");
+    let minutes = parts.next().expect("minutes");
+    let seconds = parts.next().expect("seconds");
+    assert!(parts.next().is_none(), "a clock has three parts: {text:?}");
+    assert_eq!(
+        fraction.len(),
+        7,
+        "a fraction is seven tick digits: {text:?}"
+    );
+
+    let ticks = ((days * 24 + hours) * 60 + minutes) * 60 + seconds;
+    let ticks = ticks * TICKS_PER_SECOND + fraction.parse::<i128>().expect("ticks");
+    let ticks = if negative { -ticks } else { ticks };
+
+    let seconds = i64::try_from(ticks.div_euclid(TICKS_PER_SECOND)).expect("seconds fit");
+    let nanoseconds = (ticks.rem_euclid(TICKS_PER_SECOND) * 100) as i32;
+    Value::TimeSpan(jiff::SignedDuration::new(seconds, nanoseconds))
+}
+
+#[cfg(not(feature = "time"))]
+fn time_span(_text: &str) -> Value {
+    unreachable!("TimeSpan cases are skipped without the \"time\" feature")
+}
+
+/// Whether a case carries a value only the `time` feature can hold.
 #[cfg(not(feature = "time"))]
 fn has_datetime(node: &Json) -> bool {
     match node {
         Json::Array(items) => items.iter().any(has_datetime),
         Json::Object(entries) => entries
             .iter()
-            .any(|(key, value)| key == "$dt" || has_datetime(value)),
+            .any(|(key, value)| key == "$dt" || key == "$ts" || has_datetime(value)),
         _ => false,
     }
 }

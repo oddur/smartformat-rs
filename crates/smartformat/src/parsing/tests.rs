@@ -34,7 +34,7 @@ fn parse(format: &str) -> Format {
 
 fn errors(result: Result<Format, Error>) -> Vec<crate::error::ParseError> {
     match result {
-        Err(Error::Parse { errors }) => errors,
+        Err(Error::Parse { errors, .. }) => errors,
         Err(other) => panic!("expected a parse error, got {other}"),
         Ok(format) => panic!("expected a parse error, got {format:?}"),
     }

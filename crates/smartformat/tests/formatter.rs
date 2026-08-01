@@ -357,7 +357,7 @@ fn unterminated_formatter_options_are_a_parse_error() {
             .format(template, &args([Value::Int(5)]))
             .unwrap_err();
         match error {
-            Error::Parse { errors } => assert!(
+            Error::Parse { errors, .. } => assert!(
                 errors.iter().any(|e| e.message.contains("closing brace")),
                 "{template}: {errors:?}"
             ),

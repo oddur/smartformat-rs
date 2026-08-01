@@ -16,6 +16,10 @@
 
   <ItemGroup>
     <PackageReference Include="SmartFormat.NET" Version="3.6.1" />
+    <!-- The `time` cases need TimeFormatter, which lives in its own package.
+         `SmartFormat.NET` already pulls it in at the same version; naming it
+         here pins the version the M4 cases were generated against. -->
+    <PackageReference Include="SmartFormat.Extensions.Time" Version="3.6.1" />
   </ItemGroup>
 
 </Project>

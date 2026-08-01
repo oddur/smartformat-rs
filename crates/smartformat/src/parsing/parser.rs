@@ -784,6 +784,7 @@ impl<'a> State<'a> {
         let convert = self.parser.settings.convert_character_string_literals;
         match self.parser.settings.error_action {
             ErrorAction::Error => Err(Error::Parse {
+                message: self.error_message(),
                 errors: self.parse_errors(),
             }),
             ErrorAction::MaintainTokens => {

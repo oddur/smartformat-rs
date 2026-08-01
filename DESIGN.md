@@ -30,8 +30,19 @@ Everything in SmartFormat's core plus the built-in extensions, in this order:
   templates are registered explicitly through
   `SmartFormatter::register_template`, as .NET's `CreateDefaultSmartFormat`
   leaves that extension out too.
-- **M4 — the .NET-heavy tail:** `LocalizationFormatter`, `TimeFormatter`,
-  `GlobalVariablesSource`, `PersistentVariablesSource`.
+- **M4 — the .NET-heavy tail (done):** `TimeFormatter` (a port of
+  SmartFormat.Extensions.Time 3.6.1, with all six of its languages),
+  `LocalizationFormatter`, `PersistentVariablesSource` and
+  `GlobalVariablesSource`, plus the `TimeSpan` half of `DefaultFormatter` and
+  the two `ConditionalFormatter` branches that need a clock. None of the four is
+  in `FormatterRegistry::new()` / `SourceRegistry::new()`, exactly as
+  `CreateDefaultSmartFormat` leaves all four out; each is registered explicitly,
+  at .NET's rank.
+
+**The port's original scope is now complete.** Everything M1–M4 lists is
+implemented and pinned against SmartFormat.NET 3.6.1 by 2742 golden cases and
+the ported NUnit tests. What is left is written down: the entries under "Known
+divergences" and "Deferred, not divergent" below, and the non-goals above.
 
 ## Key decisions
 
@@ -210,9 +221,12 @@ answer is not reproducible.
   .NET renders `System.Object[]`; the scope itself matches .NET, only the
   rendering of it differs. `ListFormatter` does not change this: it declines a
   placeholder that carries no format at all, so `{0:list}` on a list reaches
-  `DefaultFormatter` in .NET too.
+  `DefaultFormatter` in .NET too. A persistent variables *group* is a
+  `Value::Map`, so `{global}` on its own is refused here and renders
+  `SmartFormat.Extensions.PersistentVariables.VariablesGroup` in .NET.
   *Pins:* `sel-default-format-empty-args`, `sel-default-format-list`,
-  `sel-default-format-map`, `list-no-format`, plus
+  `sel-default-format-map`, `list-no-format`, `var-group-as-value`,
+  `var-nested-group-as-value`, `var-shadow-string-length-alone`, plus
   `default_formatting_of_a_list_is_an_error`,
   `default_formatting_of_a_map_is_an_error`,
   `default_formatting_of_a_list_is_still_an_error` and
@@ -408,29 +422,125 @@ answer is not reproducible.
   across machines; the goldens deliberately hold only `choose` options whose
   value renders the same under every culture — strings, bools, null and
   non-negative integers.
-- **`cond` has no `TimeSpan`, enum or `char` branch.** `Value` has no duration
-  or enum variant, so .NET's `case TimeSpan` (Negative/Zero/Positive) and its
-  enum-name conditions have no counterpart and their .NET tests are not ported.
-  A `char` reaches .NET as `Invalid cast from 'Char' to 'Decimal'`, where a
-  `Value` holds it as a one-character string and takes the string branch —
-  unreachable through `Value`, so it is not pinned.
+- **`cond` has no enum or `char` branch.** `Value` has no enum variant, so
+  .NET's enum-name conditions have no counterpart and their .NET tests are not
+  ported. A `char` reaches .NET as `Invalid cast from 'Char' to 'Decimal'`,
+  where a `Value` holds it as a one-character string and takes the string
+  branch — unreachable through `Value`, so it is not pinned. The `TimeSpan`
+  branch was on this list until `Value::TimeSpan` existed; it is ported.
+  *Pins:* the `condts-*` goldens.
+- **A custom `TimeSpan` pattern.** `{0:hh\:mm}` and `{0:%h}` render in .NET and
+  are `Error::UnsupportedSpec` here — the same custom-pattern non-goal as the
+  numeric and date ones, and the same Invalid/Unsupported split. A single
+  *unknown* character (`{0:x}`) is .NET's own "Input string was not in a correct
+  format." and agrees.
+  *Pins:* `tsdefault-custom-pattern`, `tsdefault-custom-pattern-one-char`
+  (skipped), `tsdefault-unknown-spec-text` (agreeing).
+- **A `TimeSpan` outside .NET's range.** A `jiff::SignedDuration` holds far more
+  than .NET's 100 ns ticks in an `i64`, so `Value::TimeSpan` saturates to
+  `TimeSpan.MinValue` / `MaxValue` and truncates sub-tick nanoseconds toward
+  zero. There is no .NET behaviour to match for a value .NET cannot represent,
+  so this is pinned only from our side.
+  *Pins:* `extensions::time::utility::tests::ticks_round_trip_a_duration`.
+- **`TimeFormatter` writes the unit's number with the culture of the call.**
+  .NET writes it with `string.Format`, which reads the *thread* culture and
+  ignores the provider of the call — the same ambient read as `choose` and
+  `ismatch` above, and the same decision here. It is only visible for a negative
+  value under a culture whose negative sign is not a hyphen (`sv`, `fi`, `nb` in
+  the generated set): `{0:time(sv):weeks}` on a negative span writes `-1` here
+  and `−1` (U+2212) in .NET on a Swedish thread. There is no golden, for the
+  reason the harness's README gives; the `time-*` cases are called with the
+  invariant culture and name their language in the options.
+- **`TimeFormatter`'s option keywords are matched as ASCII.** .NET lower-cases
+  the option text with the thread culture — a Turkish thread stops recognizing
+  `MILLISECONDS` — and splits it on its own `\w`, which is
+  `[\p{L}\p{Mn}\p{Nd}\p{Pc}]`. We compare ASCII-case-insensitively over runs of
+  `is_alphanumeric() || '_'`. The two differ only for a combining mark or an
+  exotic numeral glued to a keyword.
+  *Pins:* `extensions::time::options::tests::*`.
+- **A localization culture name we ship no data for.** `{:L(<name>):…}` resolves
+  the name through `fmt::culture`, which knows the generated list; .NET resolves
+  it through `CultureInfo.GetCultureInfo`, which happily invents a custom
+  culture for `unknown` or `xx-XX`. The failure is shaped like .NET's — the
+  envelope, at index 0 — but the message is ours (`unknown culture "…": no data
+  is shipped for it`). This is the generated-table limit from "Non-goals"
+  reaching one more extension, so the goldens hold no `{:L(unknown):…}` case;
+  `{:L(zz-ZZ-really-bad!):…}` fails on both sides with different messages.
+  *Pin:* `extensions::localization::tests::a_culture_this_crate_does_not_ship_is_an_error`.
+- **The localization parse cache folds `ß` differently.** Under
+  `CaseInsensitive` the cache is keyed with `to_uppercase`, whose full mapping
+  writes `ß` as `SS` where .NET's `OrdinalIgnoreCase` simple mapping leaves it
+  alone, so two translations differing only in that collide here and not there.
+  The same case mapping divergence as `str-to-upper-eszett`.
+  *Pins:* `loc-cache-case-insensitive` (the collision itself, which agrees) and
+  `extensions::localization::tests::the_cache_collides_when_names_are_matched_case_insensitively`.
+- **A map argument shadows a registered variables group.** .NET looks for an
+  `IVariablesGroup` current value before it looks at the group names, so a
+  `Dictionary` argument holding `global` loses to a registered group named
+  `global` while a `VariablesGroup` argument wins. `Value::Map` is both, and the
+  port keeps the documented rule — the argument wins.
+  *Pins:* `var-precedence-map-argument` (skipped),
+  `sources::variables::tests::arguments_override_registered_groups`.
+- **A case-insensitive setting reaches variable names.** The source itself
+  declines a wrong-cased variable name, ordinally, as .NET's plain `Dictionary`
+  does. But the group is a `Value::Map`, so `MapSource` answers it afterwards
+  when `case_sensitive == CaseInsensitive`, where .NET's
+  `IDictionary<string, IVariable>` is invisible to `DictionarySource`.
+  `{global.THEVARIABLE}` therefore renders here and throws in 3.6.1. Group
+  *names* stay ordinal under either setting, matching .NET.
+  *Pins:* `var-variable-name-wrong-case-ignoring-case` (skipped),
+  `var-group-name-wrong-case-ignoring-case` (agreeing),
+  `sources::variables::tests::a_case_insensitive_setting_reaches_variable_names_too`.
+- **`TimeFormatter` does not consume the format it renders.** .NET's
+  `TryEvaluateFormat` calls `format.Items.RemoveAt(0)` on the *parsed* format,
+  so rendering one cached `Format` twice gives a different answer every time
+  (probed: the second call writes nothing, the third the unnested parts). We
+  drop the item from a copy. Ours is stable and .NET's is a bug; it is not
+  reachable through `Smart.Format(string, …)`, which reparses, so no golden can
+  catch it.
+  *Pin:* `extensions::time::tests::a_parsed_format_is_not_consumed_by_rendering_it`.
+- **`HashMapLocalizationProvider` matches names case-sensitively only.** .NET's
+  resx-backed provider can turn that off, but only because
+  `ResourceManager.IgnoreCase` exists. A caller who needs it implements the
+  `LocalizationProvider` trait; the trait is two methods.
+  *Pin:* `extensions::localization::tests::a_custom_provider_is_all_the_trait_needs`.
 
 ## Deliberate policy differences
 
 Not gaps: places where the port takes something .NET reads from ambient state
 as an explicit input instead.
 
-- **`cond`'s "now".** .NET compares `value.ToUniversalTime()` against
-  `DateTime.UtcNow`. `Value::DateTime` is a zone-less `jiff::civil::DateTime`
-  and the crate has no clock-access policy, so the caller supplies the
-  comparison point: `ConditionalFormatter::with_now(now)`, and a date condition
-  without one is an error rather than a guess. Both sides are read as UTC, which
-  is exactly .NET for a `Kind=Utc` value; a local-time value has to be converted
-  by the caller, so .NET's `DateTime.Today` (local midnight) renders `Past` in a
-  UTC+2 process where the same civil value is `Present` here. Date conditions
-  therefore have no goldens — one would have to pin a wall clock.
-  *Pins:* `extensions::conditional::tests::dates::*`, including
-  `a_date_without_a_now_is_an_error`.
+- **"Now" is a setting, and it is a civil time.** .NET reads the clock through
+  `SystemTime.Now()`, a mutable `static Func<DateTime>` that
+  `SystemTime.SetDateTime` replaces process-wide; both readers — the date
+  branch of `cond` and `TimeFormatter` on a `DateTime` — go through it. Here it
+  is `SmartSettings::now`, per formatter rather than per process: `None` reads
+  the system's local time at the moment a placeholder needs it, which is what
+  .NET's default `Func` does, and `Some` pins it, which is what
+  `SetDateTime` is for and what every golden uses.
+  The comparison itself is civil, not UTC: .NET converts both moments with
+  `ToUniversalTime()`, and a zone-less `jiff::civil::DateTime` has nothing to
+  convert with. A shared UTC offset shifts both sides equally, so the two agree
+  except where the shift moves one moment across midnight (the `past|today|
+  future` arm) or across a daylight-saving transition (`TimeFormatter`'s
+  subtraction). The goldens stay clear of both, and the harness's README says
+  how.
+  *Pins:* the `conddate-*` and `time-relative-*` goldens,
+  `extensions::conditional::tests::dates::*`, and
+  `registered_extensions::a_date_condition_reads_the_pinned_now`.
+- **Shared variables are an `Arc`, not a `static`.** .NET's
+  `GlobalVariablesSource` is a `PersistentVariablesSource` over a `static`
+  store, reached through `Instance` and swapped out by `Reset()`. Here it is a
+  cloneable handle over an `Arc<RwLock<…>>`: clone it to share one set of
+  variables across formatters, `clear()` for what `Reset()` amounts to for the
+  handles still pointing at that storage. Selector resolution is identical
+  between the two sources — only the sharing mechanism differs, and the handle
+  is also the only way to change variables after registration, since
+  `SourceRegistry` hands out no way back to a registered source.
+  *Pins:* `sources::variables::tests::*` and
+  `registered_extensions::shared_variables_stay_writable_after_registration`;
+  the `var-*` goldens run through the persistent source, whose output the
+  global one matches selector for selector.
 - **The pluralization rule is a field of the formatter.** .NET hangs a
   `CustomPluralRuleProvider` off the `IFormatProvider` of the call and lets
   `PluralRules.IsoLangToDelegate` be mutated globally. There is no provider
@@ -620,11 +730,39 @@ version the goldens are generated with.
 
 ## Deferred, not divergent
 
-Nothing. M4 (`LocalizationFormatter`, `TimeFormatter`, `GlobalVariablesSource`,
-`PersistentVariablesSource`) is still to come, but no *behavior of an extension
-already ported* is knowingly missing. The two entries that stood here through
-M2 — `ListFormatter`'s place in the registry, and the `{Index}` selector it
-carries as an `ISource` — are done:
+Two behaviours of `LocalizationFormatter`, both blocked on something the engine
+does not expose yet rather than on a decision. Each is pinned by a test that
+asserts today's answer and names the line to delete when the gap closes, and
+the goldens deliberately hold no case that reaches either — one would be red on
+arrival.
+
+- **The options' culture does not reach the placeholders of the translation.**
+  .NET's line is `formattingInfo.FormatDetails.Provider = cultureInfo;`, and
+  `FormatDetails` belongs to the whole format call, so `{:L(de):…}` switches the
+  culture for *every later placeholder of that call* — probed:
+  `Format(en-US, "{0:N2}|{1:L(de):x}|{0:N2}", 1234.5, "")` is
+  `1,234.50|…|1.234,50`, and it leaks even when the lookup then fails. Here the
+  chosen culture picks the translation but does not reach inside it, so
+  `{0} {1:L(de):has {:N0} inhabitants}` from an invariant call writes
+  `hat 8,900,000 Einwohner` where .NET writes `hat 8.900.000 Einwohner`.
+  Closing it needs `FormattingInfo::set_culture`, backed by a
+  `Cell<&CultureData>` on the engine like `collection_index`.
+  *Pin:* `extensions::localization::tests::the_options_culture_does_not_reach_the_localized_placeholders_yet`.
+  The `loc-placeholder-*` goldens take the culture from the *call*, which both
+  sides agree on.
+- **A key that only matches after the nested placeholders are rendered.** When
+  the raw-text lookup misses and the format has nested placeholders, .NET
+  renders the format into a fresh output and looks *that* up instead, which is
+  how `{:L:{ProductType}}` finds the entry for `paper`. It builds a brand-new
+  `FormatDetails` for it, which (probed) means no positional arguments, the
+  scope chain reset to the current value alone, and alignment 0. A `Formatter`
+  here cannot do it: `format_as_child` appends to the shared output and
+  `FormattingInfo` exposes neither its length nor a capture, so this needs
+  something like `FormattingInfo::format_to_isolated_string`.
+  *Pin:* `extensions::localization::tests::the_nested_key_lookup_is_not_ported_yet`.
+
+The two entries that stood here through M2 — `ListFormatter`'s place in the
+registry, and the `{Index}` selector it carries as an `ISource` — are done:
 
 - `FormatterRegistry::new()` sorts to .NET's `list, plural, cond, ismatch,
   isnull, choose, substr, d`, so `ListFormatter` claims a `|`-separated format

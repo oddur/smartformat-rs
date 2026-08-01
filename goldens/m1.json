@@ -1,6 +1,7 @@
 {
   "smartformat_net_version": "3.6.1",
   "default_culture": "InvariantCulture",
+  "now": "2026-07-31T12:00:00.0000000",
   "cases": [
     {
       "id": "lit-empty",
@@ -29837,6 +29838,3974 @@
       },
       "expected": {
         "result": "xError parsing format string: No source extension could handle the selector named \"Nope\" at 1\n{Nope}\n-^y"
+      }
+    },
+    {
+      "id": "time-default-en-zero",
+      "template": "{0:time:}",
+      "args": [
+        {
+          "$ts": "00:00:00"
+        }
+      ],
+      "culture": "en",
+      "expected": {
+        "result": "less than 1 second"
+      }
+    },
+    {
+      "id": "time-default-en-one-of-each",
+      "template": "{0:time:}",
+      "args": [
+        {
+          "$ts": "1.01:01:01.0010000"
+        }
+      ],
+      "culture": "en",
+      "expected": {
+        "result": "1 day 1 hour 1 minute 1 second"
+      }
+    },
+    {
+      "id": "time-default-en-two-hours",
+      "template": "{0:time:}",
+      "args": [
+        {
+          "$ts": "0.02:00:02"
+        }
+      ],
+      "culture": "en",
+      "expected": {
+        "result": "2 hours 2 seconds"
+      }
+    },
+    {
+      "id": "time-default-en-three-days",
+      "template": "{0:time:}",
+      "args": [
+        {
+          "$ts": "3.00:00:03"
+        }
+      ],
+      "culture": "en",
+      "expected": {
+        "result": "3 days 3 seconds"
+      }
+    },
+    {
+      "id": "time-default-en-four-ms",
+      "template": "{0:time:}",
+      "args": [
+        {
+          "$ts": "00:00:00.0040000"
+        }
+      ],
+      "culture": "en",
+      "expected": {
+        "result": "less than 1 second"
+      }
+    },
+    {
+      "id": "time-default-en-five-days",
+      "template": "{0:time:}",
+      "args": [
+        {
+          "$ts": "5.00:00:00"
+        }
+      ],
+      "culture": "en",
+      "expected": {
+        "result": "5 days"
+      }
+    },
+    {
+      "id": "time-default-de-zero",
+      "template": "{0:time:}",
+      "args": [
+        {
+          "$ts": "00:00:00"
+        }
+      ],
+      "culture": "de",
+      "expected": {
+        "result": "weniger als 1 Sekunde"
+      }
+    },
+    {
+      "id": "time-default-de-one-of-each",
+      "template": "{0:time:}",
+      "args": [
+        {
+          "$ts": "1.01:01:01.0010000"
+        }
+      ],
+      "culture": "de",
+      "expected": {
+        "result": "1 Tag 1 Stunde 1 Minute 1 Sekunde"
+      }
+    },
+    {
+      "id": "time-default-de-two-hours",
+      "template": "{0:time:}",
+      "args": [
+        {
+          "$ts": "0.02:00:02"
+        }
+      ],
+      "culture": "de",
+      "expected": {
+        "result": "2 Stunden 2 Sekunden"
+      }
+    },
+    {
+      "id": "time-default-de-three-days",
+      "template": "{0:time:}",
+      "args": [
+        {
+          "$ts": "3.00:00:03"
+        }
+      ],
+      "culture": "de",
+      "expected": {
+        "result": "3 Tage 3 Sekunden"
+      }
+    },
+    {
+      "id": "time-default-de-four-ms",
+      "template": "{0:time:}",
+      "args": [
+        {
+          "$ts": "00:00:00.0040000"
+        }
+      ],
+      "culture": "de",
+      "expected": {
+        "result": "weniger als 1 Sekunde"
+      }
+    },
+    {
+      "id": "time-default-de-five-days",
+      "template": "{0:time:}",
+      "args": [
+        {
+          "$ts": "5.00:00:00"
+        }
+      ],
+      "culture": "de",
+      "expected": {
+        "result": "5 Tage"
+      }
+    },
+    {
+      "id": "time-full-en-pos",
+      "template": "{0:time(en):weeks milliseconds full}",
+      "args": [
+        {
+          "$ts": "1.01:01:01.0010000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "0 weeks 1 day 1 hour 1 minute 1 second 1 millisecond"
+      }
+    },
+    {
+      "id": "time-full-en-neg",
+      "template": "{0:time(en):weeks milliseconds full}",
+      "args": [
+        {
+          "$ts": "-1.01:01:01.0010000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "-1 weeks 5 days 22 hours 58 minutes 58 seconds 999 milliseconds"
+      }
+    },
+    {
+      "id": "time-zero-en-weeks",
+      "template": "{0:time(en):weeks}",
+      "args": [
+        {
+          "$ts": "00:00:00"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "less than 1 week"
+      }
+    },
+    {
+      "id": "time-zero-en-abbr-ms",
+      "template": "{0:time(en):abbr milliseconds}",
+      "args": [
+        {
+          "$ts": "00:00:00"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "less than 1ms"
+      }
+    },
+    {
+      "id": "time-full-de-pos",
+      "template": "{0:time(de):weeks milliseconds full}",
+      "args": [
+        {
+          "$ts": "1.01:01:01.0010000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "0 Wochen 1 Tag 1 Stunde 1 Minute 1 Sekunde 1 Millisekunde"
+      }
+    },
+    {
+      "id": "time-full-de-neg",
+      "template": "{0:time(de):weeks milliseconds full}",
+      "args": [
+        {
+          "$ts": "-1.01:01:01.0010000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "-1 Wochen 5 Tage 22 Stunden 58 Minuten 58 Sekunden 999 Millisekunden"
+      }
+    },
+    {
+      "id": "time-zero-de-weeks",
+      "template": "{0:time(de):weeks}",
+      "args": [
+        {
+          "$ts": "00:00:00"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "weniger als 1 Woche"
+      }
+    },
+    {
+      "id": "time-zero-de-abbr-ms",
+      "template": "{0:time(de):abbr milliseconds}",
+      "args": [
+        {
+          "$ts": "00:00:00"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "weniger als 1ms"
+      }
+    },
+    {
+      "id": "time-full-es-pos",
+      "template": "{0:time(es):weeks milliseconds full}",
+      "args": [
+        {
+          "$ts": "1.01:01:01.0010000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "0 semanas 1 día 1 hora 1 minuto 1 segundo 1 milisegundo"
+      }
+    },
+    {
+      "id": "time-full-es-neg",
+      "template": "{0:time(es):weeks milliseconds full}",
+      "args": [
+        {
+          "$ts": "-1.01:01:01.0010000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "-1 semanas 5 días 22 horas 58 minutos 58 segundos 999 milisegundos"
+      }
+    },
+    {
+      "id": "time-zero-es-weeks",
+      "template": "{0:time(es):weeks}",
+      "args": [
+        {
+          "$ts": "00:00:00"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "menos que 1 semana"
+      }
+    },
+    {
+      "id": "time-zero-es-abbr-ms",
+      "template": "{0:time(es):abbr milliseconds}",
+      "args": [
+        {
+          "$ts": "00:00:00"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "menos que 1ms"
+      }
+    },
+    {
+      "id": "time-full-fr-pos",
+      "template": "{0:time(fr):weeks milliseconds full}",
+      "args": [
+        {
+          "$ts": "1.01:01:01.0010000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "0 semaine 1 jour 1 heure 1 minute 1 seconde 1 milliseconde"
+      }
+    },
+    {
+      "id": "time-full-fr-neg",
+      "template": "{0:time(fr):weeks milliseconds full}",
+      "args": [
+        {
+          "$ts": "-1.01:01:01.0010000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "-1 semaines 5 jours 22 heures 58 minutes 58 secondes 999 millisecondes"
+      }
+    },
+    {
+      "id": "time-zero-fr-weeks",
+      "template": "{0:time(fr):weeks}",
+      "args": [
+        {
+          "$ts": "00:00:00"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "moins que 1 semaine"
+      }
+    },
+    {
+      "id": "time-zero-fr-abbr-ms",
+      "template": "{0:time(fr):abbr milliseconds}",
+      "args": [
+        {
+          "$ts": "00:00:00"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "moins que 1ms"
+      }
+    },
+    {
+      "id": "time-full-it-pos",
+      "template": "{0:time(it):weeks milliseconds full}",
+      "args": [
+        {
+          "$ts": "1.01:01:01.0010000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "0 settimane 1 giorno 1 ora 1 minuto 1 secondo 1 millisecondo"
+      }
+    },
+    {
+      "id": "time-full-it-neg",
+      "template": "{0:time(it):weeks milliseconds full}",
+      "args": [
+        {
+          "$ts": "-1.01:01:01.0010000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "-1 settimane 5 giorni 22 ore 58 minuti 58 secondi 999 millisecondi"
+      }
+    },
+    {
+      "id": "time-zero-it-weeks",
+      "template": "{0:time(it):weeks}",
+      "args": [
+        {
+          "$ts": "00:00:00"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "meno di 1 settimana"
+      }
+    },
+    {
+      "id": "time-zero-it-abbr-ms",
+      "template": "{0:time(it):abbr milliseconds}",
+      "args": [
+        {
+          "$ts": "00:00:00"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "meno di 1ms"
+      }
+    },
+    {
+      "id": "time-full-pt-pos",
+      "template": "{0:time(pt):weeks milliseconds full}",
+      "args": [
+        {
+          "$ts": "1.01:01:01.0010000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "0 semanas 1 dia 1 hora 1 minuto 1 segundo 1 milissegundo"
+      }
+    },
+    {
+      "id": "time-full-pt-neg",
+      "template": "{0:time(pt):weeks milliseconds full}",
+      "args": [
+        {
+          "$ts": "-1.01:01:01.0010000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "-1 semanas 5 dias 22 horas 58 minutos 58 segundos 999 milissegundos"
+      }
+    },
+    {
+      "id": "time-zero-pt-weeks",
+      "template": "{0:time(pt):weeks}",
+      "args": [
+        {
+          "$ts": "00:00:00"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "menos do que 1 semana"
+      }
+    },
+    {
+      "id": "time-zero-pt-abbr-ms",
+      "template": "{0:time(pt):abbr milliseconds}",
+      "args": [
+        {
+          "$ts": "00:00:00"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "menos do que 1ms"
+      }
+    },
+    {
+      "id": "time-truncate-auto",
+      "template": "{0:time:days milliseconds auto}",
+      "args": [
+        {
+          "$ts": "0.02:00:02"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "2 hours 2 seconds"
+      }
+    },
+    {
+      "id": "time-truncate-auto-abbr",
+      "template": "{0:time:days milliseconds abbr auto}",
+      "args": [
+        {
+          "$ts": "0.02:00:02"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "2h 2s"
+      }
+    },
+    {
+      "id": "time-truncate-short",
+      "template": "{0:time:days milliseconds short}",
+      "args": [
+        {
+          "$ts": "0.02:00:02"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "2 hours"
+      }
+    },
+    {
+      "id": "time-truncate-short-abbr",
+      "template": "{0:time:days milliseconds abbr short}",
+      "args": [
+        {
+          "$ts": "0.02:00:02"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "2h"
+      }
+    },
+    {
+      "id": "time-truncate-fill",
+      "template": "{0:time:days milliseconds fill}",
+      "args": [
+        {
+          "$ts": "0.02:00:02"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "2 hours 0 minutes 2 seconds 0 milliseconds"
+      }
+    },
+    {
+      "id": "time-truncate-fill-abbr",
+      "template": "{0:time:days milliseconds abbr fill}",
+      "args": [
+        {
+          "$ts": "0.02:00:02"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "2h 0m 2s 0ms"
+      }
+    },
+    {
+      "id": "time-truncate-full",
+      "template": "{0:time:days milliseconds full}",
+      "args": [
+        {
+          "$ts": "0.02:00:02"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "0 days 2 hours 0 minutes 2 seconds 0 milliseconds"
+      }
+    },
+    {
+      "id": "time-truncate-full-abbr",
+      "template": "{0:time:days milliseconds abbr full}",
+      "args": [
+        {
+          "$ts": "0.02:00:02"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "0d 2h 0m 2s 0ms"
+      }
+    },
+    {
+      "id": "time-round-floor",
+      "template": "{0:time:}",
+      "args": [
+        {
+          "$ts": "1.01:01:01.0010000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "1 day 1 hour 1 minute 1 second"
+      }
+    },
+    {
+      "id": "time-round-ceiling",
+      "template": "{0:time:noless}",
+      "args": [
+        {
+          "$ts": "1.01:01:01.0010000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "1 day 1 hour 1 minute 2 seconds"
+      }
+    },
+    {
+      "id": "time-round-neg-ceiling",
+      "template": "{0:time:weeks milliseconds full noless}",
+      "args": [
+        {
+          "$ts": "-1.01:01:01.0010000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "-1 weeks 5 days 22 hours 58 minutes 58 seconds 999 milliseconds"
+      }
+    },
+    {
+      "id": "time-saturate-milliseconds",
+      "template": "{0:time:milliseconds}",
+      "args": [
+        {
+          "$ts": "70.00:00:00"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "2147483647 milliseconds"
+      }
+    },
+    {
+      "id": "time-min-milliseconds",
+      "template": "{0:time:milliseconds}",
+      "args": [
+        {
+          "$ts": "-10675199.02:48:05.4775808"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "less than 1 millisecond"
+      }
+    },
+    {
+      "id": "time-max-weeks",
+      "template": "{0:time:weeks}",
+      "args": [
+        {
+          "$ts": "10675199.02:48:05.4775807"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "1525028 weeks"
+      }
+    },
+    {
+      "id": "time-min-overflow",
+      "template": "{0:time:}",
+      "args": [
+        {
+          "$ts": "-10675199.02:48:05.4775808"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "time-max-overflow",
+      "template": "{0:time:noless weeks}",
+      "args": [
+        {
+          "$ts": "10675199.02:48:05.4775807"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "time-min-overflow-text",
+      "template": "{0:time:}",
+      "args": [
+        {
+          "$ts": "-10675199.02:48:05.4775808"
+        }
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "TimeSpan overflowed because the duration is too long."
+      }
+    },
+    {
+      "id": "time-max-overflow-text",
+      "template": "{0:time:noless weeks}",
+      "args": [
+        {
+          "$ts": "10675199.02:48:05.4775807"
+        }
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "TimeSpan overflowed because the duration is too long."
+      }
+    },
+    {
+      "id": "time-list-zero",
+      "template": "{0:time: {:list:|, | and }}",
+      "args": [
+        {
+          "$ts": "00:00:00"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "less than 1 second"
+      }
+    },
+    {
+      "id": "time-list-one-of-each",
+      "template": "{0:time: {:list:|, | and }}",
+      "args": [
+        {
+          "$ts": "1.01:01:01.0010000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "1 day, 1 hour, 1 minute and 1 second"
+      }
+    },
+    {
+      "id": "time-list-two-hours",
+      "template": "{0:time: {:list:|, | and }}",
+      "args": [
+        {
+          "$ts": "0.02:00:02"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "2 hours and 2 seconds"
+      }
+    },
+    {
+      "id": "time-list-three-days",
+      "template": "{0:time: {:list:|, | and }}",
+      "args": [
+        {
+          "$ts": "3.00:00:03"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "3 days and 3 seconds"
+      }
+    },
+    {
+      "id": "time-list-four-ms",
+      "template": "{0:time: {:list:|, | and }}",
+      "args": [
+        {
+          "$ts": "00:00:00.0040000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "less than 1 second"
+      }
+    },
+    {
+      "id": "time-list-five-days",
+      "template": "{0:time: {:list:|, | and }}",
+      "args": [
+        {
+          "$ts": "5.00:00:00"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "5 days"
+      }
+    },
+    {
+      "id": "time-list-no-leading-literal",
+      "template": "{0:time:{:list:|, | and }}",
+      "args": [
+        {
+          "$ts": "1.01:01:01.0010000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "time-list-trailing-word",
+      "template": "{0:time: {:list:|, | and } hours}",
+      "args": [
+        {
+          "$ts": "1.01:01:01.0010000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "25 hours hours"
+      }
+    },
+    {
+      "id": "time-v2-options-are-the-format",
+      "template": "{0:time(abbr hours noless)}",
+      "args": [
+        {
+          "$ts": "1.01:01:01.0010000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "26h"
+      }
+    },
+    {
+      "id": "time-v3-format",
+      "template": "{0:time:abbr hours noless}",
+      "args": [
+        {
+          "$ts": "1.01:01:01.0010000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "26h"
+      }
+    },
+    {
+      "id": "time-v2-culture-is-swallowed",
+      "template": "{0:time(en):}",
+      "args": [
+        {
+          "$ts": "1.01:01:01.0010000"
+        }
+      ],
+      "culture": "de",
+      "expected": {
+        "result": "1 Tag 1 Stunde 1 Minute 1 Sekunde"
+      }
+    },
+    {
+      "id": "time-culture-from-call",
+      "template": "{0:time:hours minutes}",
+      "args": [
+        {
+          "$ts": "1.01:01:01.0010000"
+        }
+      ],
+      "culture": "de",
+      "expected": {
+        "result": "25 Stunden 1 Minute"
+      }
+    },
+    {
+      "id": "time-culture-from-invariant-call",
+      "template": "{0:time:hours minutes}",
+      "args": [
+        {
+          "$ts": "1.01:01:01.0010000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "25 hours 1 minute"
+      }
+    },
+    {
+      "id": "time-culture-option-wins",
+      "template": "{0:time(es):hours minutes}",
+      "args": [
+        {
+          "$ts": "1.01:01:01.0010000"
+        }
+      ],
+      "culture": "de",
+      "expected": {
+        "result": "25 horas 1 minuto"
+      }
+    },
+    {
+      "id": "time-culture-unshipped",
+      "template": "{0:time(nl):hours minutes}",
+      "args": [
+        {
+          "$ts": "1.01:01:01.0010000"
+        }
+      ],
+      "culture": "de",
+      "expected": {
+        "result": "25 hours 1 minute"
+      }
+    },
+    {
+      "id": "time-culture-uppercase",
+      "template": "{0:time(EN):hours minutes}",
+      "args": [
+        {
+          "$ts": "1.01:01:01.0010000"
+        }
+      ],
+      "culture": "de",
+      "expected": {
+        "result": "25 hours 1 minute"
+      }
+    },
+    {
+      "id": "time-culture-specific",
+      "template": "{0:time(en-US):hours minutes}",
+      "args": [
+        {
+          "$ts": "1.01:01:01.0010000"
+        }
+      ],
+      "culture": "de",
+      "expected": {
+        "result": "25 hours 1 minute"
+      }
+    },
+    {
+      "id": "time-culture-alt-sort",
+      "template": "{0:time(en_US):hours minutes}",
+      "args": [
+        {
+          "$ts": "1.01:01:01.0010000"
+        }
+      ],
+      "culture": "de",
+      "expected": {
+        "result": "25 hours 1 minute"
+      }
+    },
+    {
+      "id": "time-wrong-type-string-format",
+      "template": "ab {0:time:hours}",
+      "args": [
+        "abc"
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "time-wrong-type-string-format-text",
+      "template": "ab {0:time:hours}",
+      "args": [
+        "abc"
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "ab Error parsing format string: 'TimeFormatter' can only process types of TimeSpan, DateTime, DateTimeOffset, TimeOnly, but not 'System.String' at 0\nab {0:time:hours}\n^"
+      }
+    },
+    {
+      "id": "time-wrong-type-string-empty-format",
+      "template": "ab {0:time:}",
+      "args": [
+        "abc"
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "time-wrong-type-string-empty-format-text",
+      "template": "ab {0:time:}",
+      "args": [
+        "abc"
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "ab Error parsing format string: 'TimeFormatter' can only process types of TimeSpan, DateTime, DateTimeOffset, TimeOnly, but not 'System.String' at 0\n\n^"
+      }
+    },
+    {
+      "id": "time-wrong-type-int-format",
+      "template": "ab {0:time:hours}",
+      "args": [
+        42
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "time-wrong-type-int-format-text",
+      "template": "ab {0:time:hours}",
+      "args": [
+        42
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "ab Error parsing format string: 'TimeFormatter' can only process types of TimeSpan, DateTime, DateTimeOffset, TimeOnly, but not 'System.Int64' at 0\nab {0:time:hours}\n^"
+      }
+    },
+    {
+      "id": "time-wrong-type-int-empty-format",
+      "template": "ab {0:time:}",
+      "args": [
+        42
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "time-wrong-type-int-empty-format-text",
+      "template": "ab {0:time:}",
+      "args": [
+        42
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "ab Error parsing format string: 'TimeFormatter' can only process types of TimeSpan, DateTime, DateTimeOffset, TimeOnly, but not 'System.Int64' at 0\n\n^"
+      }
+    },
+    {
+      "id": "time-wrong-type-bool-format",
+      "template": "ab {0:time:hours}",
+      "args": [
+        true
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "time-wrong-type-bool-format-text",
+      "template": "ab {0:time:hours}",
+      "args": [
+        true
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "ab Error parsing format string: 'TimeFormatter' can only process types of TimeSpan, DateTime, DateTimeOffset, TimeOnly, but not 'System.Boolean' at 0\nab {0:time:hours}\n^"
+      }
+    },
+    {
+      "id": "time-wrong-type-bool-empty-format",
+      "template": "ab {0:time:}",
+      "args": [
+        true
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "time-wrong-type-bool-empty-format-text",
+      "template": "ab {0:time:}",
+      "args": [
+        true
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "ab Error parsing format string: 'TimeFormatter' can only process types of TimeSpan, DateTime, DateTimeOffset, TimeOnly, but not 'System.Boolean' at 0\n\n^"
+      }
+    },
+    {
+      "id": "time-wrong-type-null-format",
+      "template": "ab {0:time:hours}",
+      "args": [
+        null
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "time-wrong-type-null-format-text",
+      "template": "ab {0:time:hours}",
+      "args": [
+        null
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "ab Error parsing format string: 'TimeFormatter' can only process types of TimeSpan, DateTime, DateTimeOffset, TimeOnly, but not '' at 0\nab {0:time:hours}\n^"
+      }
+    },
+    {
+      "id": "time-wrong-type-null-empty-format",
+      "template": "ab {0:time:}",
+      "args": [
+        null
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "time-wrong-type-null-empty-format-text",
+      "template": "ab {0:time:}",
+      "args": [
+        null
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "ab Error parsing format string: 'TimeFormatter' can only process types of TimeSpan, DateTime, DateTimeOffset, TimeOnly, but not '' at 0\n\n^"
+      }
+    },
+    {
+      "id": "time-culture-malformed",
+      "template": "{0:time(xx-YY-):hours}",
+      "args": [
+        {
+          "$ts": "1.01:01:01.0010000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "time-culture-malformed-text",
+      "template": "{0:time(xx-YY-):hours}",
+      "args": [
+        {
+          "$ts": "1.01:01:01.0010000"
+        }
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "Culture is not supported. (Parameter 'name')\nxx-yy- is an invalid culture identifier."
+      }
+    },
+    {
+      "id": "time-relative-now",
+      "template": "{0:time:abbr hours noless}",
+      "args": [
+        {
+          "$dt": "2026-07-31T12:00:00.0000000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "0h"
+      }
+    },
+    {
+      "id": "time-relative-now-as-span",
+      "template": "{0:time:abbr hours noless}",
+      "args": [
+        {
+          "$ts": "00:00:00"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "0h"
+      }
+    },
+    {
+      "id": "time-relative-past-12h",
+      "template": "{0:time:abbr hours noless}",
+      "args": [
+        {
+          "$dt": "2026-07-31T00:00:00.0000000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "12h"
+      }
+    },
+    {
+      "id": "time-relative-past-12h-as-span",
+      "template": "{0:time:abbr hours noless}",
+      "args": [
+        {
+          "$ts": "12:00:00"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "12h"
+      }
+    },
+    {
+      "id": "time-relative-future-12h",
+      "template": "{0:time:abbr hours noless}",
+      "args": [
+        {
+          "$dt": "2026-08-01T00:00:00.0000000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "-12h"
+      }
+    },
+    {
+      "id": "time-relative-future-12h-as-span",
+      "template": "{0:time:abbr hours noless}",
+      "args": [
+        {
+          "$ts": "-12:00:00"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "-12h"
+      }
+    },
+    {
+      "id": "time-relative-past-23h",
+      "template": "{0:time:abbr hours noless}",
+      "args": [
+        {
+          "$dt": "2026-07-30T13:00:00.0000000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "23h"
+      }
+    },
+    {
+      "id": "time-relative-past-23h-as-span",
+      "template": "{0:time:abbr hours noless}",
+      "args": [
+        {
+          "$ts": "23:00:00"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "23h"
+      }
+    },
+    {
+      "id": "time-relative-future-23h",
+      "template": "{0:time:abbr hours noless}",
+      "args": [
+        {
+          "$dt": "2026-08-01T11:00:00.0000000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "-23h"
+      }
+    },
+    {
+      "id": "time-relative-future-23h-as-span",
+      "template": "{0:time:abbr hours noless}",
+      "args": [
+        {
+          "$ts": "-23:00:00"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "-23h"
+      }
+    },
+    {
+      "id": "tsdefault-zero-none",
+      "template": "{0}",
+      "args": [
+        {
+          "$ts": "00:00:00"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "00:00:00"
+      }
+    },
+    {
+      "id": "tsdefault-zero-c",
+      "template": "{0:c}",
+      "args": [
+        {
+          "$ts": "00:00:00"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "00:00:00"
+      }
+    },
+    {
+      "id": "tsdefault-zero-t-lc",
+      "template": "{0:t}",
+      "args": [
+        {
+          "$ts": "00:00:00"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "00:00:00"
+      }
+    },
+    {
+      "id": "tsdefault-zero-T",
+      "template": "{0:T}",
+      "args": [
+        {
+          "$ts": "00:00:00"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "00:00:00"
+      }
+    },
+    {
+      "id": "tsdefault-zero-g-lc",
+      "template": "{0:g}",
+      "args": [
+        {
+          "$ts": "00:00:00"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "0:00:00"
+      }
+    },
+    {
+      "id": "tsdefault-zero-G",
+      "template": "{0:G}",
+      "args": [
+        {
+          "$ts": "00:00:00"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "0:00:00:00.0000000"
+      }
+    },
+    {
+      "id": "tsdefault-day-none",
+      "template": "{0}",
+      "args": [
+        {
+          "$ts": "1.01:01:01.0010000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "1.01:01:01.0010000"
+      }
+    },
+    {
+      "id": "tsdefault-day-c",
+      "template": "{0:c}",
+      "args": [
+        {
+          "$ts": "1.01:01:01.0010000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "1.01:01:01.0010000"
+      }
+    },
+    {
+      "id": "tsdefault-day-t-lc",
+      "template": "{0:t}",
+      "args": [
+        {
+          "$ts": "1.01:01:01.0010000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "1.01:01:01.0010000"
+      }
+    },
+    {
+      "id": "tsdefault-day-T",
+      "template": "{0:T}",
+      "args": [
+        {
+          "$ts": "1.01:01:01.0010000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "1.01:01:01.0010000"
+      }
+    },
+    {
+      "id": "tsdefault-day-g-lc",
+      "template": "{0:g}",
+      "args": [
+        {
+          "$ts": "1.01:01:01.0010000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "1:1:01:01.001"
+      }
+    },
+    {
+      "id": "tsdefault-day-G",
+      "template": "{0:G}",
+      "args": [
+        {
+          "$ts": "1.01:01:01.0010000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "1:01:01:01.0010000"
+      }
+    },
+    {
+      "id": "tsdefault-neg-day-none",
+      "template": "{0}",
+      "args": [
+        {
+          "$ts": "-1.01:01:01.0010000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "-1.01:01:01.0010000"
+      }
+    },
+    {
+      "id": "tsdefault-neg-day-c",
+      "template": "{0:c}",
+      "args": [
+        {
+          "$ts": "-1.01:01:01.0010000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "-1.01:01:01.0010000"
+      }
+    },
+    {
+      "id": "tsdefault-neg-day-t-lc",
+      "template": "{0:t}",
+      "args": [
+        {
+          "$ts": "-1.01:01:01.0010000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "-1.01:01:01.0010000"
+      }
+    },
+    {
+      "id": "tsdefault-neg-day-T",
+      "template": "{0:T}",
+      "args": [
+        {
+          "$ts": "-1.01:01:01.0010000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "-1.01:01:01.0010000"
+      }
+    },
+    {
+      "id": "tsdefault-neg-day-g-lc",
+      "template": "{0:g}",
+      "args": [
+        {
+          "$ts": "-1.01:01:01.0010000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "-1:1:01:01.001"
+      }
+    },
+    {
+      "id": "tsdefault-neg-day-G",
+      "template": "{0:G}",
+      "args": [
+        {
+          "$ts": "-1.01:01:01.0010000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "-1:01:01:01.0010000"
+      }
+    },
+    {
+      "id": "tsdefault-hours-none",
+      "template": "{0}",
+      "args": [
+        {
+          "$ts": "02:03:04"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "02:03:04"
+      }
+    },
+    {
+      "id": "tsdefault-hours-c",
+      "template": "{0:c}",
+      "args": [
+        {
+          "$ts": "02:03:04"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "02:03:04"
+      }
+    },
+    {
+      "id": "tsdefault-hours-t-lc",
+      "template": "{0:t}",
+      "args": [
+        {
+          "$ts": "02:03:04"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "02:03:04"
+      }
+    },
+    {
+      "id": "tsdefault-hours-T",
+      "template": "{0:T}",
+      "args": [
+        {
+          "$ts": "02:03:04"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "02:03:04"
+      }
+    },
+    {
+      "id": "tsdefault-hours-g-lc",
+      "template": "{0:g}",
+      "args": [
+        {
+          "$ts": "02:03:04"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "2:03:04"
+      }
+    },
+    {
+      "id": "tsdefault-hours-G",
+      "template": "{0:G}",
+      "args": [
+        {
+          "$ts": "02:03:04"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "0:02:03:04.0000000"
+      }
+    },
+    {
+      "id": "tsdefault-tick-none",
+      "template": "{0}",
+      "args": [
+        {
+          "$ts": "00:00:00.0000001"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "00:00:00.0000001"
+      }
+    },
+    {
+      "id": "tsdefault-tick-c",
+      "template": "{0:c}",
+      "args": [
+        {
+          "$ts": "00:00:00.0000001"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "00:00:00.0000001"
+      }
+    },
+    {
+      "id": "tsdefault-tick-t-lc",
+      "template": "{0:t}",
+      "args": [
+        {
+          "$ts": "00:00:00.0000001"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "00:00:00.0000001"
+      }
+    },
+    {
+      "id": "tsdefault-tick-T",
+      "template": "{0:T}",
+      "args": [
+        {
+          "$ts": "00:00:00.0000001"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "00:00:00.0000001"
+      }
+    },
+    {
+      "id": "tsdefault-tick-g-lc",
+      "template": "{0:g}",
+      "args": [
+        {
+          "$ts": "00:00:00.0000001"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "0:00:00.0000001"
+      }
+    },
+    {
+      "id": "tsdefault-tick-G",
+      "template": "{0:G}",
+      "args": [
+        {
+          "$ts": "00:00:00.0000001"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "0:00:00:00.0000001"
+      }
+    },
+    {
+      "id": "tsdefault-max-none",
+      "template": "{0}",
+      "args": [
+        {
+          "$ts": "10675199.02:48:05.4775807"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "10675199.02:48:05.4775807"
+      }
+    },
+    {
+      "id": "tsdefault-max-c",
+      "template": "{0:c}",
+      "args": [
+        {
+          "$ts": "10675199.02:48:05.4775807"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "10675199.02:48:05.4775807"
+      }
+    },
+    {
+      "id": "tsdefault-max-t-lc",
+      "template": "{0:t}",
+      "args": [
+        {
+          "$ts": "10675199.02:48:05.4775807"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "10675199.02:48:05.4775807"
+      }
+    },
+    {
+      "id": "tsdefault-max-T",
+      "template": "{0:T}",
+      "args": [
+        {
+          "$ts": "10675199.02:48:05.4775807"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "10675199.02:48:05.4775807"
+      }
+    },
+    {
+      "id": "tsdefault-max-g-lc",
+      "template": "{0:g}",
+      "args": [
+        {
+          "$ts": "10675199.02:48:05.4775807"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "10675199:2:48:05.4775807"
+      }
+    },
+    {
+      "id": "tsdefault-max-G",
+      "template": "{0:G}",
+      "args": [
+        {
+          "$ts": "10675199.02:48:05.4775807"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "10675199:02:48:05.4775807"
+      }
+    },
+    {
+      "id": "tsdefault-min-none",
+      "template": "{0}",
+      "args": [
+        {
+          "$ts": "-10675199.02:48:05.4775808"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "-10675199.02:48:05.4775808"
+      }
+    },
+    {
+      "id": "tsdefault-min-c",
+      "template": "{0:c}",
+      "args": [
+        {
+          "$ts": "-10675199.02:48:05.4775808"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "-10675199.02:48:05.4775808"
+      }
+    },
+    {
+      "id": "tsdefault-min-t-lc",
+      "template": "{0:t}",
+      "args": [
+        {
+          "$ts": "-10675199.02:48:05.4775808"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "-10675199.02:48:05.4775808"
+      }
+    },
+    {
+      "id": "tsdefault-min-T",
+      "template": "{0:T}",
+      "args": [
+        {
+          "$ts": "-10675199.02:48:05.4775808"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "-10675199.02:48:05.4775808"
+      }
+    },
+    {
+      "id": "tsdefault-min-g-lc",
+      "template": "{0:g}",
+      "args": [
+        {
+          "$ts": "-10675199.02:48:05.4775808"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "-10675199:2:48:05.4775808"
+      }
+    },
+    {
+      "id": "tsdefault-min-G",
+      "template": "{0:G}",
+      "args": [
+        {
+          "$ts": "-10675199.02:48:05.4775808"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "-10675199:02:48:05.4775808"
+      }
+    },
+    {
+      "id": "tsdefault-half-second-none",
+      "template": "{0}",
+      "args": [
+        {
+          "$ts": "00:00:00.5000000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "00:00:00.5000000"
+      }
+    },
+    {
+      "id": "tsdefault-half-second-c",
+      "template": "{0:c}",
+      "args": [
+        {
+          "$ts": "00:00:00.5000000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "00:00:00.5000000"
+      }
+    },
+    {
+      "id": "tsdefault-half-second-t-lc",
+      "template": "{0:t}",
+      "args": [
+        {
+          "$ts": "00:00:00.5000000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "00:00:00.5000000"
+      }
+    },
+    {
+      "id": "tsdefault-half-second-T",
+      "template": "{0:T}",
+      "args": [
+        {
+          "$ts": "00:00:00.5000000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "00:00:00.5000000"
+      }
+    },
+    {
+      "id": "tsdefault-half-second-g-lc",
+      "template": "{0:g}",
+      "args": [
+        {
+          "$ts": "00:00:00.5000000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "0:00:00.5"
+      }
+    },
+    {
+      "id": "tsdefault-half-second-G",
+      "template": "{0:G}",
+      "args": [
+        {
+          "$ts": "00:00:00.5000000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "0:00:00:00.5000000"
+      }
+    },
+    {
+      "id": "tsdefault-ten-thousand-days-none",
+      "template": "{0}",
+      "args": [
+        {
+          "$ts": "10000.00:00:00"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "10000.00:00:00"
+      }
+    },
+    {
+      "id": "tsdefault-ten-thousand-days-c",
+      "template": "{0:c}",
+      "args": [
+        {
+          "$ts": "10000.00:00:00"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "10000.00:00:00"
+      }
+    },
+    {
+      "id": "tsdefault-ten-thousand-days-t-lc",
+      "template": "{0:t}",
+      "args": [
+        {
+          "$ts": "10000.00:00:00"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "10000.00:00:00"
+      }
+    },
+    {
+      "id": "tsdefault-ten-thousand-days-T",
+      "template": "{0:T}",
+      "args": [
+        {
+          "$ts": "10000.00:00:00"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "10000.00:00:00"
+      }
+    },
+    {
+      "id": "tsdefault-ten-thousand-days-g-lc",
+      "template": "{0:g}",
+      "args": [
+        {
+          "$ts": "10000.00:00:00"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "10000:0:00:00"
+      }
+    },
+    {
+      "id": "tsdefault-ten-thousand-days-G",
+      "template": "{0:G}",
+      "args": [
+        {
+          "$ts": "10000.00:00:00"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "10000:00:00:00.0000000"
+      }
+    },
+    {
+      "id": "tsdefault-de-de-day-c",
+      "template": "{0:c}",
+      "args": [
+        {
+          "$ts": "1.01:01:01.0010000"
+        }
+      ],
+      "culture": "de-DE",
+      "expected": {
+        "result": "1.01:01:01.0010000"
+      }
+    },
+    {
+      "id": "tsdefault-de-de-day-g-lc",
+      "template": "{0:g}",
+      "args": [
+        {
+          "$ts": "1.01:01:01.0010000"
+        }
+      ],
+      "culture": "de-DE",
+      "expected": {
+        "result": "1:1:01:01,001"
+      }
+    },
+    {
+      "id": "tsdefault-de-de-day-G",
+      "template": "{0:G}",
+      "args": [
+        {
+          "$ts": "1.01:01:01.0010000"
+        }
+      ],
+      "culture": "de-DE",
+      "expected": {
+        "result": "1:01:01:01,0010000"
+      }
+    },
+    {
+      "id": "tsdefault-de-de-neg-day-c",
+      "template": "{0:c}",
+      "args": [
+        {
+          "$ts": "-1.01:01:01.0010000"
+        }
+      ],
+      "culture": "de-DE",
+      "expected": {
+        "result": "-1.01:01:01.0010000"
+      }
+    },
+    {
+      "id": "tsdefault-de-de-neg-day-g-lc",
+      "template": "{0:g}",
+      "args": [
+        {
+          "$ts": "-1.01:01:01.0010000"
+        }
+      ],
+      "culture": "de-DE",
+      "expected": {
+        "result": "-1:1:01:01,001"
+      }
+    },
+    {
+      "id": "tsdefault-de-de-neg-day-G",
+      "template": "{0:G}",
+      "args": [
+        {
+          "$ts": "-1.01:01:01.0010000"
+        }
+      ],
+      "culture": "de-DE",
+      "expected": {
+        "result": "-1:01:01:01,0010000"
+      }
+    },
+    {
+      "id": "tsdefault-de-de-tick-c",
+      "template": "{0:c}",
+      "args": [
+        {
+          "$ts": "00:00:00.0000001"
+        }
+      ],
+      "culture": "de-DE",
+      "expected": {
+        "result": "00:00:00.0000001"
+      }
+    },
+    {
+      "id": "tsdefault-de-de-tick-g-lc",
+      "template": "{0:g}",
+      "args": [
+        {
+          "$ts": "00:00:00.0000001"
+        }
+      ],
+      "culture": "de-DE",
+      "expected": {
+        "result": "0:00:00,0000001"
+      }
+    },
+    {
+      "id": "tsdefault-de-de-tick-G",
+      "template": "{0:G}",
+      "args": [
+        {
+          "$ts": "00:00:00.0000001"
+        }
+      ],
+      "culture": "de-DE",
+      "expected": {
+        "result": "0:00:00:00,0000001"
+      }
+    },
+    {
+      "id": "tsdefault-de-de-max-c",
+      "template": "{0:c}",
+      "args": [
+        {
+          "$ts": "10675199.02:48:05.4775807"
+        }
+      ],
+      "culture": "de-DE",
+      "expected": {
+        "result": "10675199.02:48:05.4775807"
+      }
+    },
+    {
+      "id": "tsdefault-de-de-max-g-lc",
+      "template": "{0:g}",
+      "args": [
+        {
+          "$ts": "10675199.02:48:05.4775807"
+        }
+      ],
+      "culture": "de-DE",
+      "expected": {
+        "result": "10675199:2:48:05,4775807"
+      }
+    },
+    {
+      "id": "tsdefault-de-de-max-G",
+      "template": "{0:G}",
+      "args": [
+        {
+          "$ts": "10675199.02:48:05.4775807"
+        }
+      ],
+      "culture": "de-DE",
+      "expected": {
+        "result": "10675199:02:48:05,4775807"
+      }
+    },
+    {
+      "id": "tsdefault-ar-sa-day-c",
+      "template": "{0:c}",
+      "args": [
+        {
+          "$ts": "1.01:01:01.0010000"
+        }
+      ],
+      "culture": "ar-SA",
+      "expected": {
+        "result": "1.01:01:01.0010000"
+      }
+    },
+    {
+      "id": "tsdefault-ar-sa-day-g-lc",
+      "template": "{0:g}",
+      "args": [
+        {
+          "$ts": "1.01:01:01.0010000"
+        }
+      ],
+      "culture": "ar-SA",
+      "expected": {
+        "result": "1:1:01:01٫001"
+      }
+    },
+    {
+      "id": "tsdefault-ar-sa-day-G",
+      "template": "{0:G}",
+      "args": [
+        {
+          "$ts": "1.01:01:01.0010000"
+        }
+      ],
+      "culture": "ar-SA",
+      "expected": {
+        "result": "1:01:01:01٫0010000"
+      }
+    },
+    {
+      "id": "tsdefault-ar-sa-neg-day-c",
+      "template": "{0:c}",
+      "args": [
+        {
+          "$ts": "-1.01:01:01.0010000"
+        }
+      ],
+      "culture": "ar-SA",
+      "expected": {
+        "result": "-1.01:01:01.0010000"
+      }
+    },
+    {
+      "id": "tsdefault-ar-sa-neg-day-g-lc",
+      "template": "{0:g}",
+      "args": [
+        {
+          "$ts": "-1.01:01:01.0010000"
+        }
+      ],
+      "culture": "ar-SA",
+      "expected": {
+        "result": "-1:1:01:01٫001"
+      }
+    },
+    {
+      "id": "tsdefault-ar-sa-neg-day-G",
+      "template": "{0:G}",
+      "args": [
+        {
+          "$ts": "-1.01:01:01.0010000"
+        }
+      ],
+      "culture": "ar-SA",
+      "expected": {
+        "result": "-1:01:01:01٫0010000"
+      }
+    },
+    {
+      "id": "tsdefault-ar-sa-tick-c",
+      "template": "{0:c}",
+      "args": [
+        {
+          "$ts": "00:00:00.0000001"
+        }
+      ],
+      "culture": "ar-SA",
+      "expected": {
+        "result": "00:00:00.0000001"
+      }
+    },
+    {
+      "id": "tsdefault-ar-sa-tick-g-lc",
+      "template": "{0:g}",
+      "args": [
+        {
+          "$ts": "00:00:00.0000001"
+        }
+      ],
+      "culture": "ar-SA",
+      "expected": {
+        "result": "0:00:00٫0000001"
+      }
+    },
+    {
+      "id": "tsdefault-ar-sa-tick-G",
+      "template": "{0:G}",
+      "args": [
+        {
+          "$ts": "00:00:00.0000001"
+        }
+      ],
+      "culture": "ar-SA",
+      "expected": {
+        "result": "0:00:00:00٫0000001"
+      }
+    },
+    {
+      "id": "tsdefault-ar-sa-max-c",
+      "template": "{0:c}",
+      "args": [
+        {
+          "$ts": "10675199.02:48:05.4775807"
+        }
+      ],
+      "culture": "ar-SA",
+      "expected": {
+        "result": "10675199.02:48:05.4775807"
+      }
+    },
+    {
+      "id": "tsdefault-ar-sa-max-g-lc",
+      "template": "{0:g}",
+      "args": [
+        {
+          "$ts": "10675199.02:48:05.4775807"
+        }
+      ],
+      "culture": "ar-SA",
+      "expected": {
+        "result": "10675199:2:48:05٫4775807"
+      }
+    },
+    {
+      "id": "tsdefault-ar-sa-max-G",
+      "template": "{0:G}",
+      "args": [
+        {
+          "$ts": "10675199.02:48:05.4775807"
+        }
+      ],
+      "culture": "ar-SA",
+      "expected": {
+        "result": "10675199:02:48:05٫4775807"
+      }
+    },
+    {
+      "id": "tsdefault-fi-day-c",
+      "template": "{0:c}",
+      "args": [
+        {
+          "$ts": "1.01:01:01.0010000"
+        }
+      ],
+      "culture": "fi",
+      "expected": {
+        "result": "1.01:01:01.0010000"
+      }
+    },
+    {
+      "id": "tsdefault-fi-day-g-lc",
+      "template": "{0:g}",
+      "args": [
+        {
+          "$ts": "1.01:01:01.0010000"
+        }
+      ],
+      "culture": "fi",
+      "expected": {
+        "result": "1:1:01:01,001"
+      }
+    },
+    {
+      "id": "tsdefault-fi-day-G",
+      "template": "{0:G}",
+      "args": [
+        {
+          "$ts": "1.01:01:01.0010000"
+        }
+      ],
+      "culture": "fi",
+      "expected": {
+        "result": "1:01:01:01,0010000"
+      }
+    },
+    {
+      "id": "tsdefault-fi-neg-day-c",
+      "template": "{0:c}",
+      "args": [
+        {
+          "$ts": "-1.01:01:01.0010000"
+        }
+      ],
+      "culture": "fi",
+      "expected": {
+        "result": "-1.01:01:01.0010000"
+      }
+    },
+    {
+      "id": "tsdefault-fi-neg-day-g-lc",
+      "template": "{0:g}",
+      "args": [
+        {
+          "$ts": "-1.01:01:01.0010000"
+        }
+      ],
+      "culture": "fi",
+      "expected": {
+        "result": "-1:1:01:01,001"
+      }
+    },
+    {
+      "id": "tsdefault-fi-neg-day-G",
+      "template": "{0:G}",
+      "args": [
+        {
+          "$ts": "-1.01:01:01.0010000"
+        }
+      ],
+      "culture": "fi",
+      "expected": {
+        "result": "-1:01:01:01,0010000"
+      }
+    },
+    {
+      "id": "tsdefault-fi-tick-c",
+      "template": "{0:c}",
+      "args": [
+        {
+          "$ts": "00:00:00.0000001"
+        }
+      ],
+      "culture": "fi",
+      "expected": {
+        "result": "00:00:00.0000001"
+      }
+    },
+    {
+      "id": "tsdefault-fi-tick-g-lc",
+      "template": "{0:g}",
+      "args": [
+        {
+          "$ts": "00:00:00.0000001"
+        }
+      ],
+      "culture": "fi",
+      "expected": {
+        "result": "0:00:00,0000001"
+      }
+    },
+    {
+      "id": "tsdefault-fi-tick-G",
+      "template": "{0:G}",
+      "args": [
+        {
+          "$ts": "00:00:00.0000001"
+        }
+      ],
+      "culture": "fi",
+      "expected": {
+        "result": "0:00:00:00,0000001"
+      }
+    },
+    {
+      "id": "tsdefault-fi-max-c",
+      "template": "{0:c}",
+      "args": [
+        {
+          "$ts": "10675199.02:48:05.4775807"
+        }
+      ],
+      "culture": "fi",
+      "expected": {
+        "result": "10675199.02:48:05.4775807"
+      }
+    },
+    {
+      "id": "tsdefault-fi-max-g-lc",
+      "template": "{0:g}",
+      "args": [
+        {
+          "$ts": "10675199.02:48:05.4775807"
+        }
+      ],
+      "culture": "fi",
+      "expected": {
+        "result": "10675199:2:48:05,4775807"
+      }
+    },
+    {
+      "id": "tsdefault-fi-max-G",
+      "template": "{0:G}",
+      "args": [
+        {
+          "$ts": "10675199.02:48:05.4775807"
+        }
+      ],
+      "culture": "fi",
+      "expected": {
+        "result": "10675199:02:48:05,4775807"
+      }
+    },
+    {
+      "id": "tsdefault-unknown-spec",
+      "template": "{0:x}",
+      "args": [
+        {
+          "$ts": "02:03:04"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "tsdefault-unknown-spec-text",
+      "template": "{0:x}",
+      "args": [
+        {
+          "$ts": "02:03:04"
+        }
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "Input string was not in a correct format."
+      }
+    },
+    {
+      "id": "tsdefault-custom-pattern",
+      "template": "{0:hh\\:mm}",
+      "args": [
+        {
+          "$ts": "02:03:04"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "02:03"
+      }
+    },
+    {
+      "id": "tsdefault-custom-pattern-one-char",
+      "template": "{0:%h}",
+      "args": [
+        {
+          "$ts": "02:03:04"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "2"
+      }
+    },
+    {
+      "id": "loc-call-culture-invariant",
+      "template": "{:L:WeTranslateText}",
+      "args": [],
+      "culture": "",
+      "expected": {
+        "result": "We translate text"
+      }
+    },
+    {
+      "id": "loc-call-culture-es",
+      "template": "{:L:WeTranslateText}",
+      "args": [],
+      "culture": "es",
+      "expected": {
+        "result": "Traducimos el texto"
+      }
+    },
+    {
+      "id": "loc-call-culture-de",
+      "template": "{:L:WeTranslateText}",
+      "args": [],
+      "culture": "de",
+      "expected": {
+        "result": "Wir übersetzen Text"
+      }
+    },
+    {
+      "id": "loc-call-culture-fr",
+      "template": "{:L:WeTranslateText}",
+      "args": [],
+      "culture": "fr",
+      "expected": {
+        "result": "Nous traduisons des textes"
+      }
+    },
+    {
+      "id": "loc-call-culture-pt",
+      "template": "{:L:WeTranslateText}",
+      "args": [],
+      "culture": "pt",
+      "expected": {
+        "result": "We translate text"
+      }
+    },
+    {
+      "id": "loc-invariant-only-key",
+      "template": "{:L:OnlyExistForInvariantCulture}",
+      "args": [],
+      "culture": "pt",
+      "expected": {
+        "result": "This entry only exists in the invariant culture resource"
+      }
+    },
+    {
+      "id": "loc-option-culture-es",
+      "template": "{:L(es):WeTranslateText}",
+      "args": [],
+      "culture": "",
+      "expected": {
+        "result": "Traducimos el texto"
+      }
+    },
+    {
+      "id": "loc-option-culture-en",
+      "template": "{:L(en):WeTranslateText}",
+      "args": [],
+      "culture": "",
+      "expected": {
+        "result": "We translate text"
+      }
+    },
+    {
+      "id": "loc-option-culture-fr",
+      "template": "{:L(fr):WeTranslateText}",
+      "args": [],
+      "culture": "",
+      "expected": {
+        "result": "Nous traduisons des textes"
+      }
+    },
+    {
+      "id": "loc-option-culture-de",
+      "template": "{:L(de):WeTranslateText}",
+      "args": [],
+      "culture": "",
+      "expected": {
+        "result": "Wir übersetzen Text"
+      }
+    },
+    {
+      "id": "loc-option-culture-beats-call",
+      "template": "{:L(de):WeTranslateText}",
+      "args": [],
+      "culture": "fr-FR",
+      "expected": {
+        "result": "Wir übersetzen Text"
+      }
+    },
+    {
+      "id": "loc-option-culture-specific",
+      "template": "{:L(es-MX):WeTranslateText}",
+      "args": [],
+      "culture": "",
+      "expected": {
+        "result": "Traducimos el texto"
+      }
+    },
+    {
+      "id": "loc-option-culture-empty",
+      "template": "{:L():WeTranslateText}",
+      "args": [],
+      "culture": "",
+      "expected": {
+        "result": "We translate text"
+      }
+    },
+    {
+      "id": "loc-option-culture-empty-es",
+      "template": "{:L():WeTranslateText}",
+      "args": [],
+      "culture": "es",
+      "expected": {
+        "result": "Traducimos el texto"
+      }
+    },
+    {
+      "id": "loc-option-culture-spaces",
+      "template": "{:L( es ):WeTranslateText}",
+      "args": [],
+      "culture": "",
+      "expected": {
+        "result": "Traducimos el texto"
+      }
+    },
+    {
+      "id": "loc-option-culture-tab",
+      "template": "{:L(\tes):WeTranslateText}",
+      "args": [],
+      "culture": "",
+      "expected": {
+        "result": "Traducimos el texto"
+      }
+    },
+    {
+      "id": "loc-error-empty-format",
+      "template": "{:L:}",
+      "args": [],
+      "culture": "",
+      "expected": {
+        "error": "LocalizationFormattingException"
+      }
+    },
+    {
+      "id": "loc-error-empty-format-ignore",
+      "template": "{:L:}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "Ignore"
+      },
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "loc-error-empty-format-maintaintokens",
+      "template": "{:L:}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "MaintainTokens"
+      },
+      "expected": {
+        "result": "{:L:}"
+      }
+    },
+    {
+      "id": "loc-error-empty-format-outputerrorinresult",
+      "template": "{:L:}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "Error parsing format string: 'Format' for localization must not be null or empty. (Parameter 'formattingInfo') at 0\n{:L:}\n^"
+      }
+    },
+    {
+      "id": "loc-error-no-format",
+      "template": "{:L()}",
+      "args": [],
+      "culture": "",
+      "expected": {
+        "error": "LocalizationFormattingException"
+      }
+    },
+    {
+      "id": "loc-error-no-format-ignore",
+      "template": "{:L()}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "Ignore"
+      },
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "loc-error-no-format-maintaintokens",
+      "template": "{:L()}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "MaintainTokens"
+      },
+      "expected": {
+        "result": "{:L:}"
+      }
+    },
+    {
+      "id": "loc-error-no-format-outputerrorinresult",
+      "template": "{:L()}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "Error parsing format string: 'Format' for localization must not be null or empty. (Parameter 'formattingInfo') at 0\n{:L()}\n^"
+      }
+    },
+    {
+      "id": "loc-error-empty-options-and-format",
+      "template": "{:L():}",
+      "args": [],
+      "culture": "",
+      "expected": {
+        "error": "LocalizationFormattingException"
+      }
+    },
+    {
+      "id": "loc-error-empty-options-and-format-ignore",
+      "template": "{:L():}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "Ignore"
+      },
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "loc-error-empty-options-and-format-maintaintokens",
+      "template": "{:L():}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "MaintainTokens"
+      },
+      "expected": {
+        "result": "{:L:}"
+      }
+    },
+    {
+      "id": "loc-error-empty-options-and-format-outputerrorinresult",
+      "template": "{:L():}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "Error parsing format string: 'Format' for localization must not be null or empty. (Parameter 'formattingInfo') at 0\n{:L():}\n^"
+      }
+    },
+    {
+      "id": "loc-error-missing-key",
+      "template": "{:L(es):NonExisting}",
+      "args": [],
+      "culture": "",
+      "expected": {
+        "error": "LocalizationFormattingException"
+      }
+    },
+    {
+      "id": "loc-error-missing-key-ignore",
+      "template": "{:L(es):NonExisting}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "Ignore"
+      },
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "loc-error-missing-key-maintaintokens",
+      "template": "{:L(es):NonExisting}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "MaintainTokens"
+      },
+      "expected": {
+        "result": "{:L(es):NonExisting}"
+      }
+    },
+    {
+      "id": "loc-error-missing-key-outputerrorinresult",
+      "template": "{:L(es):NonExisting}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "Error parsing format string: No localized string found for 'NonExisting' at 8\n{:L(es):NonExisting}\n--------^"
+      }
+    },
+    {
+      "id": "loc-error-unparsable-translation",
+      "template": "{:L:BadParse}",
+      "args": [],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "loc-error-unparsable-translation-ignore",
+      "template": "{:L:BadParse}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "Ignore"
+      },
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "loc-error-unparsable-translation-maintaintokens",
+      "template": "{:L:BadParse}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "MaintainTokens"
+      },
+      "expected": {
+        "result": "{:L:BadParse}"
+      }
+    },
+    {
+      "id": "loc-error-unparsable-translation-outputerrorinresult",
+      "template": "{:L:BadParse}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "The format string has 1 issue:\nFormat string is missing a closing brace\nIn: \"{0:\"\nAt:  ---^ "
+      }
+    },
+    {
+      "id": "loc-error-bad-escape-in-key",
+      "template": "{:L:a\\qb}",
+      "args": [],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "loc-error-bad-escape-in-key-ignore",
+      "template": "{:L:a\\qb}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "Ignore"
+      },
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "loc-error-bad-escape-in-key-maintaintokens",
+      "template": "{:L:a\\qb}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "MaintainTokens"
+      },
+      "expected": {
+        "result": "{:L:a\\qb}"
+      }
+    },
+    {
+      "id": "loc-error-bad-escape-in-key-outputerrorinresult",
+      "template": "{:L:a\\qb}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "Unrecognized escape sequence \"\\q\" in literal."
+      }
+    },
+    {
+      "id": "loc-key-escaped-brace",
+      "template": "{:L:a\\{b}",
+      "args": [],
+      "culture": "",
+      "expected": {
+        "result": "escaped"
+      }
+    },
+    {
+      "id": "loc-alignment",
+      "template": "{,20:L(es):WeTranslateText}",
+      "args": [],
+      "culture": "",
+      "expected": {
+        "result": " Traducimos el texto"
+      }
+    },
+    {
+      "id": "loc-nested-localization",
+      "template": "{:L:Outer}",
+      "args": [],
+      "culture": "",
+      "expected": {
+        "result": "<INNER>"
+      }
+    },
+    {
+      "id": "loc-placeholder-name",
+      "template": "{:L(de):greet}",
+      "args": {
+        "Name": "Joe"
+      },
+      "culture": "",
+      "expected": {
+        "result": "Hallo, Joe!"
+      }
+    },
+    {
+      "id": "loc-cache-case-sensitive",
+      "template": "{:L:K1}|{:L:K2}",
+      "args": [
+        "x"
+      ],
+      "culture": "",
+      "expected": {
+        "result": "abc x|ABC x"
+      }
+    },
+    {
+      "id": "loc-cache-case-insensitive",
+      "template": "{:L:K1}|{:L:K2}",
+      "args": [
+        "x"
+      ],
+      "culture": "",
+      "settings": {
+        "caseSensitivity": "CaseInsensitive"
+      },
+      "expected": {
+        "result": "abc x|abc x"
+      }
+    },
+    {
+      "id": "loc-placeholder-number-invariant",
+      "template": "{0} {1:L:has {:N0} inhabitants}",
+      "args": [
+        "X-City",
+        8900000
+      ],
+      "culture": "",
+      "expected": {
+        "result": "X-City has 8,900,000 inhabitants"
+      }
+    },
+    {
+      "id": "loc-placeholder-number-de",
+      "template": "{0} {1:L:has {:N0} inhabitants}",
+      "args": [
+        "X-City",
+        8900000
+      ],
+      "culture": "de",
+      "expected": {
+        "result": "X-City hat 8.900.000 Einwohner"
+      }
+    },
+    {
+      "id": "loc-placeholder-number-fr",
+      "template": "{0} {1:L:has {:N0} inhabitants}",
+      "args": [
+        "X-City",
+        8900000
+      ],
+      "culture": "fr",
+      "expected": {
+        "result": "X-City compte 8\u202F900\u202F000 habitants"
+      }
+    },
+    {
+      "id": "loc-placeholder-positional-invariant",
+      "template": "{:L:{0} has {1:N0} inhabitants}",
+      "args": [
+        "X-City",
+        8900000
+      ],
+      "culture": "",
+      "expected": {
+        "result": "X-City has 8,900,000 inhabitants"
+      }
+    },
+    {
+      "id": "loc-placeholder-positional-es",
+      "template": "{:L:{0} has {1:N0} inhabitants}",
+      "args": [
+        "X-City",
+        8900000
+      ],
+      "culture": "es",
+      "expected": {
+        "result": "X-City tiene 8.900.000 habitantes"
+      }
+    },
+    {
+      "id": "loc-cond-items-en-0",
+      "template": "{0:cond:{:L:{} items}|{:L:{} item}|{:L:{} items}}",
+      "args": [
+        0
+      ],
+      "culture": "en",
+      "expected": {
+        "result": "0 items"
+      }
+    },
+    {
+      "id": "loc-cond-items-en-1",
+      "template": "{0:cond:{:L:{} items}|{:L:{} item}|{:L:{} items}}",
+      "args": [
+        1
+      ],
+      "culture": "en",
+      "expected": {
+        "result": "1 item"
+      }
+    },
+    {
+      "id": "loc-cond-items-en-200",
+      "template": "{0:cond:{:L:{} items}|{:L:{} item}|{:L:{} items}}",
+      "args": [
+        200
+      ],
+      "culture": "en",
+      "expected": {
+        "result": "200 items"
+      }
+    },
+    {
+      "id": "loc-cond-items-es-200",
+      "template": "{0:cond:{:L:{} items}|{:L:{} item}|{:L:{} items}}",
+      "args": [
+        200
+      ],
+      "culture": "es",
+      "expected": {
+        "result": "200 elementos"
+      }
+    },
+    {
+      "id": "loc-cond-items-fr-200",
+      "template": "{0:cond:{:L:{} items}|{:L:{} item}|{:L:{} items}}",
+      "args": [
+        200
+      ],
+      "culture": "fr",
+      "expected": {
+        "result": "200 éléments"
+      }
+    },
+    {
+      "id": "loc-cond-items-de-200",
+      "template": "{0:cond:{:L:{} items}|{:L:{} item}|{:L:{} items}}",
+      "args": [
+        200
+      ],
+      "culture": "de",
+      "expected": {
+        "result": "200 Elemente"
+      }
+    },
+    {
+      "id": "loc-plural-items-en-0",
+      "template": "{0:plural:{:L:{} item}|{:L:{} items}}",
+      "args": [
+        0
+      ],
+      "culture": "en",
+      "expected": {
+        "result": "0 items"
+      }
+    },
+    {
+      "id": "loc-plural-items-en-1",
+      "template": "{0:plural:{:L:{} item}|{:L:{} items}}",
+      "args": [
+        1
+      ],
+      "culture": "en",
+      "expected": {
+        "result": "1 item"
+      }
+    },
+    {
+      "id": "loc-plural-items-de-200",
+      "template": "{0:plural:{:L:{} item}|{:L:{} items}}",
+      "args": [
+        200
+      ],
+      "culture": "de",
+      "expected": {
+        "result": "200 Elemente"
+      }
+    },
+    {
+      "id": "loc-plural-items-fr-0",
+      "template": "{0:plural:{:L:{} item}|{:L:{} items}}",
+      "args": [
+        0
+      ],
+      "culture": "fr",
+      "expected": {
+        "result": "0 élément"
+      }
+    },
+    {
+      "id": "loc-plural-items-fr-1",
+      "template": "{0:plural:{:L:{} item}|{:L:{} items}}",
+      "args": [
+        1
+      ],
+      "culture": "fr",
+      "expected": {
+        "result": "1 élément"
+      }
+    },
+    {
+      "id": "loc-plural-items-fr-200",
+      "template": "{0:plural:{:L:{} item}|{:L:{} items}}",
+      "args": [
+        200
+      ],
+      "culture": "fr",
+      "expected": {
+        "result": "200 éléments"
+      }
+    },
+    {
+      "id": "loc-name-localize",
+      "template": "{:localize:WeTranslateText}",
+      "args": [],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "loc-name-lowercase",
+      "template": "{:l:WeTranslateText}",
+      "args": [],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "loc-name-lowercase-case-insensitive",
+      "template": "{:l:WeTranslateText}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "caseSensitivity": "CaseInsensitive"
+      },
+      "expected": {
+        "result": "We translate text"
+      }
+    },
+    {
+      "id": "var-group-variable",
+      "template": "{global.theVariable}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "variables": "Standard"
+      },
+      "expected": {
+        "result": "persistent-value"
+      }
+    },
+    {
+      "id": "var-nested-group",
+      "template": "{global.nested.inner}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "variables": "Standard"
+      },
+      "expected": {
+        "result": "42"
+      }
+    },
+    {
+      "id": "var-null-variable",
+      "template": "{global.nullVar}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "variables": "Standard"
+      },
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "var-null-variable-nullable-operator",
+      "template": "{global.nullVar?.Any}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "variables": "Standard"
+      },
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "var-missing-variable",
+      "template": "{global.missing}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "variables": "Standard"
+      },
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "var-missing-group",
+      "template": "{missingGroup}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "variables": "Standard"
+      },
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "var-missing-variable-nullable-group",
+      "template": "{global?.missing}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "variables": "Standard"
+      },
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "var-missing-nested-variable",
+      "template": "{global.nested.missing}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "variables": "Standard"
+      },
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "var-group-name-wrong-case",
+      "template": "{GLOBAL.theVariable}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "variables": "Standard"
+      },
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "var-variable-name-wrong-case",
+      "template": "{global.THEVARIABLE}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "variables": "Standard"
+      },
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "var-group-name-wrong-case-ignoring-case",
+      "template": "{GLOBAL.theVariable}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "caseSensitivity": "CaseInsensitive",
+        "variables": "Standard"
+      },
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "var-variable-name-wrong-case-ignoring-case",
+      "template": "{global.THEVARIABLE}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "caseSensitivity": "CaseInsensitive",
+        "variables": "Standard"
+      },
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "var-group-as-value",
+      "template": "{global}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "variables": "Standard"
+      },
+      "expected": {
+        "result": "SmartFormat.Extensions.PersistentVariables.VariablesGroup"
+      }
+    },
+    {
+      "id": "var-nested-group-as-value",
+      "template": "{global.nested}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "variables": "Standard"
+      },
+      "expected": {
+        "result": "SmartFormat.Extensions.PersistentVariables.VariablesGroup"
+      }
+    },
+    {
+      "id": "var-value-int-n2",
+      "template": "{v.i:N2}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "variables": "Standard"
+      },
+      "expected": {
+        "result": "1,234.00"
+      }
+    },
+    {
+      "id": "var-value-bool-condition",
+      "template": "{v.b:yes|no}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "variables": "Standard"
+      },
+      "expected": {
+        "result": "yes"
+      }
+    },
+    {
+      "id": "var-value-string-selector",
+      "template": "{v.s.Length}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "variables": "Standard"
+      },
+      "expected": {
+        "result": "3"
+      }
+    },
+    {
+      "id": "var-value-date",
+      "template": "{v.dt:d}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "variables": "Standard"
+      },
+      "expected": {
+        "result": "12/31/2024"
+      }
+    },
+    {
+      "id": "var-value-list",
+      "template": "{v.list:list:{}|, |, and }",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "variables": "Standard"
+      },
+      "expected": {
+        "result": "a, b, and c"
+      }
+    },
+    {
+      "id": "var-value-list-index",
+      "template": "{v.list.0}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "variables": "Standard"
+      },
+      "expected": {
+        "result": "a"
+      }
+    },
+    {
+      "id": "var-precedence-no-argument",
+      "template": "{global.theVariable}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "variables": "Precedence"
+      },
+      "expected": {
+        "result": "val-from-persistent-source"
+      }
+    },
+    {
+      "id": "var-precedence-unrelated-argument",
+      "template": "{global.theVariable}",
+      "args": {
+        "somethingElse": "x"
+      },
+      "culture": "",
+      "settings": {
+        "variables": "Precedence"
+      },
+      "expected": {
+        "result": "val-from-persistent-source"
+      }
+    },
+    {
+      "id": "var-precedence-map-argument",
+      "template": "{global.theVariable}",
+      "args": {
+        "global": {
+          "theVariable": "val-from-argument"
+        }
+      },
+      "culture": "",
+      "settings": {
+        "variables": "Precedence"
+      },
+      "expected": {
+        "result": "val-from-persistent-source"
+      }
+    },
+    {
+      "id": "var-precedence-map-other-key",
+      "template": "{other}",
+      "args": {
+        "global": "dict-value",
+        "other": "dict-other"
+      },
+      "culture": "",
+      "settings": {
+        "variables": "Precedence"
+      },
+      "expected": {
+        "result": "dict-other"
+      }
+    },
+    {
+      "id": "var-shadow-string-length",
+      "template": "{0.Length.v}",
+      "args": [
+        "abcd"
+      ],
+      "culture": "",
+      "settings": {
+        "variables": "Shadowing"
+      },
+      "expected": {
+        "result": "7"
+      }
+    },
+    {
+      "id": "var-shadow-string-length-alone",
+      "template": "{0.Length}",
+      "args": [
+        "abcd"
+      ],
+      "culture": "",
+      "settings": {
+        "variables": "Shadowing"
+      },
+      "expected": {
+        "result": "SmartFormat.Extensions.PersistentVariables.VariablesGroup"
+      }
+    },
+    {
+      "id": "conddate-two-now",
+      "template": "{0:cond:Past|Future}",
+      "args": [
+        {
+          "$dt": "2026-07-31T12:00:00.0000000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "Past"
+      }
+    },
+    {
+      "id": "conddate-three-now",
+      "template": "{0:cond:Past|Today|Future}",
+      "args": [
+        {
+          "$dt": "2026-07-31T12:00:00.0000000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "Today"
+      }
+    },
+    {
+      "id": "conddate-auto-now",
+      "template": "{0:Past|Today|Future}",
+      "args": [
+        {
+          "$dt": "2026-07-31T12:00:00.0000000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "Today"
+      }
+    },
+    {
+      "id": "conddate-two-earlier-today",
+      "template": "{0:cond:Past|Future}",
+      "args": [
+        {
+          "$dt": "2026-07-31T10:00:00.0000000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "Past"
+      }
+    },
+    {
+      "id": "conddate-three-earlier-today",
+      "template": "{0:cond:Past|Today|Future}",
+      "args": [
+        {
+          "$dt": "2026-07-31T10:00:00.0000000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "Today"
+      }
+    },
+    {
+      "id": "conddate-auto-earlier-today",
+      "template": "{0:Past|Today|Future}",
+      "args": [
+        {
+          "$dt": "2026-07-31T10:00:00.0000000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "Today"
+      }
+    },
+    {
+      "id": "conddate-two-later-today",
+      "template": "{0:cond:Past|Future}",
+      "args": [
+        {
+          "$dt": "2026-07-31T14:00:00.0000000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "Future"
+      }
+    },
+    {
+      "id": "conddate-three-later-today",
+      "template": "{0:cond:Past|Today|Future}",
+      "args": [
+        {
+          "$dt": "2026-07-31T14:00:00.0000000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "Today"
+      }
+    },
+    {
+      "id": "conddate-auto-later-today",
+      "template": "{0:Past|Today|Future}",
+      "args": [
+        {
+          "$dt": "2026-07-31T14:00:00.0000000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "Today"
+      }
+    },
+    {
+      "id": "conddate-two-yesterday",
+      "template": "{0:cond:Past|Future}",
+      "args": [
+        {
+          "$dt": "2026-07-30T12:00:00.0000000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "Past"
+      }
+    },
+    {
+      "id": "conddate-three-yesterday",
+      "template": "{0:cond:Past|Today|Future}",
+      "args": [
+        {
+          "$dt": "2026-07-30T12:00:00.0000000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "Past"
+      }
+    },
+    {
+      "id": "conddate-auto-yesterday",
+      "template": "{0:Past|Today|Future}",
+      "args": [
+        {
+          "$dt": "2026-07-30T12:00:00.0000000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "Past"
+      }
+    },
+    {
+      "id": "conddate-two-tomorrow",
+      "template": "{0:cond:Past|Future}",
+      "args": [
+        {
+          "$dt": "2026-08-01T12:00:00.0000000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "Future"
+      }
+    },
+    {
+      "id": "conddate-three-tomorrow",
+      "template": "{0:cond:Past|Today|Future}",
+      "args": [
+        {
+          "$dt": "2026-08-01T12:00:00.0000000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "Future"
+      }
+    },
+    {
+      "id": "conddate-auto-tomorrow",
+      "template": "{0:Past|Today|Future}",
+      "args": [
+        {
+          "$dt": "2026-08-01T12:00:00.0000000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "Future"
+      }
+    },
+    {
+      "id": "conddate-two-long-past",
+      "template": "{0:cond:Past|Future}",
+      "args": [
+        {
+          "$dt": "1111-01-01T01:01:01.0000000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "Past"
+      }
+    },
+    {
+      "id": "conddate-three-long-past",
+      "template": "{0:cond:Past|Today|Future}",
+      "args": [
+        {
+          "$dt": "1111-01-01T01:01:01.0000000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "Past"
+      }
+    },
+    {
+      "id": "conddate-auto-long-past",
+      "template": "{0:Past|Today|Future}",
+      "args": [
+        {
+          "$dt": "1111-01-01T01:01:01.0000000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "Past"
+      }
+    },
+    {
+      "id": "conddate-two-long-future",
+      "template": "{0:cond:Past|Future}",
+      "args": [
+        {
+          "$dt": "5555-05-05T05:05:05.0000000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "Future"
+      }
+    },
+    {
+      "id": "conddate-three-long-future",
+      "template": "{0:cond:Past|Today|Future}",
+      "args": [
+        {
+          "$dt": "5555-05-05T05:05:05.0000000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "Future"
+      }
+    },
+    {
+      "id": "conddate-auto-long-future",
+      "template": "{0:Past|Today|Future}",
+      "args": [
+        {
+          "$dt": "5555-05-05T05:05:05.0000000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "Future"
+      }
+    },
+    {
+      "id": "conddate-nested-format",
+      "template": "{0:cond:was {:d}|is {:d}|will be {:d}}",
+      "args": [
+        {
+          "$dt": "2026-07-31T14:00:00.0000000"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "is 07/31/2026"
+      }
+    },
+    {
+      "id": "condts-two-neg",
+      "template": "{0:cond:overdue|left}",
+      "args": [
+        {
+          "$ts": "-01:00:00"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "overdue"
+      }
+    },
+    {
+      "id": "condts-three-neg",
+      "template": "{0:cond:overdue|due now|left}",
+      "args": [
+        {
+          "$ts": "-01:00:00"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "overdue"
+      }
+    },
+    {
+      "id": "condts-auto-neg",
+      "template": "{0:overdue|due now|left}",
+      "args": [
+        {
+          "$ts": "-01:00:00"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "overdue"
+      }
+    },
+    {
+      "id": "condts-two-zero",
+      "template": "{0:cond:overdue|left}",
+      "args": [
+        {
+          "$ts": "00:00:00"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "overdue"
+      }
+    },
+    {
+      "id": "condts-three-zero",
+      "template": "{0:cond:overdue|due now|left}",
+      "args": [
+        {
+          "$ts": "00:00:00"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "due now"
+      }
+    },
+    {
+      "id": "condts-auto-zero",
+      "template": "{0:overdue|due now|left}",
+      "args": [
+        {
+          "$ts": "00:00:00"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "due now"
+      }
+    },
+    {
+      "id": "condts-two-pos",
+      "template": "{0:cond:overdue|left}",
+      "args": [
+        {
+          "$ts": "01:00:00"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "left"
+      }
+    },
+    {
+      "id": "condts-three-pos",
+      "template": "{0:cond:overdue|due now|left}",
+      "args": [
+        {
+          "$ts": "01:00:00"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "left"
+      }
+    },
+    {
+      "id": "condts-auto-pos",
+      "template": "{0:overdue|due now|left}",
+      "args": [
+        {
+          "$ts": "01:00:00"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "left"
+      }
+    },
+    {
+      "id": "condts-nested-format",
+      "template": "{0:cond:overdue by {:g}|due now|{:g} left}",
+      "args": [
+        {
+          "$ts": "01:00:00"
+        }
+      ],
+      "culture": "",
+      "expected": {
+        "result": "1:00:00 left"
       }
     },
     {

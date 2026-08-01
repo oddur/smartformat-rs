@@ -1074,8 +1074,11 @@ fn error_message(error: &Error) -> String {
     match error {
         Error::Format { message, .. }
         | Error::UnsupportedSpec { message, .. }
-        | Error::Escape { message, .. } => message.clone(),
-        parse_error => parse_error.to_string(),
+        | Error::Escape { message, .. }
+        // .NET's `ParsingErrors.Message`, which a formatter extension that
+        // parses a string of its own lets through.
+        | Error::Parse { message, .. } => message.clone(),
+        other => other.to_string(),
     }
 }
 

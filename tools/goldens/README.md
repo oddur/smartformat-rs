@@ -17,8 +17,11 @@ caused it.
 
 ## Pinned version
 
-SmartFormat.NET **3.6.1**, from `tools/goldens/goldens.csproj`. Bump it there, rerun the
-command above, and review the diff: it shows exactly which behavior the upgrade changed.
+SmartFormat.NET **3.6.1** and SmartFormat.Extensions.Time **3.6.1**, from
+`tools/goldens/goldens.csproj`. Bump them there, rerun the command above, and review the
+diff: it shows exactly which behavior the upgrade changed. (The metapackage already pulls
+the time extension in; it is named explicitly so the version the `time-*` cases were
+generated against is written down.)
 
 A case without a `settings` object uses `Smart.CreateDefaultSmartFormat()` with default
 settings, so both the parser and the formatter throw on errors, selectors are
@@ -36,6 +39,7 @@ the invariant culture instead of failing.
 {
   "smartformat_net_version": "3.6.1",
   "default_culture": "InvariantCulture",
+  "now": "2026-07-31T12:00:00.0000000",
   "cases": [
     {
       "id": "num-double-2_675-F",
@@ -55,6 +59,47 @@ the `IFormatProvider` of the `Format` call; `""` means `CultureInfo.InvariantCul
 Rust runner resolves the same name through `fmt::culture::get`, and **fails** if the
 generated table does not carry it — a missing culture must never look like a pass. The
 document-level `default_culture` field names what a case without one uses.
+
+## The pinned clock
+
+Two things read a wall clock: `TimeFormatter` on a `DateTime` value, and
+`ConditionalFormatter`'s date branch. Both go through `SystemTime.Now()`, a settable
+`Func<DateTime>`, which the harness pins with `SystemTime.SetDateTime` before it renders
+anything. The instant is in the document's `now` field, and the Rust runner puts it in
+`SmartSettings::now` — the port's stand-in — for **every** case, so a case that reads a
+clock is as deterministic as one that does not.
+
+`now` and every `$dt` argument have `DateTimeKind.Unspecified`, which .NET treats as
+local, so the `ToUniversalTime()` calls in both extensions shift the value and the clock
+by the same offset and cancel out. Two rules follow for new cases, and neither is checked
+automatically:
+
+- keep a `conddate-*` value within a couple of hours of `now` (which is local noon) or a
+  whole day away from it. The three-part form compares the two *UTC* dates, and the port
+  compares civil dates: the two answers agree as long as the machine's offset does not
+  push a value across midnight, which for a value two hours from noon means any offset up
+  to ±10 hours.
+- keep `now` and any nearby value on the same side of a daylight-saving transition, which
+  is why `now` is in July.
+
+## Extensions that are not in `CreateDefaultSmartFormat`
+
+`TimeFormatter` and `LocalizationFormatter` are added to every formatter the harness
+builds. Neither can auto-detect, so only a `{…:time:…}` or `{…:L:…}` placeholder reaches
+them and no other case changes. `AddExtensions` slots each one where
+`WellKnownExtensionTypes` ranks it, which is what `FormatterRegistry::add` does on the
+Rust side.
+
+The localization provider is `LocalizationFixture` in `Program.cs`: a table keyed by
+culture name, looked up specific culture → parent → invariant, with no fallback culture.
+It is *not* the resx-backed `SmartFormat.Utilities.LocalizationProvider` — the table has
+to be in source, because `localization_fixture` in the Rust runner mirrors it entry for
+entry.
+
+A variables source is per case instead, under the `variables` settings key, because it is
+ranked ahead of every other source: a fixture holding a group named `Length` would answer
+`{0.Length}` on a string for every case in the table. `VariablesFixture` builds the three
+named sets and `variables_fixture` in the Rust runner mirrors them.
 
 Culture data and goldens are one artifact in two files: `goldens/m1.json` and
 `crates/smartformat/src/fmt/culture/generated.rs` (see `tools/culturegen/README.md`).
@@ -96,6 +141,7 @@ exactly the same way, so they ride along in the same record and the same JSON ob
 | `listSplitChar` | `ListFormatter.SplitChar` | one of `|`, `,`, `~` |
 | `listCanAutoDetect` | `ListFormatter.CanAutoDetect` | `false` |
 | `templates` | which set `TemplateFormatter.Register` is called with | `Standard`, `WithEmptyName`, `CaseInsensitive`, `Simple` |
+| `variables` | which set of groups a `PersistentVariablesSource` is registered with | `Standard`, `Precedence`, `Shadowing` |
 
 `SplitChar` is validated by `Utilities.Validation.GetValidSplitCharOrThrow`, which accepts
 only `|`, `,` and `~`, so those are the only values a case may ask for.
@@ -121,8 +167,14 @@ The Rust runner mirrors this mapping, so keep the two in step.
 | `true` / `false` | `bool` |
 | `null` | `null` |
 | `{"$dt": "2009-06-15T13:45:30.0000000"}` | `DateTime`, parsed with the `"O"` round-trip format, `Unspecified` kind |
+| `{"$ts": "1.01:01:01.0010000"}` | `TimeSpan`, parsed with the `"c"` round-trip format |
 | `{"$f": "NaN" \| "Infinity" \| "-Infinity"}` | `double` |
 | `{"$i32": "-255"}` | `int` (32-bit), for the cases pinning .NET's per-type integer width |
+
+The `$ts` payload is `[-][d.]hh:mm:ss[.fffffff]`, whose seven fractional digits are
+exactly .NET's 100 ns tick, so the wire form is lossless in both directions — `time_span`
+in the Rust runner reads it into the `jiff::SignedDuration` a `Value::TimeSpan` holds, and
+`TimeSpan.MinValue` round-trips.
 
 Doubles are always written with a `.` or an exponent, so `-0.0` appears as `-0.0` and a
 reader can tell it apart from an integer. NaN and the infinities have no JSON number form,
@@ -137,10 +189,13 @@ alignment, nesting, numeric specifiers, date specifiers, errors, `StringSource` 
 methods, formatter names and options, the list-index operator, non-default settings, the
 `plural` / `choose` / `cond` formatters, which of the two auto-detecting formatters claims
 an unnamed `|`-separated format, the `\uXXXX` sequences the parser reads past (the `uesc-*`
-group), how a culture *name* resolves, the culture data, and the M3 formatters — `list-*`,
-`substr-*`, `isnull-*`, `ismatch-*`, `template-*`. Numeric, date, plural and culture
-cases are generated combinatorially from a value or culture list crossed with a specifier
-list, which is where most of the volume comes from.
+group), how a culture *name* resolves, the culture data, the M3 formatters — `list-*`,
+`substr-*`, `isnull-*`, `ismatch-*`, `template-*` — and the M4 extensions: `time-*` and
+`tsdefault-*` for the time formatter and for a `TimeSpan` through `DefaultFormatter`,
+`loc-*` for localization, `var-*` for the persistent variables source, and `conddate-*` /
+`condts-*` for the two conditions that were deferred until a clock could be pinned.
+Numeric, date, plural and culture cases are generated combinatorially from a value or
+culture list crossed with a specifier list, which is where most of the volume comes from.
 
 The culture groups cross every culture in the generated table with the specifiers whose
 output is pure culture data — `N`, `C` in both signs, `P1`, and the `d` / `D` / `t` / `T` /
@@ -167,23 +222,38 @@ in the table like any other case, and the Rust runner names each of them in its 
 list with the reason; every entry under "Known divergences" in `DESIGN.md` points at one of
 those ids or at a unit test.
 
-Two areas are deliberately left out, because they fall outside the port's scope or belong
-to a later milestone: custom numeric and date patterns, and the M4 formatters.
+One area is deliberately left out, because it falls outside the port's scope: custom
+numeric, date and `TimeSpan` patterns. Two `tsdefault-*` cases pin what .NET does with one
+anyway, and the Rust runner skips them with that reason.
 
-Three kinds of case must **not** go in the table, because their .NET answer depends on the
-machine that regenerates them rather than on the library:
+Two shapes of localization case are left out for a different reason — the port does not
+implement them yet, so a golden for either would be red on arrival. Both are pinned by
+unit tests in `localization.rs` that name what has to change: a translation that formats a
+number or a date *while the formatter options name the culture* (.NET assigns the culture
+to `FormatDetails.Provider`, which the port cannot do until `FormattingInfo` grows a
+`set_culture`), and a key that only matches after the format's own nested placeholders have
+been rendered.
 
-- float or decimal values as `choose` options (`{0:choose(1.5|2.5):a|b}`). `ChooseFormatter`
-  stringifies the value with the *thread* culture, ignoring the `IFormatProvider` of the
-  call, so the case renders — or throws — differently per locale.
+Three extensions read the **thread** culture instead of the `IFormatProvider` of the call,
+which the port has nowhere to read: `ChooseFormatter` and `IsMatchFormatter` when they
+stringify the value, and `TimeFormatter` when it writes a unit's number. The harness sets
+the thread culture to the invariant one, so the machine that regenerates the table no
+longer decides the answer — but a case whose *call* culture is something else and whose
+value goes through one of those three would pin a divergence rather than agreement. Keep
+these out:
+
+- float or decimal values as `choose` options (`{0:choose(1.5|2.5):a|b}`).
 - non-string values matched by `ismatch` whose `ToString()` reads culture data
-  (`{0:ismatch(^1\\.5$):yes|no}` on `1.5`). `IsMatchFormatter` reads the value the same
-  thread-culture way, so on an `en-DE` machine that pattern does not match. Integers,
-  bools and strings are safe.
-- date conditions (`{0:cond:Past|Present|Future}`). `ConditionalFormatter` compares against
-  `DateTime.UtcNow`; there is no way to pin a wall clock from the harness. The Rust side
-  takes its comparison point from `ConditionalFormatter::with_now` and is unit-tested
-  instead.
+  (`{0:ismatch(^1\\.5$):yes|no}` on `1.5`). Integers, bools and strings are safe.
+- a negative `TimeSpan` through `{…:time:…}` under a culture whose negative sign is not a
+  hyphen (`sv`, `fi`, `nb` in the generated set). The `time-full-*-neg` cases are called
+  with the invariant culture and name their language in the options, which is exactly the
+  shape that stays clear of this.
+
+Date conditions (`{0:cond:Past|Today|Future}`) used to be on that list too, because
+`ConditionalFormatter` reads a clock. They are in the table now: the clock is
+`SystemTime.Now()`, not `DateTime.UtcNow`, and the harness pins it (see "The pinned clock"
+above).
 
 One more ordering rule, enforced by the harness rather than by review:
 `ListFormatter.CollectionIndex` is a **static** in .NET, so a case whose list iteration

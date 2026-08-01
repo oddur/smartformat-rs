@@ -4,8 +4,17 @@ use std::fmt;
 #[derive(Debug)]
 pub enum Error {
     /// The template could not be parsed. Carries the position and message
-    /// of each syntax error found.
-    Parse { errors: Vec<ParseError> },
+    /// of each syntax error found, and .NET's own report of all of them.
+    Parse {
+        /// .NET's `ParsingErrors.Message`: every issue, the template, and a
+        /// line of arrows pointing at each one. This is what
+        /// [`ErrorAction::OutputErrorInResult`](crate::ErrorAction::OutputErrorInResult)
+        /// writes when a formatter extension parses a string of its own and
+        /// the parse fails — `{:L:<key>}` on a translation that does not
+        /// parse is the one way to reach it.
+        message: String,
+        errors: Vec<ParseError>,
+    },
     /// A placeholder could not be evaluated against the provided values.
     Format { message: String, position: usize },
     /// An escape sequence that resolves to nothing was reached while rendering.
@@ -53,7 +62,7 @@ pub struct ParseError {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Error::Parse { errors } => {
+            Error::Parse { errors, .. } => {
                 write!(f, "template parse error")?;
                 for e in errors {
                     write!(f, "; at {}: {}", e.position, e.message)?;

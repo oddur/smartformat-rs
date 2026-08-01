@@ -11,8 +11,29 @@ using System.Text.RegularExpressions;
 using SmartFormat;
 using SmartFormat.Core.Settings;
 using SmartFormat.Extensions;
+using SmartFormat.Extensions.PersistentVariables;
+using SmartFormat.Utilities;
 
 const string smartFormatVersion = "3.6.1";
+
+// The wall clock every case that reads one reads. `TimeFormatter` on a
+// `DateTime` and `ConditionalFormatter`'s date branch both go through
+// `SystemTime.Now()`, which is a settable `Func<DateTime>`; the Rust port's
+// stand-in is `SmartSettings::now`, and the runner reads this instant out of
+// the document's `now` field. Kind is Unspecified, like every `$dt` argument,
+// so .NET's `ToUniversalTime()` shifts a value and the clock by the same
+// offset.
+var pinnedNow = new DateTime(2026, 7, 31, 12, 0, 0, DateTimeKind.Unspecified);
+SystemTime.SetDateTime(pinnedNow);
+
+// Three extensions read the *thread* culture rather than the provider of the
+// call — `ChooseFormatter` and `IsMatchFormatter` when they stringify a value,
+// and `TimeFormatter` when it writes a unit's number — so the machine's locale
+// would otherwise leak into the expected output. The invariant culture is the
+// one the port behaves like: its negative sign is '-' and its group separator
+// is ','.
+CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
+CultureInfo.CurrentUICulture = CultureInfo.InvariantCulture;
 
 var cases = new List<GoldenCase>();
 
@@ -43,6 +64,11 @@ SubStringCases(cases);
 IsNullCases(cases);
 IsMatchCases(cases);
 TemplateCases(cases);
+TimeCases(cases);
+TimeSpanDefaultCases(cases);
+LocalizationCases(cases);
+VariablesCases(cases);
+ClockConditionCases(cases);
 // Must stay last: see the comment on the method.
 CollectionIndexPoisoningCases(cases);
 
@@ -108,6 +134,7 @@ var document = new JsonObject
 {
     ["smartformat_net_version"] = smartFormatVersion,
     ["default_culture"] = "InvariantCulture",
+    ["now"] = pinnedNow.ToString("O", CultureInfo.InvariantCulture),
     ["cases"] = caseArray,
 };
 
@@ -157,6 +184,23 @@ static SmartFormatter BuildFormatter(CaseSettings settings)
     var list = smart.GetFormatterExtension<ListFormatter>()!;
     list.SplitChar = settings.ListSplitChar;
     list.CanAutoDetect = settings.ListCanAutoDetect;
+
+    // Neither of these two is in `CreateDefaultSmartFormat`, and neither can
+    // ever auto-detect, so adding them to every formatter only makes the names
+    // `time` and `L` resolvable. `AddExtensions` slots each one where
+    // `WellKnownExtensionTypes` ranks it, which is what
+    // `FormatterRegistry::add` does on the Rust side.
+    smart.AddExtensions(new TimeFormatter());
+    // The provider is a setting rather than a property of the formatter, and
+    // `ToSmartSettings` has already put `LocalizationFixture.Provider` there.
+    smart.AddExtensions(new LocalizationFormatter());
+
+    // A variables source is *not* added to every formatter: it is ranked ahead
+    // of every other source, so a group answers a selector before the argument
+    // does, and a fixture holding a group named `Length` would change every
+    // `{0.Length}` case in the table.
+    if (settings.Variables != VariableSet.None)
+        smart.AddExtensions(VariablesFixture(settings.Variables));
 
     if (settings.Templates != TemplateSet.None)
     {
@@ -2809,6 +2853,475 @@ static void CollectionIndexPoisoningCases(List<GoldenCase> cases)
 }
 
 // ---------------------------------------------------------------------------
+// M4: TimeFormatter, from the SmartFormat.Extensions.Time package.
+//
+// Every case runs a `TimeSpan` — or, where it says so, a `DateTime` measured
+// against the pinned clock — through the `time` formatter. The fixture spans
+// are the ones SmartFormat.NET's own TimeFormatterTests use, which is what
+// makes their expected words checkable against that test file.
+// ---------------------------------------------------------------------------
+
+static void TimeCases(List<GoldenCase> cases)
+{
+    const string zero = "00:00:00";
+    const string oneOfEach = "1.01:01:01.0010000";
+    const string negOneOfEach = "-1.01:01:01.0010000";
+    const string twoHoursTwoSeconds = "0.02:00:02";
+    const string threeDaysThreeSeconds = "3.00:00:03";
+    const string fourMilliseconds = "00:00:00.0040000";
+    const string fiveDays = "5.00:00:00";
+    const string seventyDays = "70.00:00:00";
+    const string maxValue = "10675199.02:48:05.4775807";
+    const string minValue = "-10675199.02:48:05.4775808";
+
+    // The six languages the extension ships resource files for.
+    string[] languages = ["en", "de", "es", "fr", "it", "pt"];
+
+    var fixture = new (string Slug, string Span)[]
+    {
+        ("zero", zero),
+        ("one-of-each", oneOfEach),
+        ("two-hours", twoHoursTwoSeconds),
+        ("three-days", threeDaysThreeSeconds),
+        ("four-ms", fourMilliseconds),
+        ("five-days", fiveDays),
+    };
+
+    var outputError = new CaseSettings(FormatErrorAction: FormatErrorAction.OutputErrorInResult);
+
+    void Add(string id, string template, string span, string culture = "",
+        CaseSettings? settings = null) =>
+        cases.Add(new GoldenCase("time-" + id, template, TimeSpanArgs(span), settings, culture));
+
+    // The default options — days down to seconds, every zero unit dropped —
+    // over the fixture, in the two languages whose wording differs most.
+    foreach (var culture in new[] { "en", "de" })
+    foreach (var (slug, span) in fixture)
+        Add($"default-{culture}-{slug}", "{0:time:}", span, culture);
+
+    foreach (var language in languages)
+    {
+        // Every unit word and every plural arm of the language at once: `full`
+        // keeps the zero units and `weeks milliseconds` opens the whole range.
+        // The negative span is safe to pin because the number is written with
+        // the invariant culture, whose negative sign is a hyphen.
+        Add($"full-{language}-pos", $"{{0:time({language}):weeks milliseconds full}}", oneOfEach);
+        Add($"full-{language}-neg", $"{{0:time({language}):weeks milliseconds full}}", negOneOfEach);
+        // The "less than" texts, spelled out and abbreviated.
+        Add($"zero-{language}-weeks", $"{{0:time({language}):weeks}}", zero);
+        Add($"zero-{language}-abbr-ms", $"{{0:time({language}):abbr milliseconds}}", zero);
+    }
+
+    // The truncation matrix over a span with a zero unit in the middle.
+    foreach (var truncate in new[] { "auto", "short", "fill", "full" })
+    {
+        Add($"truncate-{truncate}", $"{{0:time:days milliseconds {truncate}}}", twoHoursTwoSeconds);
+        Add($"truncate-{truncate}-abbr", $"{{0:time:days milliseconds abbr {truncate}}}",
+            twoHoursTwoSeconds);
+    }
+
+    // Rounding: the default drops what is below the smallest unit, `noless`
+    // rounds it up.
+    Add("round-floor", "{0:time:}", oneOfEach);
+    Add("round-ceiling", "{0:time:noless}", oneOfEach);
+    Add("round-neg-ceiling", "{0:time:weeks milliseconds full noless}", negOneOfEach);
+
+    // `TotalMilliseconds` saturates an `int` cast, and the widest units still
+    // fit where the default range overflows.
+    Add("saturate-milliseconds", "{0:time:milliseconds}", seventyDays);
+    Add("min-milliseconds", "{0:time:milliseconds}", minValue);
+    Add("max-weeks", "{0:time:weeks}", maxValue);
+    Add("min-overflow", "{0:time:}", minValue);
+    Add("max-overflow", "{0:time:noless weeks}", maxValue);
+    Add("min-overflow-text", "{0:time:}", minValue, settings: outputError);
+    Add("max-overflow-text", "{0:time:noless weeks}", maxValue, settings: outputError);
+
+    // A nested format hands the unit texts to the `list` formatter. .NET drops
+    // the format's first item whatever it is, so the leading space is load
+    // bearing — without it the list placeholder itself is what goes.
+    foreach (var (slug, span) in fixture)
+        Add($"list-{slug}", "{0:time: {:list:|, | and }}", span);
+    Add("list-no-leading-literal", "{0:time:{:list:|, | and }}", oneOfEach);
+    Add("list-trailing-word", "{0:time: {:list:|, | and } hours}", oneOfEach);
+
+    // SmartFormat 2.x put the format in the options and left the format empty.
+    // The two spellings agree, and the compatibility branch means a culture can
+    // never be named that way.
+    Add("v2-options-are-the-format", "{0:time(abbr hours noless)}", oneOfEach);
+    Add("v3-format", "{0:time:abbr hours noless}", oneOfEach);
+    Add("v2-culture-is-swallowed", "{0:time(en):}", oneOfEach, "de");
+
+    // Which culture the unit texts come from.
+    Add("culture-from-call", "{0:time:hours minutes}", oneOfEach, "de");
+    Add("culture-from-invariant-call", "{0:time:hours minutes}", oneOfEach);
+    Add("culture-option-wins", "{0:time(es):hours minutes}", oneOfEach, "de");
+    // A culture with no TimeTextInfo falls back to the fallback language.
+    Add("culture-unshipped", "{0:time(nl):hours minutes}", oneOfEach, "de");
+    // The name is resolved through CultureInfo, so case, a specific culture
+    // and an alternate sort order all land on the same language.
+    Add("culture-uppercase", "{0:time(EN):hours minutes}", oneOfEach, "de");
+    Add("culture-specific", "{0:time(en-US):hours minutes}", oneOfEach, "de");
+    Add("culture-alt-sort", "{0:time(en_US):hours minutes}", oneOfEach, "de");
+
+    // A value the formatter cannot process. The exception is built from the
+    // format's *first item*, so the message quotes the template when the
+    // format has one and an empty line when the format is empty.
+    foreach (var (slug, json) in new (string Slug, string Json)[]
+             {
+                 ("string", """["abc"]"""), ("int", "[42]"), ("bool", "[true]"), ("null", "[null]"),
+             })
+    foreach (var (formatSlug, template) in new (string, string)[]
+             { ("format", "ab {0:time:hours}"), ("empty-format", "ab {0:time:}") })
+    {
+        cases.Add(new GoldenCase($"time-wrong-type-{slug}-{formatSlug}", template, json));
+        cases.Add(new GoldenCase(
+            $"time-wrong-type-{slug}-{formatSlug}-text", template, json, outputError));
+    }
+
+    // A malformed culture name is a plain exception, so its bare message is
+    // what reaches the output.
+    Add("culture-malformed", "{0:time(xx-YY-):hours}", oneOfEach);
+    Add("culture-malformed-text", "{0:time(xx-YY-):hours}", oneOfEach, settings: outputError);
+
+    // A DateTime is the span between the pinned clock and the value, so a past
+    // moment is a positive span. The TimeSpan of the same length is next to it.
+    foreach (var (slug, hours) in new (string, int)[]
+             { ("now", 0), ("past-12h", -12), ("future-12h", 12), ("past-23h", -23), ("future-23h", 23) })
+    {
+        cases.Add(new GoldenCase(
+            $"time-relative-{slug}", "{0:time:abbr hours noless}",
+            JsonDateTime(PinnedNow().AddHours(hours))));
+        var span = TimeSpan.FromHours(-hours);
+        cases.Add(new GoldenCase(
+            $"time-relative-{slug}-as-span", "{0:time:abbr hours noless}",
+            TimeSpanArgs(span.ToString("c", CultureInfo.InvariantCulture))));
+    }
+}
+
+// ---------------------------------------------------------------------------
+// M4: a TimeSpan through DefaultFormatter, which is .NET's own
+// `TimeSpanFormat`: the `c` / `t` / `T` round-trip pattern, and the `g` / `G`
+// pair, which take the decimal separator — and nothing else — from the
+// culture.
+// ---------------------------------------------------------------------------
+
+static void TimeSpanDefaultCases(List<GoldenCase> cases)
+{
+    var values = new (string Slug, string Span)[]
+    {
+        ("zero", "00:00:00"),
+        ("day", "1.01:01:01.0010000"),
+        ("neg-day", "-1.01:01:01.0010000"),
+        ("hours", "02:03:04"),
+        ("tick", "00:00:00.0000001"),
+        ("max", "10675199.02:48:05.4775807"),
+        ("min", "-10675199.02:48:05.4775808"),
+        ("half-second", "00:00:00.5000000"),
+        ("ten-thousand-days", "10000.00:00:00"),
+    };
+
+    foreach (var (valueSlug, span) in values)
+    foreach (var (specSlug, spec) in new (string, string)[]
+             { ("none", ""), ("c", "c"), ("t-lc", "t"), ("T", "T"), ("g-lc", "g"), ("G", "G") })
+        cases.Add(new GoldenCase(
+            $"tsdefault-{valueSlug}-{specSlug}",
+            spec.Length == 0 ? "{0}" : "{0:" + spec + "}",
+            TimeSpanArgs(span)));
+
+    // Only the decimal separator moves with the culture: the ':' between the
+    // components is a literal even for fi, whose TimeSeparator is '.'.
+    foreach (var culture in new[] { "de-DE", "ar-SA", "fi" })
+    foreach (var (valueSlug, span) in values.Where(
+                 v => v.Slug is "day" or "neg-day" or "tick" or "max"))
+    foreach (var (specSlug, spec) in new (string, string)[] { ("c", "c"), ("g-lc", "g"), ("G", "G") })
+        cases.Add(new GoldenCase(
+            $"tsdefault-{CultureSlug(culture)}-{valueSlug}-{specSlug}",
+            "{0:" + spec + "}", TimeSpanArgs(span), Culture: culture));
+
+    // An unknown specifier is .NET's own message.
+    cases.Add(new GoldenCase("tsdefault-unknown-spec", "{0:x}", TimeSpanArgs("02:03:04")));
+    cases.Add(new GoldenCase(
+        "tsdefault-unknown-spec-text", "{0:x}", TimeSpanArgs("02:03:04"),
+        new CaseSettings(FormatErrorAction: FormatErrorAction.OutputErrorInResult)));
+    // Custom TimeSpan patterns, which .NET renders and the port refuses: the
+    // documented custom-pattern non-goal, skipped by the Rust runner.
+    cases.Add(new GoldenCase("tsdefault-custom-pattern", @"{0:hh\:mm}", TimeSpanArgs("02:03:04")));
+    cases.Add(new GoldenCase("tsdefault-custom-pattern-one-char", "{0:%h}", TimeSpanArgs("02:03:04")));
+}
+
+// ---------------------------------------------------------------------------
+// M4: LocalizationFormatter, named `L`, over `LocalizationFixture` — a
+// dictionary-backed ILocalizationProvider rather than the resx-backed one
+// SmartFormat ships, so the table is in the source of both harnesses.
+//
+// Two shapes are deliberately absent, because the port does not implement them
+// yet and a golden for either would be red on arrival: a localized string that
+// formats a number or a date *while the options name the culture*, and a key
+// that only matches after the format's nested placeholders are rendered.
+// ---------------------------------------------------------------------------
+
+static void LocalizationCases(List<GoldenCase> cases)
+{
+    const string none = "[]";
+
+    void Add(string id, string template, string args = none, string culture = "",
+        CaseSettings? settings = null) =>
+        cases.Add(new GoldenCase("loc-" + id, template, args, settings, culture));
+
+    // Which culture the key is looked up in: the call's, walking specific →
+    // parent → invariant. `pt` has no table at all and reaches the invariant
+    // one.
+    foreach (var culture in new[] { "", "es", "de", "fr", "pt" })
+        Add($"call-culture-{(culture.Length == 0 ? "invariant" : culture)}",
+            "{:L:WeTranslateText}", culture: culture);
+    Add("invariant-only-key", "{:L:OnlyExistForInvariantCulture}", culture: "pt");
+
+    // The formatter options name a culture, which wins over the call's.
+    foreach (var culture in new[] { "es", "en", "fr", "de" })
+        Add($"option-culture-{culture}", $"{{:L({culture}):WeTranslateText}}");
+    Add("option-culture-beats-call", "{:L(de):WeTranslateText}", culture: "fr-FR");
+    // A specific culture falls back to its language's table.
+    Add("option-culture-specific", "{:L(es-MX):WeTranslateText}");
+    // Empty options are no options, and the options are trimmed.
+    Add("option-culture-empty", "{:L():WeTranslateText}");
+    Add("option-culture-empty-es", "{:L():WeTranslateText}", culture: "es");
+    Add("option-culture-spaces", "{:L( es ):WeTranslateText}");
+    Add("option-culture-tab", "{:L(\tes):WeTranslateText}");
+
+    // Errors, under every error action: an empty format, a key nothing
+    // translates, a translation that does not parse, and an escape sequence in
+    // the key that cannot be resolved.
+    foreach (var (slug, template) in new (string, string)[]
+             {
+                 ("empty-format", "{:L:}"),
+                 ("no-format", "{:L()}"),
+                 ("empty-options-and-format", "{:L():}"),
+                 ("missing-key", "{:L(es):NonExisting}"),
+                 ("unparsable-translation", "{:L:BadParse}"),
+                 ("bad-escape-in-key", @"{:L:a\qb}"),
+             })
+    {
+        Add($"error-{slug}", template);
+        foreach (var action in new[]
+                 {
+                     FormatErrorAction.Ignore, FormatErrorAction.MaintainTokens,
+                     FormatErrorAction.OutputErrorInResult,
+                 })
+            Add($"error-{slug}-{action.ToString().ToLowerInvariant()}", template,
+                settings: new CaseSettings(FormatErrorAction: action));
+    }
+
+    // The key is the format's RawText, so escape sequences are resolved into
+    // it before the lookup.
+    Add("key-escaped-brace", @"{:L:a\{b}");
+
+    // Rendering: the alignment of the placeholder reaches the child format …
+    Add("alignment", "{,20:L(es):WeTranslateText}");
+    // … a translation may localize again …
+    Add("nested-localization", "{:L:Outer}");
+    // … and a placeholder in a translation resolves against the current scope.
+    Add("placeholder-name", "{:L(de):greet}", """{"Name":"Joe"}""");
+
+    // The parse cache is keyed with the settings' comparer, so two
+    // translations that differ only in case collide when it ignores case.
+    Add("cache-case-sensitive", "{:L:K1}|{:L:K2}", """["x"]""");
+    Add("cache-case-insensitive", "{:L:K1}|{:L:K2}", """["x"]""",
+        settings: new CaseSettings(CaseSensitivity: CaseSensitivityType.CaseInsensitive));
+
+    // A translation holding a placeholder that formats a number, with the
+    // culture coming from the call.
+    const string city = """["X-City", 8900000]""";
+    foreach (var culture in new[] { "", "de", "fr" })
+        Add($"placeholder-number-{(culture.Length == 0 ? "invariant" : culture)}",
+            "{0} {1:L:has {:N0} inhabitants}", city, culture);
+    foreach (var culture in new[] { "", "es" })
+        Add($"placeholder-positional-{(culture.Length == 0 ? "invariant" : culture)}",
+            "{:L:{0} has {1:N0} inhabitants}", city, culture);
+
+    // Through the count-driven formatters, whose parts are localized one by
+    // one. Both go through a key the raw text already matches.
+    foreach (var count in new[] { "0", "1", "200" })
+        Add($"cond-items-en-{count}",
+            "{0:cond:{:L:{} items}|{:L:{} item}|{:L:{} items}}", "[" + count + "]", "en");
+    foreach (var culture in new[] { "es", "fr", "de" })
+        Add($"cond-items-{culture}-200",
+            "{0:cond:{:L:{} items}|{:L:{} item}|{:L:{} items}}", "[200]", culture);
+    foreach (var (culture, count) in new (string, string)[]
+             { ("en", "0"), ("en", "1"), ("de", "200"), ("fr", "0"), ("fr", "1"), ("fr", "200") })
+        Add($"plural-items-{culture}-{count}",
+            "{0:plural:{:L:{} item}|{:L:{} items}}", "[" + count + "]", culture);
+
+    // The formatter's name is matched with the settings' comparer, and `L` is
+    // the only name it has — `localize` was a 2.x alias.
+    Add("name-localize", "{:localize:WeTranslateText}");
+    Add("name-lowercase", "{:l:WeTranslateText}");
+    Add("name-lowercase-case-insensitive", "{:l:WeTranslateText}",
+        settings: new CaseSettings(CaseSensitivity: CaseSensitivityType.CaseInsensitive));
+}
+
+// ---------------------------------------------------------------------------
+// M4: the persistent variables source, which answers a group name before any
+// other source is asked.
+// ---------------------------------------------------------------------------
+
+static void VariablesCases(List<GoldenCase> cases)
+{
+    const string none = "[]";
+    var standard = new CaseSettings(Variables: VariableSet.Standard);
+    var standardIgnoringCase = new CaseSettings(
+        CaseSensitivity: CaseSensitivityType.CaseInsensitive, Variables: VariableSet.Standard);
+    var precedence = new CaseSettings(Variables: VariableSet.Precedence);
+    var shadowing = new CaseSettings(Variables: VariableSet.Shadowing);
+
+    void Add(string id, string template, string args = none, CaseSettings? settings = null) =>
+        cases.Add(new GoldenCase("var-" + id, template, args, settings ?? standard));
+
+    // Reading a variable out of a group, with no arguments at all.
+    Add("group-variable", "{global.theVariable}");
+    Add("nested-group", "{global.nested.inner}");
+    Add("null-variable", "{global.nullVar}");
+    Add("null-variable-nullable-operator", "{global.nullVar?.Any}");
+
+    // What is not there is an error, and the nullable operator on the *group*
+    // does not excuse a missing variable.
+    Add("missing-variable", "{global.missing}");
+    Add("missing-group", "{missingGroup}");
+    Add("missing-variable-nullable-group", "{global?.missing}");
+    Add("missing-nested-variable", "{global.nested.missing}");
+
+    // Group and variable names are matched ordinally, whatever the settings
+    // say — .NET's group dictionaries never consult CaseSensitivity.
+    Add("group-name-wrong-case", "{GLOBAL.theVariable}");
+    Add("variable-name-wrong-case", "{global.THEVARIABLE}");
+    Add("group-name-wrong-case-ignoring-case", "{GLOBAL.theVariable}", settings: standardIgnoringCase);
+    Add("variable-name-wrong-case-ignoring-case", "{global.THEVARIABLE}",
+        settings: standardIgnoringCase);
+
+    // A group written on its own: .NET's DefaultFormatter reaches its
+    // ToString(), which is the CLR type name.
+    Add("group-as-value", "{global}");
+    Add("nested-group-as-value", "{global.nested}");
+
+    // A variable is an ordinary value, so every formatter works on one.
+    Add("value-int-n2", "{v.i:N2}");
+    Add("value-bool-condition", "{v.b:yes|no}");
+    Add("value-string-selector", "{v.s.Length}");
+    Add("value-date", "{v.dt:d}");
+    Add("value-list", "{v.list:list:{}|, |, and }");
+    Add("value-list-index", "{v.list.0}");
+
+    // Precedence against the arguments. A dictionary argument holding the
+    // group's name loses in .NET, which looks only for an IVariablesGroup
+    // before the group names.
+    Add("precedence-no-argument", "{global.theVariable}", settings: precedence);
+    Add("precedence-unrelated-argument", "{global.theVariable}", """{"somethingElse":"x"}""",
+        precedence);
+    Add("precedence-map-argument", "{global.theVariable}",
+        """{"global":{"theVariable":"val-from-argument"}}""", precedence);
+    Add("precedence-map-other-key", "{other}",
+        """{"global":"dict-value","other":"dict-other"}""", precedence);
+
+    // A group named like a selector another source would answer wins, because
+    // the source is ranked ahead of all of them.
+    Add("shadow-string-length", "{0.Length.v}", """["abcd"]""", shadowing);
+    Add("shadow-string-length-alone", "{0.Length}", """["abcd"]""", shadowing);
+}
+
+// ---------------------------------------------------------------------------
+// M4: the conditions that read a clock, which the harness pins through
+// `SystemTime.SetDateTime` and the port through `SmartSettings::now`.
+// ---------------------------------------------------------------------------
+
+static void ClockConditionCases(List<GoldenCase> cases)
+{
+    var now = PinnedNow();
+
+    void AddDate(string id, string template, DateTime value) =>
+        cases.Add(new GoldenCase("conddate-" + id, template, JsonDateTime(value)));
+
+    // Every moment stays within a few hours of the clock or a whole day away
+    // from it, so the UTC date .NET compares is the same one the port compares
+    // as a civil date whatever the machine's offset is.
+    foreach (var (slug, value) in new (string, DateTime)[]
+             {
+                 ("now", now),
+                 ("earlier-today", now.AddHours(-2)),
+                 ("later-today", now.AddHours(2)),
+                 ("yesterday", now.AddDays(-1)),
+                 ("tomorrow", now.AddDays(1)),
+                 ("long-past", new DateTime(1111, 1, 1, 1, 1, 1)),
+                 ("long-future", new DateTime(5555, 5, 5, 5, 5, 5)),
+             })
+    {
+        // Two parts: the past arm takes the clock itself.
+        AddDate($"two-{slug}", "{0:cond:Past|Future}", value);
+        // Three: the middle one is today, whatever the time of day.
+        AddDate($"three-{slug}", "{0:cond:Past|Today|Future}", value);
+        // The formatter auto-detects, so the name is optional.
+        AddDate($"auto-{slug}", "{0:Past|Today|Future}", value);
+    }
+    AddDate("nested-format", "{0:cond:was {:d}|is {:d}|will be {:d}}", now.AddHours(2));
+
+    void AddSpan(string id, string template, string span) =>
+        cases.Add(new GoldenCase("condts-" + id, template, TimeSpanArgs(span)));
+
+    // A TimeSpan needs no clock: negative / zero / positive, with zero folded
+    // into the negative arm unless there are exactly three parts.
+    foreach (var (slug, span) in new (string, string)[]
+             { ("neg", "-01:00:00"), ("zero", "00:00:00"), ("pos", "01:00:00") })
+    {
+        AddSpan($"two-{slug}", "{0:cond:overdue|left}", span);
+        AddSpan($"three-{slug}", "{0:cond:overdue|due now|left}", span);
+        AddSpan($"auto-{slug}", "{0:overdue|due now|left}", span);
+    }
+    AddSpan("nested-format", "{0:cond:overdue by {:g}|due now|{:g} left}", "01:00:00");
+}
+
+/// <summary>
+/// The variable groups a case's <see cref="VariableSet"/> asks for, mirrored
+/// group for group by <c>variables_fixture</c> in the Rust golden runner.
+/// </summary>
+static PersistentVariablesSource VariablesFixture(VariableSet set) => set switch
+{
+    VariableSet.Standard => new PersistentVariablesSource
+    {
+        {
+            "global", new VariablesGroup
+            {
+                { "theVariable", new StringVariable("persistent-value") },
+                { "nested", new VariablesGroup { { "inner", new IntVariable(42) } } },
+                { "nullVar", new ObjectVariable(null) },
+            }
+        },
+        {
+            "v", new VariablesGroup
+            {
+                { "i", new IntVariable(1234) },
+                { "b", new BoolVariable(true) },
+                { "s", new StringVariable("str") },
+                { "dt", new Variable<DateTime>(new DateTime(2024, 12, 31)) },
+                { "list", new ObjectVariable(new object?[] { "a", "b", "c" }) },
+            }
+        },
+    },
+    VariableSet.Precedence => new PersistentVariablesSource
+    {
+        {
+            "global", new VariablesGroup
+            {
+                { "theVariable", new StringVariable("val-from-persistent-source") },
+            }
+        },
+    },
+    // A group whose name `StringSource` would answer on a string argument.
+    VariableSet.Shadowing => new PersistentVariablesSource
+    {
+        { "Length", new VariablesGroup { { "v", new IntVariable(7) } } },
+    },
+    _ => throw new InvalidOperationException("unknown variable set: " + set),
+};
+
+// ---------------------------------------------------------------------------
 // JSON -> CLR argument mapping (mirrored by the Rust golden runner)
 // ---------------------------------------------------------------------------
 
@@ -2832,6 +3345,11 @@ static object? ToClrValue(JsonNode? node)
             if (obj.Count == 1 && obj.TryGetPropertyValue("$dt", out var dt))
                 return DateTime.ParseExact(
                     (string) dt!, "O", CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind);
+            // A TimeSpan, written in .NET's round-trip ("c") format:
+            // `[-][d.]hh:mm:ss[.fffffff]`. The seven fractional digits are
+            // exactly the 100 ns tick, so the wire form is lossless.
+            if (obj.Count == 1 && obj.TryGetPropertyValue("$ts", out var ts))
+                return TimeSpan.ParseExact((string) ts!, "c", CultureInfo.InvariantCulture);
             if (obj.Count == 1 && obj.TryGetPropertyValue("$f", out var f))
                 return double.Parse((string) f!, NumberStyles.Float, CultureInfo.InvariantCulture);
             if (obj.Count == 1 && obj.TryGetPropertyValue("$i32", out var i32))
@@ -2875,6 +3393,18 @@ static string JsonLong(long value) => value.ToString(CultureInfo.InvariantCultur
 
 // A single string wrapped as the one positional argument of a case.
 static string JsonString(string value) => "[" + JsonSerializer.Serialize(value) + "]";
+
+// The clock every case that reads one reads. A method rather than the
+// top-level variable because a static local function cannot capture one.
+static DateTime PinnedNow() => new(2026, 7, 31, 12, 0, 0, DateTimeKind.Unspecified);
+
+// TimeSpan arguments, each written in .NET's round-trip ("c") format.
+static string TimeSpanArgs(params string[] spans) =>
+    "[" + string.Join(",", spans.Select(span => $$"""{"$ts":"{{span}}"}""")) + "]";
+
+// A DateTime as the one positional argument of a case.
+static string JsonDateTime(DateTime value) =>
+    $$"""[{"$dt":"{{value.ToString("O", CultureInfo.InvariantCulture)}}"}]""";
 
 // Doubles are written round-trippably, and always with a '.' or an exponent so
 // a JSON reader can tell them apart from integers. NaN and the infinities have
@@ -2922,7 +3452,8 @@ internal sealed record CaseSettings(
     bool IsNullCanAutoDetect = false,
     char ListSplitChar = '|',
     bool ListCanAutoDetect = true,
-    TemplateSet Templates = TemplateSet.None)
+    TemplateSet Templates = TemplateSet.None,
+    VariableSet Variables = VariableSet.None)
 {
     public static readonly CaseSettings Default = new();
 
@@ -2942,6 +3473,9 @@ internal sealed record CaseSettings(
                 ErrorAction = ParseErrorAction,
                 ConvertCharacterStringLiterals = ConvertCharacterStringLiterals,
             },
+            // Not a per-case knob: the provider is the same fixed table for
+            // every case, and only a `{:L:…}` placeholder ever reaches it.
+            Localization = { LocalizationProvider = LocalizationFixture.Instance },
         };
         if (CustomSelectorChars.Length > 0)
             settings.Parser.AddCustomSelectorChars(CustomSelectorChars.ToCharArray());
@@ -2992,7 +3526,90 @@ internal sealed record CaseSettings(
             json["listCanAutoDetect"] = ListCanAutoDetect;
         if (Templates != Default.Templates)
             json["templates"] = Templates.ToString();
+        if (Variables != Default.Variables)
+            json["variables"] = Variables.ToString();
         return json;
+    }
+}
+
+/// <summary>
+/// The <see cref="ILocalizationProvider"/> every case runs with: a fixed table
+/// keyed by culture name, looked up specific culture → parent → invariant.
+/// SmartFormat ships a resx-backed provider; this one keeps the table in the
+/// harness, where the Rust runner mirrors it entry for entry into a
+/// <c>HashMapLocalizationProvider</c>.
+/// </summary>
+internal sealed class LocalizationFixture : ILocalizationProvider
+{
+    /// <summary>(culture name, key, translation); <c>""</c> is the invariant culture.</summary>
+    public static readonly (string Culture, string Key, string Value)[] Entries =
+    [
+        ("", "WeTranslateText", "We translate text"),
+        ("es", "WeTranslateText", "Traducimos el texto"),
+        ("fr", "WeTranslateText", "Nous traduisons des textes"),
+        ("de", "WeTranslateText", "Wir übersetzen Text"),
+        ("", "OnlyExistForInvariantCulture", "This entry only exists in the invariant culture resource"),
+        ("", "has {:N0} inhabitants", "has {:N0} inhabitants"),
+        ("es", "has {:N0} inhabitants", "tiene {:N0} habitantes"),
+        ("fr", "has {:N0} inhabitants", "compte {:N0} habitants"),
+        ("de", "has {:N0} inhabitants", "hat {:N0} Einwohner"),
+        ("", "{0} has {1:N0} inhabitants", "{0} has {1:N0} inhabitants"),
+        ("es", "{0} has {1:N0} inhabitants", "{0} tiene {1:N0} habitantes"),
+        ("", "{} item", "{} item"),
+        ("", "{} items", "{} items"),
+        ("es", "{} item", "{} elemento"),
+        ("es", "{} items", "{} elementos"),
+        ("fr", "{} item", "{} élément"),
+        ("fr", "{} items", "{} éléments"),
+        ("de", "{} item", "{} Element"),
+        ("de", "{} items", "{} Elemente"),
+        ("", "greet", "Hello, {Name}!"),
+        ("de", "greet", "Hallo, {Name}!"),
+        // A translation that localizes again.
+        ("", "Outer", "<{:L:Inner}>"),
+        ("", "Inner", "INNER"),
+        // The key an escape sequence in the format resolves to.
+        ("", "a{b", "escaped"),
+        // A translation that does not parse.
+        ("", "BadParse", "{0:"),
+        // Two translations that differ only in case, which collide in the
+        // parse cache when the settings ignore case.
+        ("", "K1", "abc {0}"),
+        ("", "K2", "ABC {0}"),
+    ];
+
+    // Declared after the table it reads: static fields are initialized in
+    // declaration order.
+    public static readonly LocalizationFixture Instance = new();
+
+    private readonly Dictionary<string, Dictionary<string, string>> _tables;
+
+    private LocalizationFixture()
+    {
+        _tables = new Dictionary<string, Dictionary<string, string>>(StringComparer.Ordinal);
+        foreach (var (culture, key, value) in Entries)
+        {
+            if (!_tables.TryGetValue(culture, out var table))
+                _tables[culture] = table = new Dictionary<string, string>(StringComparer.Ordinal);
+            table.Add(key, value);
+        }
+    }
+
+    public string? GetString(string name) => Lookup(name, CultureInfo.CurrentUICulture);
+
+    public string? GetString(string name, string cultureName) =>
+        Lookup(name, CultureInfo.GetCultureInfo(cultureName));
+
+    public string? GetString(string name, CultureInfo cultureInfo) => Lookup(name, cultureInfo);
+
+    private string? Lookup(string name, CultureInfo culture)
+    {
+        for (var c = culture;; c = c.Parent)
+        {
+            if (_tables.TryGetValue(c.Name, out var table) && table.TryGetValue(name, out var value))
+                return value;
+            if (c.Equals(CultureInfo.InvariantCulture)) return null;
+        }
     }
 }
 
@@ -3004,4 +3621,21 @@ internal enum TemplateSet
     WithEmptyName,
     CaseInsensitive,
     Simple,
+}
+
+/// <summary>
+/// Which set of persistent variable groups a case has registered, if any. The
+/// three sets are separate because a group name wins over every source in the
+/// default registry, so one fixture holding all of them would answer selectors
+/// the other cases need an argument to answer.
+/// </summary>
+internal enum VariableSet
+{
+    None,
+    /// <summary>The groups the `var-*` cases read: `global` and `v`.</summary>
+    Standard,
+    /// <summary>One group, whose variable an argument of the same shape shadows.</summary>
+    Precedence,
+    /// <summary>A group named `Length`, which `StringSource` would answer.</summary>
+    Shadowing,
 }
