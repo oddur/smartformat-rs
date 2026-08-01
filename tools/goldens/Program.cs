@@ -3060,10 +3060,13 @@ static void TimeSpanDefaultCases(List<GoldenCase> cases)
 // dictionary-backed ILocalizationProvider rather than the resx-backed one
 // SmartFormat ships, so the table is in the source of both harnesses.
 //
-// Two shapes are deliberately absent, because the port does not implement them
-// yet and a golden for either would be red on arrival: a localized string that
-// formats a number or a date *while the options name the culture*, and a key
-// that only matches after the format's nested placeholders are rendered.
+// One shape is deliberately absent: a key built by rendering nested
+// placeholders that format a *number or a date*. .NET renders it with a
+// `FormatDetails` whose provider is null, which reaches the ambient
+// `CultureInfo.CurrentCulture` — pinned to invariant at the top of this file,
+// but ambient all the same — while the port renders it with the culture in
+// force. See DESIGN.md, "Known divergences". A key built out of strings, which
+// is every use the formatter was designed for, agrees.
 // ---------------------------------------------------------------------------
 
 static void LocalizationCases(List<GoldenCase> cases)
@@ -3190,6 +3193,93 @@ static void LocalizationCases(List<GoldenCase> cases)
              { ("en", "0"), ("en", "1"), ("de", "200"), ("fr", "0"), ("fr", "1"), ("fr", "200") })
         Add($"plural-items-{culture}-{count}",
             "{0:plural:{:L:{} item}|{:L:{} items}}", "[" + count + "]", culture);
+
+    // The culture named in the options is assigned to `FormatDetails.Provider`,
+    // which belongs to the whole format call: it reaches the placeholders of
+    // the translation *and* every later placeholder of the template.
+    foreach (var culture in new[] { "es", "de", "fr" })
+        Add($"option-culture-inside-{culture}",
+            $"{{0}} {{1:L({culture}):has {{:N0}} inhabitants}}", city);
+    // … and the switch outlives the placeholder that made it, which is the
+    // verbatim probe: an en-US call writes the trailing `{0:N2}` as German.
+    const string leakArgs = """[1234.5, ""]""";
+    Add("option-culture-leaks", "{0:N2}|{1:L(de):WeTranslateText}|{0:N2}", leakArgs, "en-US");
+    Add("option-culture-leaks-after-translation",
+        "{0} {1:L(de):has {:N0} inhabitants} {1:N0}", city, "en-US");
+    // It happens before the lookup, so a lookup that then fails leaks too …
+    foreach (var action in new[]
+             {
+                 FormatErrorAction.Ignore, FormatErrorAction.MaintainTokens,
+                 FormatErrorAction.OutputErrorInResult,
+             })
+        Add($"option-culture-leaks-after-miss-{action.ToString().ToLowerInvariant()}",
+            "{0:N2}|{1:L(de):NonExisting}|{0:N2}", leakArgs, "en-US",
+            new CaseSettings(FormatErrorAction: action));
+    // … and after the empty-format check, so that one does not. (The unknown
+    // culture check is the other one, but the set of names each side rejects
+    // differs — DESIGN.md — so only its lenient twin is pinned here.)
+    Add("option-culture-no-leak-empty-format", "{0:N2}|{1:L(de):}|{0:N2}", leakArgs, "en-US",
+        new CaseSettings(FormatErrorAction: FormatErrorAction.Ignore));
+    Add("option-culture-no-leak-unknown-culture",
+        "{0:N2}|{1:L(zz-ZZ-really-bad!):WeTranslateText}|{0:N2}", leakArgs, "en-US",
+        new CaseSettings(FormatErrorAction: FormatErrorAction.Ignore));
+
+    // A key the raw text misses on: when the format has nested placeholders,
+    // the format is rendered into a scratch buffer and the *result* is looked
+    // up instead, which is how `{:L:{ProductType}}` finds `paper`.
+    const string paper = """{"ProductType":"paper"}""";
+    Add("nested-key", "{:L:{ProductType}}", paper);
+    Add("nested-key-call-culture", "{:L:{ProductType}}", paper, "de");
+    Add("nested-key-option-culture", "{:L(de):{ProductType}}", paper);
+    Add("nested-key-option-culture-fr", "{:L(fr):{ProductType}}", paper);
+    // Literals and several placeholders all land in the rendered key.
+    Add("nested-key-literal", "{:L:pa{Tail}}", """{"Tail":"per"}""");
+    Add("nested-key-two-placeholders", "{:L:{Head}{Tail}}", """{"Head":"pa","Tail":"per"}""");
+    // The raw text wins when it matches, so the nested render never runs —
+    // `{RawKey}` is a key of the table as well as a placeholder.
+    Add("nested-key-raw-text-wins", "{:L:{RawKey}}", """{"RawKey":"paper"}""");
+    // A rendered key that misses too reports the *raw* text, not the render.
+    Add("nested-key-still-missing", "{:L:{ProductType}}", """{"ProductType":"nothing"}""");
+    Add("nested-key-still-missing-outputerrorinresult", "{:L:{ProductType}}",
+        """{"ProductType":"nothing"}""",
+        settings: new CaseSettings(FormatErrorAction: FormatErrorAction.OutputErrorInResult));
+
+    // The scratch render is isolated: a brand-new `FormatDetails` with no
+    // positional arguments, and a `FormattingInfo` with no parent, so the scope
+    // chain is the current value alone. Both failures quote the *outer*
+    // template and point into it.
+    foreach (var (slug, template, args) in new (string, string, string)[]
+             {
+                 ("isolated-no-arguments", "{:L(es):{0}}", """["paper"]"""),
+                 ("isolated-no-parent-scope", "{Inner:L:{Outer}}",
+                     """{"Outer":"paper","Inner":{"X":1}}"""),
+             })
+    {
+        Add($"nested-key-{slug}", template, args);
+        foreach (var action in new[]
+                 {
+                     FormatErrorAction.Ignore, FormatErrorAction.MaintainTokens,
+                     FormatErrorAction.OutputErrorInResult,
+                 })
+            Add($"nested-key-{slug}-{action.ToString().ToLowerInvariant()}", template, args,
+                settings: new CaseSettings(FormatErrorAction: action));
+    }
+    // The same selector on the current value is found, which is what makes the
+    // two above a reset scope rather than a broken lookup.
+    Add("nested-key-current-scope", "{Inner:L:{Outer}}", """{"Inner":{"Outer":"paper"}}""");
+
+    // The scratch render carries this placeholder's alignment, and a nested
+    // placeholder inherits it from the parser, so `{,20:L:{ProductType}}` looks
+    // up a padded `paper` and misses where `{:L:{ProductType}}` hits.
+    Add("nested-key-alignment", "{,20:L:{ProductType}}", paper);
+    Add("nested-key-alignment-outputerrorinresult", "{,20:L:{ProductType}}", paper,
+        settings: new CaseSettings(FormatErrorAction: FormatErrorAction.OutputErrorInResult));
+    Add("nested-key-inner-alignment", "{:L:{ProductType,10}}", paper);
+
+    // `ListFormatter.CollectionIndex` is a static in .NET, which no
+    // `FormatDetails` of its own can hide, so `{Index}` inside the scratch
+    // render is still the item's index.
+    Add("nested-key-collection-index", "{0:list:{:L:{Index}}|,}", """[["a","b"]]""");
 
     // The formatter's name is matched with the settings' comparer, and `L` is
     // the only name it has — `localize` was a 2.x alias.
@@ -3699,6 +3789,17 @@ internal sealed class LocalizationFixture : ILocalizationProvider
         // parse cache when the settings ignore case.
         ("", "K1", "abc {0}"),
         ("", "K2", "ABC {0}"),
+        // The key `{:L:{ProductType}}` only reaches by rendering its nested
+        // placeholders first.
+        ("", "paper", "Paper"),
+        ("de", "paper", "das Papier"),
+        ("fr", "paper", "Papier"),
+        // A key that *is* a placeholder as written, so the raw-text lookup
+        // matches it and the nested render never runs.
+        ("", "{RawKey}", "the raw text won"),
+        // What `{Index}` renders to inside a scratch render of a list item.
+        ("", "0", "first"),
+        ("", "1", "second"),
     ];
 
     /// <summary>The fallback culture of <see cref="LocalizationSet.Fallback"/>.</summary>

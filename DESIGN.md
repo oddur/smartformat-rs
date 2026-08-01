@@ -40,9 +40,10 @@ Everything in SmartFormat's core plus the built-in extensions, in this order:
   at .NET's rank.
 
 **The port's original scope is now complete.** Everything M1–M4 lists is
-implemented and pinned against SmartFormat.NET 3.6.1 by 2799 golden cases and
+implemented and pinned against SmartFormat.NET 3.6.1 by 2831 golden cases and
 the ported NUnit tests. What is left is written down: the entries under "Known
-divergences" and "Deferred, not divergent" below, and the non-goals above.
+divergences" below, and the non-goals above — "Deferred, not divergent" is
+empty.
 
 ## Key decisions
 
@@ -355,6 +356,25 @@ answer is not reproducible.
   `loc-error-inside-nested-translation*` twins; and
   `extensions::template::tests::an_error_inside_a_template_is_reported_against_the_outer_template`,
   `extensions::localization::tests::an_error_inside_a_translation_is_reported_against_the_outer_template`.
+- **A localization key built by rendering nested placeholders uses the culture
+  in force, not the ambient one.** When `{:L:{ProductType}}`'s raw text misses,
+  both sides render the format into a scratch buffer and look the result up
+  instead. .NET builds that render's `FormatDetails` with a `null` provider —
+  `FormatDetailsPool.Instance.Get().Initialize(_formatter, format,
+  InitializationObject.ObjectList, null, zsOutput)` — so every culture-sensitive
+  placeholder inside it reaches `CultureInfo.CurrentCulture`, the *ambient*
+  culture of the thread, and not the culture the call or the options named.
+  Probed: with `CurrentCulture` set to `fr-FR`, `Format(en-US, "{:L(de):{Num:N2}}",
+  …)` looks up `1 234,50`; with it set to `de-DE`, `1.234,50`. There is no
+  ambient culture in this crate — a format call always carries its own, which is
+  why the third step of the culture chain (`CurrentUICulture`) is unreachable
+  here too — so `FormattingInfo::format_to_isolated_string` renders with the
+  culture in force, which is the one `{:L(de):…}` just chose. Only a key built
+  out of a number, a date or anything else culture-sensitive differs; a key
+  built out of strings, which is every use the formatter was designed for,
+  agrees. There is no golden, because .NET's answer depends on the machine the
+  harness runs on: the `loc-nested-key-*` cases build their keys out of strings.
+  *Pin:* `extensions::localization::tests::a_culture_sensitive_nested_key_renders_with_the_culture_in_force`.
 - **`substr` option parsing is culture-invariant.** .NET's `int.Parse(string)`
   uses `NumberFormatInfo.CurrentInfo`, so the sign characters it accepts are
   the *thread* culture's; we parse the invariant `+` / `-`. Only a culture
@@ -809,40 +829,36 @@ version the goldens are generated with.
 
 ## Deferred, not divergent
 
-Two behaviours of `LocalizationFormatter`, both blocked on something the engine
-does not expose yet rather than on a decision. Each is pinned by a test that
-asserts today's answer and names the line to delete when the gap closes, and
-the goldens deliberately hold no case that reaches either — one would be red on
-arrival.
+Nothing. The four entries that stood here — `ListFormatter`'s place in the
+registry, the `{Index}` selector it carries as an `ISource`, and the two
+behaviours of `LocalizationFormatter` that needed the engine to grow a method —
+are done:
 
-- **The options' culture does not reach the placeholders of the translation.**
-  .NET's line is `formattingInfo.FormatDetails.Provider = cultureInfo;`, and
-  `FormatDetails` belongs to the whole format call, so `{:L(de):…}` switches the
-  culture for *every later placeholder of that call* — probed:
-  `Format(en-US, "{0:N2}|{1:L(de):x}|{0:N2}", 1234.5, "")` is
-  `1,234.50|…|1.234,50`, and it leaks even when the lookup then fails. Here the
-  chosen culture picks the translation but does not reach inside it, so
-  `{0} {1:L(de):has {:N0} inhabitants}` from an invariant call writes
-  `hat 8,900,000 Einwohner` where .NET writes `hat 8.900.000 Einwohner`.
-  Closing it needs `FormattingInfo::set_culture`, backed by a
-  `Cell<&CultureData>` on the engine like `collection_index`.
-  *Pin:* `extensions::localization::tests::the_options_culture_does_not_reach_the_localized_placeholders_yet`.
-  The `loc-placeholder-*` goldens take the culture from the *call*, which both
-  sides agree on.
-- **A key that only matches after the nested placeholders are rendered.** When
-  the raw-text lookup misses and the format has nested placeholders, .NET
-  renders the format into a fresh output and looks *that* up instead, which is
-  how `{:L:{ProductType}}` finds the entry for `paper`. It builds a brand-new
-  `FormatDetails` for it, which (probed) means no positional arguments, the
-  scope chain reset to the current value alone, and alignment 0. A `Formatter`
-  here cannot do it: `format_as_child` appends to the shared output and
-  `FormattingInfo` exposes neither its length nor a capture, so this needs
-  something like `FormattingInfo::format_to_isolated_string`.
-  *Pin:* `extensions::localization::tests::the_nested_key_lookup_is_not_ported_yet`.
-
-The two entries that stood here through M2 — `ListFormatter`'s place in the
-registry, and the `{Index}` selector it carries as an `ISource` — are done:
-
+- `FormattingInfo::set_culture` writes the culture a formatter chose into the
+  format call, as .NET's `formattingInfo.FormatDetails.Provider = cultureInfo`
+  writes it into a `FormatDetails` that belongs to the whole call. So
+  `{:L(de):…}` reaches the placeholders of the translation *and* every later
+  placeholder of the template, whether or not the lookup succeeds, and the
+  switch dies with the call. It is a `Cell<Option<&'static CultureData>>` beside
+  `collection_index` rather than a `Cell<&'a CultureData>` replacing the
+  engine's culture, because a `Cell` is invariant in its parameter and the
+  engine leans on `Engine<'a>` being covariant — `format_as_child` renders a
+  `Format` borrowed for less than the call (a translation out of a parse cache)
+  through a `FormattingInfo` shorter-lived than the engine.
+  *Pins:* `loc-option-culture-leaks`, `loc-option-culture-leaks-after-miss-*`,
+  `loc-option-culture-inside-*`, `loc-option-culture-no-leak-*`, and
+  `extensions::localization::tests::the_options_culture_{reaches_the_localized_placeholders,leaks_into_the_rest_of_the_call,leaks_even_when_the_lookup_fails}`.
+- `FormattingInfo::format_to_isolated_string` renders a format into a string of
+  its own, which is how `{:L:{ProductType}}` finds the entry for `paper`: when
+  the raw-text lookup misses and the format has nested placeholders, .NET builds
+  a brand-new `FormatDetails` over a scratch buffer and looks *that* up instead.
+  Probed and reproduced: no positional arguments, the scope chain reset to the
+  current value alone, this placeholder's alignment (`{,20:L:{ProductType}}`
+  looks up a padded `paper` and misses), the collection index carried through,
+  the call's error action applied inside the render, and the base string and
+  every error position still pointing at the original template.
+  *Pins:* the `loc-nested-key-*` goldens and
+  `extensions::localization::tests::{a_nested_key_is_rendered_and_looked_up_again,the_isolated_render_*,the_alignment_reaches_the_isolated_render}`.
 - `FormatterRegistry::new()` sorts to .NET's `list, plural, cond, ismatch,
   isnull, choose, substr, d`, so `ListFormatter` claims a `|`-separated format
   on a list before the plural formatter sees it and `{0:one|many}` on

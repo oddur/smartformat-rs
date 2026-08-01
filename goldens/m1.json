@@ -33286,6 +33286,425 @@
       }
     },
     {
+      "id": "loc-option-culture-inside-es",
+      "template": "{0} {1:L(es):has {:N0} inhabitants}",
+      "args": [
+        "X-City",
+        8900000
+      ],
+      "culture": "",
+      "expected": {
+        "result": "X-City tiene 8.900.000 habitantes"
+      }
+    },
+    {
+      "id": "loc-option-culture-inside-de",
+      "template": "{0} {1:L(de):has {:N0} inhabitants}",
+      "args": [
+        "X-City",
+        8900000
+      ],
+      "culture": "",
+      "expected": {
+        "result": "X-City hat 8.900.000 Einwohner"
+      }
+    },
+    {
+      "id": "loc-option-culture-inside-fr",
+      "template": "{0} {1:L(fr):has {:N0} inhabitants}",
+      "args": [
+        "X-City",
+        8900000
+      ],
+      "culture": "",
+      "expected": {
+        "result": "X-City compte 8\u202F900\u202F000 habitants"
+      }
+    },
+    {
+      "id": "loc-option-culture-leaks",
+      "template": "{0:N2}|{1:L(de):WeTranslateText}|{0:N2}",
+      "args": [
+        1234.5,
+        ""
+      ],
+      "culture": "en-US",
+      "expected": {
+        "result": "1,234.50|Wir übersetzen Text|1.234,50"
+      }
+    },
+    {
+      "id": "loc-option-culture-leaks-after-translation",
+      "template": "{0} {1:L(de):has {:N0} inhabitants} {1:N0}",
+      "args": [
+        "X-City",
+        8900000
+      ],
+      "culture": "en-US",
+      "expected": {
+        "result": "X-City hat 8.900.000 Einwohner 8.900.000"
+      }
+    },
+    {
+      "id": "loc-option-culture-leaks-after-miss-ignore",
+      "template": "{0:N2}|{1:L(de):NonExisting}|{0:N2}",
+      "args": [
+        1234.5,
+        ""
+      ],
+      "culture": "en-US",
+      "settings": {
+        "formatErrorAction": "Ignore"
+      },
+      "expected": {
+        "result": "1,234.50||1.234,50"
+      }
+    },
+    {
+      "id": "loc-option-culture-leaks-after-miss-maintaintokens",
+      "template": "{0:N2}|{1:L(de):NonExisting}|{0:N2}",
+      "args": [
+        1234.5,
+        ""
+      ],
+      "culture": "en-US",
+      "settings": {
+        "formatErrorAction": "MaintainTokens"
+      },
+      "expected": {
+        "result": "1,234.50|{1:L(de):NonExisting}|1.234,50"
+      }
+    },
+    {
+      "id": "loc-option-culture-leaks-after-miss-outputerrorinresult",
+      "template": "{0:N2}|{1:L(de):NonExisting}|{0:N2}",
+      "args": [
+        1234.5,
+        ""
+      ],
+      "culture": "en-US",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "1,234.50|Error parsing format string: No localized string found for 'NonExisting' at 16\n{0:N2}|{1:L(de):NonExisting}|{0:N2}\n----------------^|1.234,50"
+      }
+    },
+    {
+      "id": "loc-option-culture-no-leak-empty-format",
+      "template": "{0:N2}|{1:L(de):}|{0:N2}",
+      "args": [
+        1234.5,
+        ""
+      ],
+      "culture": "en-US",
+      "settings": {
+        "formatErrorAction": "Ignore"
+      },
+      "expected": {
+        "result": "1,234.50||1,234.50"
+      }
+    },
+    {
+      "id": "loc-option-culture-no-leak-unknown-culture",
+      "template": "{0:N2}|{1:L(zz-ZZ-really-bad!):WeTranslateText}|{0:N2}",
+      "args": [
+        1234.5,
+        ""
+      ],
+      "culture": "en-US",
+      "settings": {
+        "formatErrorAction": "Ignore"
+      },
+      "expected": {
+        "result": "1,234.50||1,234.50"
+      }
+    },
+    {
+      "id": "loc-nested-key",
+      "template": "{:L:{ProductType}}",
+      "args": {
+        "ProductType": "paper"
+      },
+      "culture": "",
+      "expected": {
+        "result": "Paper"
+      }
+    },
+    {
+      "id": "loc-nested-key-call-culture",
+      "template": "{:L:{ProductType}}",
+      "args": {
+        "ProductType": "paper"
+      },
+      "culture": "de",
+      "expected": {
+        "result": "das Papier"
+      }
+    },
+    {
+      "id": "loc-nested-key-option-culture",
+      "template": "{:L(de):{ProductType}}",
+      "args": {
+        "ProductType": "paper"
+      },
+      "culture": "",
+      "expected": {
+        "result": "das Papier"
+      }
+    },
+    {
+      "id": "loc-nested-key-option-culture-fr",
+      "template": "{:L(fr):{ProductType}}",
+      "args": {
+        "ProductType": "paper"
+      },
+      "culture": "",
+      "expected": {
+        "result": "Papier"
+      }
+    },
+    {
+      "id": "loc-nested-key-literal",
+      "template": "{:L:pa{Tail}}",
+      "args": {
+        "Tail": "per"
+      },
+      "culture": "",
+      "expected": {
+        "result": "Paper"
+      }
+    },
+    {
+      "id": "loc-nested-key-two-placeholders",
+      "template": "{:L:{Head}{Tail}}",
+      "args": {
+        "Head": "pa",
+        "Tail": "per"
+      },
+      "culture": "",
+      "expected": {
+        "result": "Paper"
+      }
+    },
+    {
+      "id": "loc-nested-key-raw-text-wins",
+      "template": "{:L:{RawKey}}",
+      "args": {
+        "RawKey": "paper"
+      },
+      "culture": "",
+      "expected": {
+        "result": "the raw text won"
+      }
+    },
+    {
+      "id": "loc-nested-key-still-missing",
+      "template": "{:L:{ProductType}}",
+      "args": {
+        "ProductType": "nothing"
+      },
+      "culture": "",
+      "expected": {
+        "error": "LocalizationFormattingException"
+      }
+    },
+    {
+      "id": "loc-nested-key-still-missing-outputerrorinresult",
+      "template": "{:L:{ProductType}}",
+      "args": {
+        "ProductType": "nothing"
+      },
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "Error parsing format string: No localized string found for '{ProductType}' at 4\n{:L:{ProductType}}\n----^"
+      }
+    },
+    {
+      "id": "loc-nested-key-isolated-no-arguments",
+      "template": "{:L(es):{0}}",
+      "args": [
+        "paper"
+      ],
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "loc-nested-key-isolated-no-arguments-ignore",
+      "template": "{:L(es):{0}}",
+      "args": [
+        "paper"
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "Ignore"
+      },
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "loc-nested-key-isolated-no-arguments-maintaintokens",
+      "template": "{:L(es):{0}}",
+      "args": [
+        "paper"
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "MaintainTokens"
+      },
+      "expected": {
+        "result": "{:L(es):{0}}"
+      }
+    },
+    {
+      "id": "loc-nested-key-isolated-no-arguments-outputerrorinresult",
+      "template": "{:L(es):{0}}",
+      "args": [
+        "paper"
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "Error parsing format string: No localized string found for '{0}' at 8\n{:L(es):{0}}\n--------^"
+      }
+    },
+    {
+      "id": "loc-nested-key-isolated-no-parent-scope",
+      "template": "{Inner:L:{Outer}}",
+      "args": {
+        "Outer": "paper",
+        "Inner": {
+          "X": 1
+        }
+      },
+      "culture": "",
+      "expected": {
+        "error": "FormattingException"
+      }
+    },
+    {
+      "id": "loc-nested-key-isolated-no-parent-scope-ignore",
+      "template": "{Inner:L:{Outer}}",
+      "args": {
+        "Outer": "paper",
+        "Inner": {
+          "X": 1
+        }
+      },
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "Ignore"
+      },
+      "expected": {
+        "result": ""
+      }
+    },
+    {
+      "id": "loc-nested-key-isolated-no-parent-scope-maintaintokens",
+      "template": "{Inner:L:{Outer}}",
+      "args": {
+        "Outer": "paper",
+        "Inner": {
+          "X": 1
+        }
+      },
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "MaintainTokens"
+      },
+      "expected": {
+        "result": "{Inner:L:{Outer}}"
+      }
+    },
+    {
+      "id": "loc-nested-key-isolated-no-parent-scope-outputerrorinresult",
+      "template": "{Inner:L:{Outer}}",
+      "args": {
+        "Outer": "paper",
+        "Inner": {
+          "X": 1
+        }
+      },
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "Error parsing format string: No localized string found for '{Outer}' at 9\n{Inner:L:{Outer}}\n---------^"
+      }
+    },
+    {
+      "id": "loc-nested-key-current-scope",
+      "template": "{Inner:L:{Outer}}",
+      "args": {
+        "Inner": {
+          "Outer": "paper"
+        }
+      },
+      "culture": "",
+      "expected": {
+        "result": "Paper"
+      }
+    },
+    {
+      "id": "loc-nested-key-alignment",
+      "template": "{,20:L:{ProductType}}",
+      "args": {
+        "ProductType": "paper"
+      },
+      "culture": "",
+      "expected": {
+        "error": "LocalizationFormattingException"
+      }
+    },
+    {
+      "id": "loc-nested-key-alignment-outputerrorinresult",
+      "template": "{,20:L:{ProductType}}",
+      "args": {
+        "ProductType": "paper"
+      },
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "Error parsing format string: No localized string found for '{ProductType}' at 7\n{,20:L:{ProductType}}\n-------^"
+      }
+    },
+    {
+      "id": "loc-nested-key-inner-alignment",
+      "template": "{:L:{ProductType,10}}",
+      "args": {
+        "ProductType": "paper"
+      },
+      "culture": "",
+      "expected": {
+        "error": "LocalizationFormattingException"
+      }
+    },
+    {
+      "id": "loc-nested-key-collection-index",
+      "template": "{0:list:{:L:{Index}}|,}",
+      "args": [
+        [
+          "a",
+          "b"
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "result": "first,second"
+      }
+    },
+    {
       "id": "loc-name-localize",
       "template": "{:localize:WeTranslateText}",
       "args": [],

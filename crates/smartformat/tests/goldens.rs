@@ -616,6 +616,12 @@ fn localization_fixture(set: &str) -> HashMapLocalizationProvider {
         ("", "BadParse", "{0:"),
         ("", "K1", "abc {0}"),
         ("", "K2", "ABC {0}"),
+        ("", "paper", "Paper"),
+        ("de", "paper", "das Papier"),
+        ("fr", "paper", "Papier"),
+        ("", "{RawKey}", "the raw text won"),
+        ("", "0", "first"),
+        ("", "1", "second"),
     ]);
     match set {
         "Standard" => provider,
