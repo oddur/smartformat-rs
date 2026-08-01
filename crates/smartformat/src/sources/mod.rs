@@ -110,6 +110,35 @@ impl<'a> SelectorInfo<'a> {
 /// `Some(Cow::Owned(Value::Null))`.
 pub trait Source: Send + Sync {
     fn try_evaluate_selector<'a>(&self, info: SelectorInfo<'a>) -> Option<Cow<'a, Value>>;
+
+    /// The rank .NET's `WellKnownExtensionTypes.Sources` gives this source,
+    /// which is where [`SourceRegistry::add`] slots it, or `None` for a source
+    /// .NET's table does not hold — which is appended, exactly as there.
+    ///
+    /// .NET keys that table on the CLR type. A [`Source`] has no name to key on
+    /// the way a [`Formatter`](crate::formatter::Formatter) does, so each
+    /// source states its own rank instead; a custom source leaves this alone
+    /// and is added last.
+    fn well_known_rank(&self) -> Option<u32> {
+        None
+    }
+}
+
+/// The ranks .NET's `WellKnownExtensionTypes.Sources` lists for the sources
+/// this port has. The names in the comments are .NET's types.
+pub mod source_ranks {
+    /// .NET `GlobalVariablesSource`.
+    pub const GLOBAL_VARIABLES: u32 = 1000;
+    /// .NET `PersistentVariablesSource`.
+    pub const PERSISTENT_VARIABLES: u32 = 2000;
+    /// .NET `StringSource`.
+    pub const STRING: u32 = 3000;
+    /// .NET `ListFormatter`, which is a source as well as a formatter.
+    pub const LIST: u32 = 4000;
+    /// .NET `DictionarySource`.
+    pub const MAP: u32 = 5000;
+    /// .NET `DefaultSource`.
+    pub const DEFAULT: u32 = 12000;
 }
 
 /// The ordered list of [`Source`]s a [`SmartFormatter`](crate::SmartFormatter)
@@ -142,6 +171,41 @@ impl SourceRegistry {
     /// Appends a source, which is consulted after all existing ones.
     pub fn push(&mut self, source: Box<dyn Source>) {
         self.sources.push(source);
+    }
+
+    /// Adds a source at the position .NET's `WellKnownExtensionTypes.Sources`
+    /// gives it (`Registry.AddExtensions`), so that a source added to the
+    /// default registry ends up where a .NET registry holding it would have
+    /// put it: a variables source ahead of [`StringSource`], whatever else is
+    /// registered.
+    ///
+    /// A source .NET does not know — one whose
+    /// [`well_known_rank`](Source::well_known_rank) is `None` — is appended,
+    /// exactly as there, which puts it *after* [`DefaultSource`], where it
+    /// answers only the selectors nothing else did. A custom source that has
+    /// to be consulted earlier wants [`insert`](Self::insert) instead.
+    pub fn add(&mut self, source: Box<dyn Source>) {
+        let index = self.index_to_insert(source.well_known_rank());
+        self.sources.insert(index, source);
+    }
+
+    /// Where a source of that rank belongs, a port of
+    /// `WellKnownExtensionTypes.GetIndexToInsert`: after the last source ranked
+    /// at or before it, or at the end when either is not well known.
+    fn index_to_insert(&self, rank: Option<u32>) -> usize {
+        if self.sources.is_empty() {
+            return 0;
+        }
+        let Some(rank) = rank else {
+            return self.sources.len();
+        };
+        for (index, source) in self.sources.iter().enumerate().rev() {
+            match source.well_known_rank() {
+                Some(other) if other <= rank => return index + 1,
+                _ => continue,
+            }
+        }
+        0
     }
 
     /// Inserts a source at `index`, which is consulted before the sources

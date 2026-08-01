@@ -13,10 +13,7 @@
 //! is always added by hand:
 //!
 //! ```
-//! use smartformat::extensions::localization::{
-//!     HashMapLocalizationProvider, LocalizationFormatter,
-//! };
-//! use smartformat::{SmartFormatter, Value};
+//! use smartformat::{HashMapLocalizationProvider, SmartFormatter, Value};
 //!
 //! let provider: HashMapLocalizationProvider = [
 //!     ("", "WeTranslateText", "We translate text"),
@@ -26,8 +23,9 @@
 //! .collect();
 //!
 //! let mut smart = SmartFormatter::default();
-//! let formatter = LocalizationFormatter::new(smart.parser(), Box::new(provider));
-//! smart.formatters_mut().add(Box::new(formatter));
+//! // Builds the formatter from this formatter's parser and settings, and
+//! // slots it at .NET's rank for it.
+//! smart.register_localization(Box::new(provider));
 //!
 //! let none = Value::Null;
 //! assert_eq!(smart.format("{:L:WeTranslateText}", &none).unwrap(), "We translate text");
@@ -96,7 +94,7 @@ const EMPTY_FORMAT: &str =
 /// format call always carries its culture.
 ///
 /// The culture chain is entirely the provider's business. .NET's own
-/// [`ILocalizationProvider`] implementations delegate to a `ResourceManager`,
+/// `ILocalizationProvider` implementations delegate to a `ResourceManager`,
 /// which walks specific culture → neutral parent → invariant, and
 /// [`HashMapLocalizationProvider`] walks the same chain.
 ///
@@ -507,6 +505,15 @@ impl Formatter for LocalizationFormatter {
     /// ("LocalizationFormatter cannot handle auto-detection").
     fn can_auto_detect(&self) -> bool {
         false
+    }
+
+    /// Lets [`SmartFormatter::register_localization`] find this formatter again
+    /// and replace its provider, the way .NET's one
+    /// `SmartSettings.Localization.LocalizationProvider` slot behaves.
+    ///
+    /// [`SmartFormatter::register_localization`]: crate::SmartFormatter::register_localization
+    fn as_localization_formatter_mut(&mut self) -> Option<&mut LocalizationFormatter> {
+        Some(self)
     }
 
     fn try_evaluate_format(&self, info: &mut FormattingInfo<'_>) -> Result<bool, Error> {

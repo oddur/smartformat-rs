@@ -42,15 +42,15 @@ assert_eq!(out, "Alice has 3 items in her cart");
 |---|---|
 | Parser | Full SmartFormat syntax: nesting, escaping, alignment, selectors (`.`, `?.`, `[n]`), formatter names and options |
 | Format specifiers | All .NET *standard* numeric (`B C D E F G N P R X`) and date/time specifiers. Custom patterns like `#,##0.00` are a deliberate hard error so gaps are loud instead of silently wrong |
-| Formatters | `list`, `plural`, `cond`, `ismatch`, `isnull`, `choose`, `substr`, plus the default formatter, registered in .NET's order. `template` is available but opt-in, as in .NET |
-| Sources | Map keys, list indexes, `?.` null propagation, string members (`Length`, `ToUpper`, …), the `{Index}` selector inside list formats |
+| Formatters | `list`, `plural`, `cond`, `ismatch`, `isnull`, `choose`, `substr`, plus the default formatter, registered in .NET's order. `time`, `L` (localization) and `t` (template) are available but opt-in, as in .NET |
+| Sources | Map keys, list indexes, `?.` null propagation, string members (`Length`, `ToUpper`, …), the `{Index}` selector inside list formats. Persistent and shared variable groups are opt-in, as in .NET |
 | Cultures | 35 locales (en, de, fr, es, pt, ru, pl, ja, ko, zh-Hans, ar, is, …) with number formats, month/day names, and genitive forms taken from .NET |
 | Plural rules | SmartFormat's own language table, ported exactly. SmartFormat.NET does not consult CLDR at runtime, so neither do we |
 | Error handling | All four .NET `ErrorAction` modes, including byte-identical `FormattingException` messages under `OutputErrorInResult` |
 
-Not ported yet: `TimeFormatter`, `LocalizationFormatter`, and the
-global/persistent variable sources (milestone M4), plus resx parsing and the
-XML/JSON source extensions, which are out of scope.
+Out of scope: resx parsing, reflection-based sources, and the XML/JSON source
+extensions. `LocalizationFormatter` takes a provider trait in place of resx, so
+translations come from wherever you keep them.
 
 ## Template syntax in one minute
 
@@ -121,7 +121,7 @@ All on by default.
 |---|---|
 | `derive` | `#[derive(ToSmartValue)]` |
 | `plural` | `PluralLocalizationFormatter` and the plural-rules table (no external deps) |
-| `time` | `Value::DateTime` and the date/time specifiers, backed by [jiff](https://crates.io/crates/jiff) |
+| `time` | `Value::DateTime`, `Value::TimeSpan`, the date/time specifiers and `TimeFormatter`, backed by [jiff](https://crates.io/crates/jiff). Implies `plural`, because the unit words are picked with the plural rules, as .NET's `TimeTextInfo` does |
 | `regex-formatters` | `IsMatchFormatter`, backed by [fancy-regex](https://crates.io/crates/fancy-regex) |
 
 ## How compatibility is verified
@@ -143,9 +143,9 @@ the test that pins each one. The big ones to know about:
 ## Status
 
 Milestones M1 (parser, engine, specifiers), M2 (plural/choose/conditional and
-culture data), and M3 (list/substr/isnull/ismatch/template) are done. M4
-(TimeFormatter, LocalizationFormatter, persistent variables) remains, and the
-crate is not on crates.io yet; the API may still move.
+culture data), M3 (list/substr/isnull/ismatch/template), and M4 (TimeFormatter,
+LocalizationFormatter, persistent and shared variables) are done. The crate is
+not on crates.io yet; the API may still move.
 
 ## License
 

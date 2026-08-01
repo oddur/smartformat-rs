@@ -2,6 +2,15 @@
 //! same-named SmartFormat.NET extension. They implement
 //! [`Formatter`](crate::formatter::Formatter) and are registered by
 //! `SmartFormatter` in .NET's `CreateDefaultSmartFormat` order.
+//!
+//! Three are left out of that order, exactly as .NET leaves them out, because
+//! each is useless until it is given something: `TimeFormatter` a language,
+//! [`LocalizationFormatter`] a provider, [`TemplateFormatter`] a template. They
+//! are registered by hand, through
+//! [`SmartFormatter::register_localization`](crate::SmartFormatter::register_localization),
+//! [`SmartFormatter::register_template`](crate::SmartFormatter::register_template)
+//! or [`FormatterRegistry::add`](crate::formatter::FormatterRegistry::add),
+//! which slots each one where .NET's `WellKnownExtensionTypes` ranks it.
 
 pub mod choose;
 pub mod conditional;
@@ -36,6 +45,8 @@ pub use null::NullFormatter;
 pub use plural::PluralLocalizationFormatter;
 pub use substring::{SubStringFormatter, SubStringOutOfRangeBehavior};
 pub use template::{RegisterError, TemplateFormatter};
+#[cfg(feature = "time")]
+pub use time::{TimeFormatter, TimeSpanFormatOptions, TimeTextInfo};
 
 /// The characters .NET accepts as the split character of a formatter that
 /// reads a list of parts (`Utilities.Validation.GetValidSplitCharOrThrow`).

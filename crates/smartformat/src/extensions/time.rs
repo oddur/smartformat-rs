@@ -42,13 +42,8 @@
 
 // A `TimeTextInfo` picks its unit words with a `PluralRules.PluralRuleDelegate`,
 // exactly as .NET's does, so this extension is built on the plural rule table
-// rather than on a second copy of it. The `time` feature therefore needs the
-// `plural` one; saying so here beats an unresolved import.
-#[cfg(not(feature = "plural"))]
-compile_error!(
-    "the `time` feature needs the `plural` feature: the TimeFormatter picks its \
-     unit words with the plural rules, as .NET's TimeTextInfo does"
-);
+// rather than on a second copy of it. `Cargo.toml` therefore has `time` imply
+// `plural`, which is why nothing below is gated on it.
 
 pub mod options;
 pub mod standard;
@@ -331,7 +326,12 @@ impl Formatter for TimeFormatter {
             // `jiff::civil::DateTime` carries no zone, so this is the plain
             // difference — the same answer whenever the two moments share a
             // UTC offset.
-            Value::DateTime(date_time) => utility::ticks(&now(info).duration_since(*date_time)),
+            Value::DateTime(date_time) => utility::ticks(
+                &info
+                    .settings()
+                    .now_or_system_clock()
+                    .duration_since(*date_time),
+            ),
             other => return Err(unsupported_type(info, other)),
         };
 
@@ -357,15 +357,6 @@ impl Formatter for TimeFormatter {
         info.write(&time_parts.join(" "));
         Ok(true)
     }
-}
-
-/// The moment the formatter measures a [`Value::DateTime`] against: the one
-/// [`SmartSettings::now`](crate::SmartSettings::now) pins, or the system's
-/// local time — .NET `SystemTime.Now()`, whose default reads `DateTime.Now`.
-fn now(info: &FormattingInfo<'_>) -> jiff::civil::DateTime {
-    info.settings()
-        .now
-        .unwrap_or_else(|| jiff::Zoned::now().datetime())
 }
 
 /// .NET `Format.RawText`, which is `Format.ToString()`: every item written out

@@ -34,6 +34,10 @@ const INDEX: &str = "Index";
 pub struct ListSource;
 
 impl Source for ListSource {
+    fn well_known_rank(&self) -> Option<u32> {
+        Some(super::source_ranks::LIST)
+    }
+
     fn try_evaluate_selector<'a>(&self, info: SelectorInfo<'a>) -> Option<Cow<'a, Value>> {
         // .NET asks `current is IEnumerable`, which a string and a dictionary
         // answer as well as a list: `{Index}` renders -1 for all three (probed

@@ -14,6 +14,10 @@ use crate::value::Value;
 pub struct DefaultSource;
 
 impl Source for DefaultSource {
+    fn well_known_rank(&self) -> Option<u32> {
+        Some(super::source_ranks::DEFAULT)
+    }
+
     fn try_evaluate_selector<'a>(&self, info: SelectorInfo<'a>) -> Option<Cow<'a, Value>> {
         let index: usize = info.text().parse().ok()?;
         if info.index() == 0 && info.operator().is_empty() && index < info.args.len() {

@@ -33,6 +33,10 @@ const METHODS: [&str; 10] = [
 ];
 
 impl Source for StringSource {
+    fn well_known_rank(&self) -> Option<u32> {
+        Some(super::source_ranks::STRING)
+    }
+
     fn try_evaluate_selector<'a>(&self, info: SelectorInfo<'a>) -> Option<Cow<'a, Value>> {
         if let Some(null) = info.nullable_result() {
             return Some(null);

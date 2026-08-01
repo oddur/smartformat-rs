@@ -17,8 +17,8 @@ use crate::extensions::ismatch::IsMatchFormatter;
 #[cfg(feature = "plural")]
 use crate::extensions::PluralLocalizationFormatter;
 use crate::extensions::{
-    ChooseFormatter, ConditionalFormatter, ListFormatter, NullFormatter, RegisterError,
-    SubStringFormatter, TemplateFormatter,
+    ChooseFormatter, ConditionalFormatter, ListFormatter, LocalizationFormatter,
+    LocalizationProvider, NullFormatter, RegisterError, SubStringFormatter, TemplateFormatter,
 };
 use crate::fmt::culture::{self, CultureData};
 #[cfg(feature = "time")]
@@ -28,6 +28,7 @@ use crate::fmt::FormatSpecError;
 use crate::parsing::chars::ALIGNMENT_OPERATOR;
 use crate::parsing::{Format, FormatItem, Parser, ParserSettings, Placeholder, Selector};
 use crate::settings::{CaseSensitivity, ErrorAction, SmartSettings};
+use crate::sources::variables::{GlobalVariablesSource, PersistentVariablesSource};
 use crate::sources::{SelectorInfo, SourceRegistry};
 use crate::value::Value;
 
@@ -78,29 +79,53 @@ pub trait Formatter: Send + Sync {
     ///
     /// A `dyn Formatter` cannot be downcast the ordinary way: `Any` would have
     /// to be a supertrait, and coercing `&mut dyn Formatter` to `&mut dyn Any`
-    /// needs trait upcasting, stable well past this crate's MSRV. Only the
-    /// template formatter has to be found again — its registry is filled after
-    /// it is registered, where every other formatter is configured before —
-    /// so only it answers this question. [`TemplateFormatter`] overrides it;
-    /// no other formatter should.
+    /// needs trait upcasting, stable well past this crate's MSRV. So instead of
+    /// a general downcast there is one question per formatter that has to be
+    /// found again after it is registered — this one and
+    /// [`as_localization_formatter_mut`](Self::as_localization_formatter_mut).
+    /// [`TemplateFormatter`] overrides this one; no other formatter should.
     ///
     /// [`TemplateFormatter`]: crate::extensions::TemplateFormatter
     fn as_template_formatter_mut(&mut self) -> Option<&mut TemplateFormatter> {
         None
     }
+
+    /// This formatter as a [`LocalizationFormatter`], if it is one — the same
+    /// stand-in for a downcast as
+    /// [`as_template_formatter_mut`](Self::as_template_formatter_mut), used by
+    /// [`SmartFormatter::register_localization`] and
+    /// [`FormatterRegistry::localization_formatter_mut`].
+    ///
+    /// .NET keeps the provider in `SmartSettings.Localization`, one slot for
+    /// the whole formatter, so registering a second provider there replaces the
+    /// first. Finding the registered formatter again is what lets this port do
+    /// the same instead of registering a second extension that name lookup
+    /// would never reach. [`LocalizationFormatter`] overrides this; no other
+    /// formatter should.
+    ///
+    /// [`LocalizationFormatter`]: crate::extensions::LocalizationFormatter
+    fn as_localization_formatter_mut(&mut self) -> Option<&mut LocalizationFormatter> {
+        None
+    }
 }
 
 /// The rank .NET's `WellKnownExtensionTypes.Formatters` gives each extension,
-/// keyed by that extension's default name. The ranks .NET lists for extensions
-/// this port does not have — `TimeFormatter` (4000), `XElementFormatter` (5000)
-/// and `LocalizationFormatter` (8000) — are left out; nothing is inserted
-/// between them.
-const WELL_KNOWN_RANKS: [(&str, u32); 9] = [
+/// keyed by that extension's default name. `XElementFormatter` (5000) is the
+/// only rank left out, because this port has no counterpart for it; nothing is
+/// inserted between the others.
+///
+/// `time` is listed whether or not the feature that builds a `TimeFormatter` is
+/// on: the table describes .NET's order, not this build's registry, and a
+/// caller who named a formatter of their own `time` should get .NET's slot for
+/// it either way.
+const WELL_KNOWN_RANKS: [(&str, u32); 11] = [
     ("list", 1000),
     ("plural", 2000),
     ("cond", 3000),
+    ("time", 4000),
     ("ismatch", 6000),
     ("isnull", 7000),
+    ("L", 8000),
     ("t", 9000),
     ("choose", 10000),
     ("substr", 11000),
@@ -135,16 +160,18 @@ impl FormatterRegistry {
     /// .NET adds its extensions in one call and lets `WellKnownExtensionTypes`
     /// sort them by a fixed rank: [`ListFormatter`] (1000),
     /// `PluralLocalizationFormatter` (2000), [`ConditionalFormatter`] (3000),
-    /// [`IsMatchFormatter`] (6000), [`NullFormatter`] (7000),
+    /// `IsMatchFormatter` (6000), [`NullFormatter`] (7000),
     /// [`ChooseFormatter`] (10000), [`SubStringFormatter`] (11000),
-    /// [`DefaultFormatter`] (12000). The ranks in between belong to extensions
-    /// this port does not have (`TimeFormatter` 4000, `XElementFormatter` 5000,
-    /// `LocalizationFormatter` 8000).
+    /// [`DefaultFormatter`] (12000). The one rank in between that belongs to an
+    /// extension this port does not have is `XElementFormatter` (5000).
     ///
-    /// `TemplateFormatter` (9000) is deliberately absent: .NET's
-    /// `CreateDefaultSmartFormat` leaves it out too, because a template
-    /// formatter with no templates registered is useless. See
-    /// [`SmartFormatter::register_template`] for the way to add it.
+    /// Three ported extensions are deliberately absent, because .NET's
+    /// `CreateDefaultSmartFormat` leaves them out too: `TimeFormatter` (4000),
+    /// `LocalizationFormatter` (8000) and `TemplateFormatter` (9000) are all
+    /// useless until they are given a language, a provider or a template. See
+    /// [`SmartFormatter::register_template`],
+    /// [`SmartFormatter::register_localization`] and [`add`](Self::add), which
+    /// slots any of them where this list would have held it.
     ///
     /// The order is observable: [`ListFormatter`],
     /// `PluralLocalizationFormatter` and [`ConditionalFormatter`] all
@@ -153,7 +180,6 @@ impl FormatterRegistry {
     /// `{0:one|many}` on a list a list and not a plural.
     ///
     /// [`ListFormatter`]: crate::extensions::ListFormatter
-    /// [`IsMatchFormatter`]: crate::extensions::ismatch::IsMatchFormatter
     /// [`NullFormatter`]: crate::extensions::NullFormatter
     /// [`SubStringFormatter`]: crate::extensions::SubStringFormatter
     pub fn new() -> Self {
@@ -229,6 +255,18 @@ impl FormatterRegistry {
         self.formatters
             .iter_mut()
             .find_map(|formatter| formatter.as_template_formatter_mut())
+    }
+
+    /// The [`LocalizationFormatter`] in this registry, if one was added.
+    ///
+    /// [`SmartFormatter::register_localization`] replaces its provider through
+    /// this. The first one wins, as name lookup does.
+    ///
+    /// [`LocalizationFormatter`]: crate::extensions::LocalizationFormatter
+    pub fn localization_formatter_mut(&mut self) -> Option<&mut LocalizationFormatter> {
+        self.formatters
+            .iter_mut()
+            .find_map(|formatter| formatter.as_localization_formatter_mut())
     }
 
     pub fn push(&mut self, formatter: Box<dyn Formatter>) {
@@ -414,6 +452,111 @@ impl SmartFormatter {
             .template_formatter_mut()
             .expect("a template formatter was just added")
             .register(parser, name, template)
+    }
+
+    /// Registers `provider`, so that `{:L:<key>}` renders the localized string
+    /// for `<key>` (.NET `AddExtensions(new LocalizationFormatter())` plus
+    /// `SmartSettings.Localization.LocalizationProvider`).
+    ///
+    /// The first call adds the [`LocalizationFormatter`] itself, at .NET's rank
+    /// for it — after `isnull`, before `t`. .NET's `CreateDefaultSmartFormat`
+    /// leaves the extension out, because a formatter with no provider has
+    /// nothing to translate with.
+    ///
+    /// A second call replaces the provider of the formatter already registered
+    /// rather than adding another one, which is what .NET's single
+    /// `LocalizationProvider` setting amounts to — and the only useful reading,
+    /// since name lookup would never reach a second formatter called `L`.
+    /// Replacing empties the formatter's parse cache.
+    ///
+    /// Localized strings are parsed with *this* formatter's
+    /// [`parser`](Self::parser), lazily, the first time each one is rendered,
+    /// and the cache is keyed with this formatter's
+    /// [`case_sensitive`](crate::SmartSettings::case_sensitive) setting as it
+    /// stands at the first call.
+    ///
+    /// ```
+    /// use smartformat::extensions::localization::HashMapLocalizationProvider;
+    /// use smartformat::{SmartFormatter, Value};
+    ///
+    /// let provider: HashMapLocalizationProvider = [
+    ///     ("", "Hello", "Hello"),
+    ///     ("de", "Hello", "Hallo"),
+    /// ]
+    /// .into_iter()
+    /// .collect();
+    ///
+    /// let mut smart = SmartFormatter::default();
+    /// smart.register_localization(Box::new(provider));
+    ///
+    /// let none = Value::Null;
+    /// assert_eq!(smart.format("{:L:Hello}", &none).unwrap(), "Hello");
+    /// assert_eq!(smart.format("{:L(de):Hello}", &none).unwrap(), "Hallo");
+    /// ```
+    ///
+    /// [`LocalizationFormatter`]: crate::extensions::LocalizationFormatter
+    pub fn register_localization(&mut self, provider: Box<dyn LocalizationProvider>) {
+        if let Some(formatter) = self.formatters.localization_formatter_mut() {
+            formatter.set_provider(provider);
+            return;
+        }
+        let formatter = LocalizationFormatter::new(&self.parser, provider)
+            .with_case_sensitivity(self.settings.case_sensitive);
+        self.formatters.add(Box::new(formatter));
+    }
+
+    /// Registers `source`, so that `{groupName.variableName}` resolves against
+    /// its groups without them being passed as arguments (.NET
+    /// `AddExtensions(new PersistentVariablesSource())`).
+    ///
+    /// The source is slotted where .NET's `WellKnownExtensionTypes.Sources`
+    /// ranks it — ahead of every other source, so a group name wins over a
+    /// selector any of them would have answered. `CreateDefaultSmartFormat`
+    /// does not register it, here or in .NET.
+    ///
+    /// The source owns its groups and the registry hands out no way back to it,
+    /// so fill it before registering. [`register_global_variables`] takes a
+    /// handle to shared storage that stays writable afterwards.
+    ///
+    /// ```
+    /// use smartformat::sources::variables::{self, PersistentVariablesSource};
+    /// use smartformat::{SmartFormatter, Value};
+    ///
+    /// let mut variables = PersistentVariablesSource::new();
+    /// variables.add("app", variables::group([("name", Value::from("Acme"))]));
+    ///
+    /// let mut smart = SmartFormatter::default();
+    /// smart.register_variables(variables);
+    /// assert_eq!(smart.format("{app.name}", &Value::Null).unwrap(), "Acme");
+    /// ```
+    ///
+    /// [`register_global_variables`]: Self::register_global_variables
+    pub fn register_variables(&mut self, source: PersistentVariablesSource) {
+        self.sources.add(Box::new(source));
+    }
+
+    /// Registers a handle to shared variable storage, ahead of every other
+    /// source and of a [`register_variables`](Self::register_variables) source
+    /// (.NET `AddExtensions(GlobalVariablesSource.Instance)`).
+    ///
+    /// Pass a clone and keep one: groups added through any handle are visible
+    /// to every formatter registered with another, which is what .NET's
+    /// `static` store gives its singleton.
+    ///
+    /// ```
+    /// use smartformat::sources::variables::{self, GlobalVariablesSource};
+    /// use smartformat::{SmartFormatter, Value};
+    ///
+    /// let variables = GlobalVariablesSource::new();
+    /// let mut smart = SmartFormatter::default();
+    /// smart.register_global_variables(variables.clone());
+    ///
+    /// // Filled after registration, which the persistent source cannot do.
+    /// variables.add("app", variables::group([("name", Value::from("Acme"))]));
+    /// assert_eq!(smart.format("{app.name}", &Value::Null).unwrap(), "Acme");
+    /// ```
+    pub fn register_global_variables(&mut self, source: GlobalVariablesSource) {
+        self.sources.add(Box::new(source));
     }
 
     /// Parses a template once, for repeated formatting.

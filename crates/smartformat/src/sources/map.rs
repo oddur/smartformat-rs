@@ -12,6 +12,10 @@ use crate::value::Value;
 pub struct MapSource;
 
 impl Source for MapSource {
+    fn well_known_rank(&self) -> Option<u32> {
+        Some(super::source_ranks::MAP)
+    }
+
     fn try_evaluate_selector<'a>(&self, info: SelectorInfo<'a>) -> Option<Cow<'a, Value>> {
         if let Some(null) = info.nullable_result() {
             return Some(null);

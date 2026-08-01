@@ -22,8 +22,8 @@
 //! let mut smart = SmartFormatter::default();
 //! // .NET ranks both variable sources ahead of every other source
 //! // (`WellKnownExtensionTypes.Sources`: global 1000, persistent 2000, string
-//! // 3000, …), which in the default registry is index 0.
-//! smart.sources_mut().insert(0, Box::new(source));
+//! // 3000, …), which is where `register_variables` slots this one.
+//! smart.register_variables(source);
 //!
 //! // No arguments carry the variables.
 //! assert_eq!(
@@ -54,7 +54,13 @@
 //! source is registered, and several [`SmartFormatter`]s can share one set of
 //! variables.
 //!
+//! Either one is registered with the matching `SmartFormatter` method —
+//! [`register_variables`] or [`register_global_variables`] — which puts it at
+//! .NET's rank for it, ahead of every source in the default registry.
+//!
 //! [`SmartFormatter`]: crate::SmartFormatter
+//! [`register_variables`]: crate::SmartFormatter::register_variables
+//! [`register_global_variables`]: crate::SmartFormatter::register_global_variables
 
 use std::borrow::Cow;
 use std::collections::BTreeMap;
@@ -164,7 +170,7 @@ fn evaluate<'a>(groups: &VariablesGroup, info: SelectorInfo<'a>) -> Option<Cow<'
 /// )]);
 ///
 /// let mut smart = SmartFormatter::default();
-/// smart.sources_mut().insert(0, Box::new(source));
+/// smart.register_variables(source);
 /// assert_eq!(smart.format("{app.name}", &Value::Null).unwrap(), "Acme");
 /// ```
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -249,6 +255,10 @@ where
 }
 
 impl Source for PersistentVariablesSource {
+    fn well_known_rank(&self) -> Option<u32> {
+        Some(super::source_ranks::PERSISTENT_VARIABLES)
+    }
+
     fn try_evaluate_selector<'a>(&self, info: SelectorInfo<'a>) -> Option<Cow<'a, Value>> {
         evaluate(&self.groups, info)
     }
@@ -272,7 +282,7 @@ impl Source for PersistentVariablesSource {
 ///
 /// let variables = GlobalVariablesSource::new();
 /// let mut smart = SmartFormatter::default();
-/// smart.sources_mut().insert(0, Box::new(variables.clone()));
+/// smart.register_global_variables(variables.clone());
 ///
 /// variables.add("app", variables::group([("name", Value::from("Acme"))]));
 /// assert_eq!(smart.format("{app.name}", &Value::Null).unwrap(), "Acme");
@@ -370,6 +380,10 @@ impl From<PersistentVariablesSource> for GlobalVariablesSource {
 }
 
 impl Source for GlobalVariablesSource {
+    fn well_known_rank(&self) -> Option<u32> {
+        Some(super::source_ranks::GLOBAL_VARIABLES)
+    }
+
     fn try_evaluate_selector<'a>(&self, info: SelectorInfo<'a>) -> Option<Cow<'a, Value>> {
         evaluate(&self.read(), info)
     }

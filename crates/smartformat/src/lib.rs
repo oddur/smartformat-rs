@@ -20,6 +20,9 @@ documentation."
 //! - [`value`]: the [`Value`] tree templates render against, and
 //!   [`ToSmartValue`](value::ToSmartValue) for converting your types.
 //! - [`extensions`]: the built-in formatters (`list`, `plural`, `choose`, …).
+//! - [`sources`]: how a selector finds its value, and
+//!   [`variables`](sources::variables) for names a template can use without
+//!   them being passed as arguments.
 //! - [`fmt::culture`]: locale data, generated from .NET itself.
 //! - [`settings`]: [`SmartSettings`], error actions, case sensitivity.
 //! - [`parsing`]: the template parser and [`Format`](parsing::Format) AST,
@@ -41,13 +44,19 @@ pub use error::Error;
 #[cfg(feature = "plural")]
 pub use extensions::PluralLocalizationFormatter;
 pub use extensions::{
-    ChooseFormatter, ConditionalFormatter, ListFormatter, NullFormatter, SubStringFormatter,
+    ChooseFormatter, ConditionalFormatter, HashMapLocalizationProvider, ListFormatter,
+    LocalizationFormatter, LocalizationProvider, NullFormatter, SubStringFormatter,
     SubStringOutOfRangeBehavior, TemplateFormatter,
 };
 #[cfg(feature = "regex-formatters")]
 pub use extensions::{IsMatchFormatter, RegexOptions};
+#[cfg(feature = "time")]
+pub use extensions::{TimeFormatter, TimeSpanFormatOptions, TimeTextInfo};
 pub use formatter::SmartFormatter;
 pub use settings::{CaseSensitivity, ErrorAction, SmartSettings};
+// The only sources a caller has to name: every other one is in the default
+// registry and is never mentioned by name.
+pub use sources::variables::{GlobalVariablesSource, PersistentVariablesSource, VariablesGroup};
 // `ToSmartValue` is not re-exported at the crate root: the derive macro of the
 // same name lives there.
 pub use value::Value;

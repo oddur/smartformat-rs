@@ -58,20 +58,16 @@ pub struct ConditionalFormatter {
     name: String,
     split_char: char,
     can_auto_detect: bool,
-    #[cfg(feature = "time")]
-    now: Option<jiff::civil::DateTime>,
 }
 
 impl ConditionalFormatter {
     /// A formatter named `cond`, splitting on `|`, auto-detected — the .NET
-    /// defaults. Date conditions fail until a "now" is set with `with_now`.
+    /// defaults.
     pub fn new() -> Self {
         Self {
             name: NAME.to_owned(),
             split_char: DEFAULT_SPLIT_CHAR,
             can_auto_detect: true,
-            #[cfg(feature = "time")]
-            now: None,
         }
     }
 
@@ -101,60 +97,53 @@ impl ConditionalFormatter {
     pub fn set_can_auto_detect(&mut self, can_auto_detect: bool) {
         self.can_auto_detect = can_auto_detect;
     }
+}
 
-    /// The current time a [`Value::DateTime`] is compared against, which
-    /// decides between the `past|future` and `past|present|future` branches.
-    ///
-    /// .NET reads the clock itself (`SystemTime.Now()`) and compares
-    /// `DateTime.ToUniversalTime()` values; this port takes the time from the
-    /// caller instead, so that rendering a template stays a pure function.
-    /// Both the value and the "now" are read as UTC, which is exactly what
-    /// .NET does for a `DateTime` of kind `Utc` compared against
-    /// `DateTime.UtcNow`. A [`Value::DateTime`] in local time has to be
-    /// converted by the caller.
-    ///
-    /// Without a "now", a date condition is an error rather than a guess: the
-    /// crate has no clock access policy yet.
-    #[cfg(feature = "time")]
-    pub fn with_now(mut self, now: jiff::civil::DateTime) -> Self {
-        self.now = Some(now);
-        self
-    }
-
-    /// The time set by [`with_now`](Self::with_now), if any.
-    #[cfg(feature = "time")]
-    pub fn now(&self) -> Option<jiff::civil::DateTime> {
-        self.now
-    }
-
-    /// .NET's `case DateTime` arms: `past|present|future` when there are
-    /// exactly three parameters and the value falls on today's date,
-    /// `past|future` otherwise.
-    #[cfg(feature = "time")]
-    fn date_index(
-        &self,
-        info: &FormattingInfo<'_>,
-        value: &jiff::civil::DateTime,
-        param_count: usize,
-    ) -> Result<usize, Error> {
-        let Some(now) = self.now else {
-            return Err(formatting_error(info, NO_NOW));
-        };
-        if param_count == 3 && value.date() == now.date() {
-            Ok(1)
-        } else if *value <= now {
-            Ok(0)
-        } else {
-            Ok(param_count - 1)
-        }
+/// .NET's `case DateTime` arms: `past|present|future` when there are exactly
+/// three parameters and the value falls on today's date, `past|future`
+/// otherwise.
+///
+/// The moment compared against is
+/// [`SmartSettings::now`](crate::SmartSettings::now), or the system's local
+/// time when it is not pinned — .NET's `SystemTime.Now()`, which is what both
+/// arms read.
+///
+/// .NET converts both moments to UTC before it compares them
+/// (`dateTimeArg.ToUniversalTime() <= SystemTime.Now().ToUniversalTime()`). A
+/// [`jiff::civil::DateTime`] carries no zone, so the comparison here is the
+/// plain one, which agrees with .NET's whenever the two moments share a UTC
+/// offset — always for the `<=`, since a shared offset shifts both sides
+/// equally, and for the *date* equality except when that shift moves one of
+/// them across midnight and not the other.
+#[cfg(feature = "time")]
+fn date_index(
+    info: &FormattingInfo<'_>,
+    value: &jiff::civil::DateTime,
+    param_count: usize,
+) -> usize {
+    let now = info.settings().now_or_system_clock();
+    if param_count == 3 && value.date() == now.date() {
+        1
+    } else if *value <= now {
+        0
+    } else {
+        param_count - 1
     }
 }
 
-/// The issue text of the error a date raises when the formatter was given no
-/// [`now`](ConditionalFormatter::with_now). It has no .NET counterpart, which
-/// reads the clock instead.
+/// .NET's `case TimeSpan` arms: `negative|zero|positive` when there are exactly
+/// three parameters and the span is zero, `negative-or-zero|positive`
+/// otherwise. No clock is involved.
 #[cfg(feature = "time")]
-const NO_NOW: &str = "A date can only be compared to the current time, which this ConditionalFormatter was not given; build it with ConditionalFormatter::with_now";
+fn time_span_index(value: jiff::SignedDuration, param_count: usize) -> usize {
+    if param_count == 3 && value.is_zero() {
+        1
+    } else if value <= jiff::SignedDuration::ZERO {
+        0
+    } else {
+        param_count - 1
+    }
+}
 
 impl Default for ConditionalFormatter {
     fn default() -> Self {
@@ -275,7 +264,10 @@ impl Formatter for ConditionalFormatter {
                 Value::Bool(value) => usize::from(!*value),
                 // Date: Past|Present|Future   or   Past/Present|Future
                 #[cfg(feature = "time")]
-                Value::DateTime(value) => self.date_index(info, value, param_count)?,
+                Value::DateTime(value) => date_index(info, value, param_count),
+                // TimeSpan: Negative|Zero|Positive  or  Negative/Zero|Positive
+                #[cfg(feature = "time")]
+                Value::TimeSpan(value) => time_span_index(*value, param_count),
                 // String: Value|NullOrEmpty
                 Value::String(value) => usize::from(value.is_empty()),
                 // Object: Something|Nothing
@@ -704,9 +696,10 @@ mod tests {
     //! `src/SmartFormat.Tests/Extensions/ConditionalFormatterTests.cs`, plus
     //! the cases probed against the pinned SmartFormat.NET 3.6.1 package.
     //!
-    //! The enum cases have no counterpart — `Value` has no enum variant — and
-    //! neither have the `TimeSpan` ones, since `Value` has no duration. The
-    //! parallel case is not portable either: a `Formatter` is `Send + Sync`
+    //! The enum cases have no counterpart, since `Value` has no enum variant,
+    //! and neither have the `DateTimeOffset` ones, since a
+    //! `jiff::civil::DateTime` carries no offset. The parallel case is not
+    //! portable either: a `Formatter` is `Send + Sync`
     //! and holds no mutable state, which the compiler checks.
     //!
     //! An error is asserted by its message and position. Every error this
@@ -725,10 +718,20 @@ mod tests {
     fn smart_with(formatter: ConditionalFormatter) -> SmartFormatter {
         // The .NET default of `FormatErrorAction.ThrowError` — our
         // `ErrorAction::Error` — so a formatting error surfaces in the tests.
-        let mut smart = SmartFormatter::new(SmartSettings {
-            format_error_action: ErrorAction::Error,
-            ..SmartSettings::default()
-        });
+        smart_with_settings(
+            formatter,
+            SmartSettings {
+                format_error_action: ErrorAction::Error,
+                ..SmartSettings::default()
+            },
+        )
+    }
+
+    fn smart_with_settings(
+        formatter: ConditionalFormatter,
+        settings: SmartSettings,
+    ) -> SmartFormatter {
+        let mut smart = SmartFormatter::new(settings);
         // Only the formatter under test and the always-last DefaultFormatter,
         // so these tests pin this formatter rather than the order of the
         // default registry — which `tests/extensions.rs` pins instead.
@@ -1177,14 +1180,34 @@ mod tests {
     mod dates {
         use super::*;
         use jiff::civil::date;
+        use jiff::SignedDuration;
 
         fn now() -> jiff::civil::DateTime {
             date(2026, 7, 31).at(12, 0, 0, 0)
         }
 
+        /// A formatter whose "now" is pinned, standing in for .NET's
+        /// `SystemTime.SetDateTime`.
+        fn smart_at(now: Option<jiff::civil::DateTime>) -> SmartFormatter {
+            smart_with_settings(
+                ConditionalFormatter::new(),
+                SmartSettings {
+                    format_error_action: ErrorAction::Error,
+                    now,
+                    ..SmartSettings::default()
+                },
+            )
+        }
+
         fn format_date(template: &str, value: jiff::civil::DateTime) -> String {
-            smart_with(ConditionalFormatter::new().with_now(now()))
+            smart_at(Some(now()))
                 .format(template, &args([Value::DateTime(value)]))
+                .unwrap_or_else(|error| panic!("{template:?} failed: {error}"))
+        }
+
+        fn format_span(template: &str, value: SignedDuration) -> String {
+            smart_at(Some(now()))
+                .format(template, &args([Value::TimeSpan(value)]))
                 .unwrap_or_else(|error| panic!("{template:?} failed: {error}"))
         }
 
@@ -1229,23 +1252,62 @@ mod tests {
             );
         }
 
-        /// Without a "now" the formatter refuses to guess.
+        /// With no "now" pinned the formatter reads the system clock, as
+        /// .NET's `SystemTime.Now()` does by default — so the year 1111 is
+        /// past and the year 5555 is future, whenever the test runs.
         #[test]
-        fn a_date_without_a_now_is_an_error() {
-            let value = args([Value::DateTime(now())]);
-            match smart().format("{0:cond:Past|Future}", &value) {
-                Err(Error::Format { message, position }) => {
-                    assert_eq!(message, NO_NOW);
-                    assert_eq!(position, 8);
-                }
-                other => panic!("expected a formatting error, got {other:?}"),
-            }
+        fn an_unpinned_now_reads_the_clock() {
+            let smart = smart_at(None);
+            let past = args([Value::DateTime(date(1111, 1, 1).at(1, 1, 1, 0))]);
+            let future = args([Value::DateTime(date(5555, 5, 5).at(5, 5, 5, 0))]);
+            let template = "{0:cond:Past|Present|Future}";
+            assert_eq!(smart.format(template, &past).unwrap(), "Past");
+            assert_eq!(smart.format(template, &future).unwrap(), "Future");
         }
 
         /// A date is not a number, so it never reaches a condition.
         #[test]
         fn a_date_takes_no_condition() {
             assert_eq!(format_date("{0:cond:>0?a|b}", now()), ">0?a");
+        }
+
+        /// .NET's `case TimeSpan` arms, which need no clock: negative, zero
+        /// and positive, with zero folded into the negative branch unless
+        /// there are exactly three parameters.
+        #[test]
+        fn negative_zero_future() {
+            let negative = SignedDuration::from_hours(-1);
+            let positive = SignedDuration::from_hours(1);
+            let zero = SignedDuration::ZERO;
+
+            // Two parts: negative-or-zero, or positive.
+            assert_eq!(format_span("{0:cond:Neg|Pos}", negative), "Neg");
+            assert_eq!(format_span("{0:cond:Neg|Pos}", zero), "Neg");
+            assert_eq!(format_span("{0:cond:Neg|Pos}", positive), "Pos");
+            // Three parts: the middle one is exactly zero.
+            assert_eq!(format_span("{0:cond:Neg|Zero|Pos}", negative), "Neg");
+            assert_eq!(format_span("{0:cond:Neg|Zero|Pos}", zero), "Zero");
+            assert_eq!(format_span("{0:cond:Neg|Zero|Pos}", positive), "Pos");
+            // A nanosecond is not zero.
+            assert_eq!(
+                format_span("{0:cond:Neg|Zero|Pos}", SignedDuration::from_nanos(1)),
+                "Pos"
+            );
+            // Four parts: no "zero" branch, so zero is negative.
+            assert_eq!(format_span("{0:cond:A|B|C|D}", zero), "A");
+            assert_eq!(format_span("{0:cond:A|B|C|D}", positive), "D");
+        }
+
+        /// A `TimeSpan` is not `IConvertible` in .NET, so — like a date — it
+        /// never reaches a complex condition.
+        #[test]
+        fn a_time_span_takes_no_condition() {
+            // A negative span picks the first part, which is written out with
+            // its `>0?` prefix intact instead of being read as a condition.
+            assert_eq!(
+                format_span("{0:cond:>0?a|b}", SignedDuration::from_hours(-1)),
+                ">0?a"
+            );
         }
     }
 

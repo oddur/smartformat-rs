@@ -45,6 +45,20 @@ pub struct SmartSettings {
     pub alignment_fill_character: char,
 }
 
+#[cfg(feature = "time")]
+impl SmartSettings {
+    /// What "now" means for this format call: [`now`](Self::now) when it is
+    /// pinned, the system's local time otherwise.
+    ///
+    /// This is .NET `SystemTime.Now()`, whose default reads `DateTime.Now` and
+    /// which `SystemTime.SetDateTimeNow` pins. Reading the clock here rather
+    /// than at construction is what makes an unpinned formatter behave like
+    /// .NET's, which reads it once per placeholder that needs it.
+    pub fn now_or_system_clock(&self) -> jiff::civil::DateTime {
+        self.now.unwrap_or_else(|| jiff::Zoned::now().datetime())
+    }
+}
+
 // The .NET defaults; `#[derive(Default)]` would make the fill character NUL.
 impl Default for SmartSettings {
     fn default() -> Self {
