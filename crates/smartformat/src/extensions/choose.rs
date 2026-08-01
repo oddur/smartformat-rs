@@ -288,10 +288,13 @@ fn value_text(value: &Value, info: &FormattingInfo<'_>) -> (String, Matchable) {
         ),
         Value::List(_) => ("<list>".to_owned(), Matchable::No),
         Value::Map(_) => ("<map>".to_owned(), Matchable::No),
-        // Interim until TimeFormatter lands (M4): stringification comes with
-        // the .NET TimeSpan format support.
+        // .NET `TimeSpan.ToString()`, which is its culture-independent
+        // constant format whatever the thread culture is.
         #[cfg(feature = "time")]
-        Value::TimeSpan(_) => ("<TimeSpan>".to_owned(), Matchable::No),
+        Value::TimeSpan(value) => (
+            crate::extensions::time::timespan_to_string(value),
+            Matchable::Yes,
+        ),
     }
 }
 
