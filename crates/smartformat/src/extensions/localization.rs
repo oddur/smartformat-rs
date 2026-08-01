@@ -35,26 +35,36 @@
 //! );
 //! ```
 //!
+//! # The culture the options name is not local
+//!
+//! .NET assigns `formattingInfo.FormatDetails.Provider = cultureInfo`, and
+//! `FormatDetails` belongs to the whole format call, so `{:L(de):…}` switches
+//! the culture for *every later placeholder of the template* and not only for
+//! the placeholders of the translation. That is reproduced here through
+//! [`FormattingInfo::set_culture`], leak and all — probed against 3.6.1:
+//! `Format(en-US, "{0:N2}|{1:L(de):WeTranslateText}|{0:N2}", 1234.5, "")` is
+//! `1,234.50|Wir übersetzen Text|1.234,50`, and the trailing `{0:N2}` stays
+//! German even when the lookup fails and the error is ignored. The switch
+//! happens after the empty-format and unknown-culture checks, so neither of
+//! those leaks, and it dies with the format call.
+//!
 //! # Divergences from 3.6.1
 //!
-//! Two of the formatter's behaviors need engine support this port does not have
-//! yet, and both are marked `Interim until the engine grows` in the code:
+//! One, in the isolated render that turns `{:L:{ProductType}}` into a lookup
+//! key: .NET builds that render's `FormatDetails` with a `null` provider, which
+//! sends every culture-sensitive placeholder inside it to the *ambient*
+//! `CultureInfo.CurrentCulture` — so the key `{:L(de):{Num:N2}}` looks up
+//! depends on the machine the call runs on. There is no ambient culture here,
+//! so [`FormattingInfo::format_to_isolated_string`] renders with the culture in
+//! force, which is the one the options just chose. A key built out of a number,
+//! a date or anything else culture-sensitive therefore differs; a key built out
+//! of strings — every use this formatter was designed for — does not. See
+//! `DESIGN.md`, "Known divergences".
 //!
-//! * .NET assigns `formattingInfo.FormatDetails.Provider = cultureInfo`, which
-//!   switches the culture of the *whole remaining format call*, not just of the
-//!   localized format — `Format(en-US, "{0:N2}|{1:L(de):x}|{0:N2}", 1234.5, "")`
-//!   is `1,234.50|…|1.234,50` in 3.6.1 (probed). Here the culture chosen by
-//!   `{:L(de):…}` picks the localized string but does not reach the
-//!   placeholders inside it; that needs a `FormattingInfo::set_culture`.
-//! * When the lookup of the format's raw text misses and the format has nested
-//!   placeholders, .NET evaluates the format into a scratch buffer and looks
-//!   the *result* up instead, which is how `{:L:{ProductType}}` finds the entry
-//!   for `paper`. Rendering into a buffer of one's own is not something a
-//!   [`Formatter`] can do here yet, so only the raw text is looked up.
-//!
-//! Everything else — the name, the culture resolution order, the lookup key,
-//! the parse cache and its case-sensitivity collisions, and every error — is
-//! ported and probed against the 3.6.1 package.
+//! Everything else — the name, the culture resolution order, the lookup key and
+//! its nested-placeholder retry, the parse cache and its case-sensitivity
+//! collisions, and every error — is ported and probed against the 3.6.1
+//! package.
 
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -421,23 +431,27 @@ impl LocalizationFormatter {
     }
 
     /// The culture .NET picks in `GetCultureInfo`: the trimmed formatter
-    /// options, or the culture of the format call when there are none.
+    /// options, or `None` when there are none.
+    ///
+    /// `None` is "leave the culture alone". .NET answers that case with
+    /// `FormatDetails.Provider` itself, which the assignment that follows puts
+    /// straight back, so there is nothing to switch to.
     ///
     /// .NET turns a name `CultureInfo.GetCultureInfo` rejects into a
     /// `LocalizationFormattingException` reported at index 0. This crate ships
     /// data for a fixed list of cultures instead of resolving any well-formed
     /// name against CLDR, so the *set* of names that fail is wider here — see
     /// `DESIGN.md` — but the failure is shaped the same way.
-    fn culture<'a>(&self, info: &FormattingInfo<'a>) -> Result<&'a CultureData, Error> {
+    fn culture(&self, info: &FormattingInfo<'_>) -> Result<Option<&'static CultureData>, Error> {
         // .NET reads `FormatterOptions`, which resolves escape sequences and
         // throws when one resolves to nothing — outside the evaluator's error
         // handling, so such a placeholder fails the call whatever the error
         // action is.
         let name = info.formatter_options()?.trim();
         if name.is_empty() {
-            return Ok(info.culture());
+            return Ok(None);
         }
-        culture::get(name).ok_or_else(|| {
+        culture::get(name).map(Some).ok_or_else(|| {
             info.formatting_error(
                 &format!("unknown culture {name:?}: no data is shipped for it"),
                 0,
@@ -526,24 +540,29 @@ impl Formatter for LocalizationFormatter {
         // settings carry no provider. A provider is not optional here, so
         // there is nothing to check.
 
-        let culture = self.culture(info)?;
-
-        // Interim until the engine grows a `FormattingInfo::set_culture`: .NET
-        // assigns `formattingInfo.FormatDetails.Provider = cultureInfo` here,
-        // which switches the culture for the rest of the format call — the
+        // .NET `formattingInfo.FormatDetails.Provider = cultureInfo`, which
+        // switches the culture for the rest of the format call: the
         // placeholders of the localized string, and every later placeholder of
-        // the template as well (probed). Only the lookup below uses `culture`
-        // for now; see the module docs.
+        // the template as well. It happens before the lookup, so it stands even
+        // when the lookup then fails — but after the two checks above, so
+        // `{:L(bad!!!):x}` and `{:L(de):}` leave the culture alone (probed).
+        if let Some(chosen) = self.culture(info)? {
+            info.set_culture(chosen);
+        }
+        let culture = info.culture();
 
         let key = raw_text(info, format)?;
-        let localized = self.provider.get_string(&key, culture);
+        let mut localized = self.provider.get_string(&key, culture);
 
-        // Interim until the engine grows a way to render a format into a
-        // string of its own: when the lookup misses and `format.has_nested()`,
-        // .NET evaluates the format against the current value — with no
-        // enclosing scopes and no positional arguments, in a `FormatDetails`
-        // of its own — and looks the result up instead, which is how
-        // `{:L:{ProductType}}` finds the entry for `paper`.
+        // When the raw text misses and the format has nested placeholders,
+        // .NET renders the format into a scratch buffer — against the current
+        // value, with no enclosing scopes and no positional arguments — and
+        // looks the *result* up instead, which is how `{:L:{ProductType}}`
+        // finds the entry for `paper`.
+        if localized.is_none() && format.has_nested() {
+            let rendered = info.format_to_isolated_string(format, info.current())?;
+            localized = self.provider.get_string(&rendered, culture);
+        }
 
         let Some(localized) = localized else {
             // A `LocalizationFormattingException` again, envelope and all,
@@ -1007,10 +1026,10 @@ mod tests {
         // half: the selector stays outside the localized text, so one
         // translation serves every selector.
         //
-        // The .NET case picks the culture in the formatter options, which also
-        // switches the culture the *number* is written with; here the call's
-        // culture does both jobs until `FormattingInfo::set_culture` exists —
-        // see the module docs.
+        // The .NET case picks the culture in the formatter options; this one
+        // takes it from the call, so that the number and the translation are
+        // chosen by the same thing without the leak the options carry —
+        // `the_options_culture_reaches_the_localized_placeholders` covers that.
         let args = Value::List(vec![Value::from("X-City"), Value::from(8_900_000i64)]);
         let smart = smart();
         assert_eq!(
@@ -1058,42 +1077,282 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // The two interim divergences, pinned so that closing them is a visible
-    // change rather than a silent one. See the module docs.
+    // The culture the options name, which .NET assigns to the whole call
     // -----------------------------------------------------------------------
 
     #[test]
-    fn the_options_culture_does_not_reach_the_localized_placeholders_yet() {
-        // Interim until `FormattingInfo::set_culture`. .NET assigns
-        // `FormatDetails.Provider = cultureInfo`, so the German translation is
-        // written with German number formatting — probed against 3.6.1:
-        // `{0} {1:L(de):has {:N0} inhabitants}` from an invariant call is
-        // "X-City hat 8.900.000 Einwohner", and `{1:N0}|{0:L(de):…}|{1:N0}` is
-        // "8,900,000|…|8.900.000", the call's culture switching mid-template.
+    fn the_options_culture_reaches_the_localized_placeholders() {
+        // .NET assigns `FormatDetails.Provider = cultureInfo`, so the German
+        // translation is written with German number formatting — probed
+        // against 3.6.1: `{0} {1:L(de):has {:N0} inhabitants}` from an
+        // invariant call is "X-City hat 8.900.000 Einwohner".
         let args = Value::List(vec![Value::from("X-City"), Value::from(8_900_000i64)]);
         let smart = smart();
         assert_eq!(
             format_args_culture(&smart, "{0} {1:L(de):has {:N0} inhabitants}", &args, ""),
-            "X-City hat 8,900,000 Einwohner"
+            "X-City hat 8.900.000 Einwohner"
+        );
+        assert_eq!(
+            format_args_culture(&smart, "{0} {1:L(es):has {:N0} inhabitants}", &args, ""),
+            "X-City tiene 8.900.000 habitantes"
         );
     }
 
     #[test]
-    fn the_nested_key_lookup_is_not_ported_yet() {
-        // Interim until a formatter can render into a buffer of its own. .NET
-        // evaluates a format with nested placeholders and looks the *result*
-        // up when the raw text misses — probed against 3.6.1:
+    fn the_options_culture_leaks_into_the_rest_of_the_call() {
+        // `FormatDetails` belongs to the format call, so the switch outlives
+        // the placeholder that made it — probed against 3.6.1:
+        // `Format(en-US, "{0:N2}|{1:L(de):WeTranslateText}|{0:N2}", 1234.5, "")`
+        // is "1,234.50|Wir übersetzen Text|1.234,50".
+        let smart = smart();
+        let args = Value::List(vec![Value::from(1234.5f64), Value::from("")]);
+        assert_eq!(
+            format_args_culture(
+                &smart,
+                "{0:N2}|{1:L(de):WeTranslateText}|{0:N2}",
+                &args,
+                "en-US"
+            ),
+            "1,234.50|Wir übersetzen Text|1.234,50"
+        );
+
+        // A second call on the same formatter starts from its own culture.
+        assert_eq!(
+            format_args_culture(&smart, "{0:N2}", &args, "en-US"),
+            "1,234.50"
+        );
+    }
+
+    #[test]
+    fn the_options_culture_leaks_even_when_the_lookup_fails() {
+        // Probed: the assignment happens before the lookup, so an ignored
+        // "No localized string found" still leaves German behind.
+        let smart = smart_with_settings(
+            provider(),
+            SmartSettings {
+                format_error_action: ErrorAction::Ignore,
+                ..SmartSettings::default()
+            },
+        );
+        let args = Value::List(vec![Value::from(1234.5f64), Value::from("")]);
+        assert_eq!(
+            format_args_culture(
+                &smart,
+                "{0:N2}|{1:L(de):NonExisting}|{0:N2}",
+                &args,
+                "en-US"
+            ),
+            "1,234.50||1.234,50"
+        );
+    }
+
+    #[test]
+    fn a_rejected_culture_or_an_empty_format_leaves_the_culture_alone() {
+        // Both checks come before the assignment in .NET, so neither leaks
+        // (probed: "1,234.50||1,234.50" for each).
+        let smart = smart_with_settings(
+            provider(),
+            SmartSettings {
+                format_error_action: ErrorAction::Ignore,
+                ..SmartSettings::default()
+            },
+        );
+        let args = Value::List(vec![Value::from(1234.5f64), Value::from("")]);
+        for template in [
+            "{0:N2}|{1:L(zz-ZZ-really-bad!):WeTranslateText}|{0:N2}",
+            "{0:N2}|{1:L(de):}|{0:N2}",
+        ] {
+            assert_eq!(
+                format_args_culture(&smart, template, &args, "en-US"),
+                "1,234.50||1,234.50",
+                "{template}"
+            );
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // The key that only matches once the nested placeholders are rendered
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn a_nested_key_is_rendered_and_looked_up_again() {
+        // .NET evaluates a format with nested placeholders and looks the
+        // *result* up when the raw text misses — probed against 3.6.1:
         // `{:L:{ProductType}}` with `ProductType = "paper"` is "Paper" from an
         // invariant call and "das Papier" from a German one.
         let smart = smart();
         let args = map([("ProductType", Value::from("paper"))]);
-        let message = match smart.format_with_culture_name("{:L:{ProductType}}", &args, "de") {
+        assert_eq!(
+            format_args_culture(&smart, "{:L:{ProductType}}", &args, ""),
+            "Paper"
+        );
+        assert_eq!(
+            format_args_culture(&smart, "{:L:{ProductType}}", &args, "de"),
+            "das Papier"
+        );
+        // The options pick the culture of the second lookup too.
+        assert_eq!(
+            format_args_culture(&smart, "{:L(fr):{ProductType}}", &args, ""),
+            "Papier"
+        );
+        // Literals and several placeholders are all part of the rendered key.
+        assert_eq!(
+            format_args_culture(
+                &smart,
+                "{:L:pa{Tail}}",
+                &map([("Tail", Value::from("per"))]),
+                ""
+            ),
+            "Paper"
+        );
+    }
+
+    #[test]
+    fn the_isolated_render_has_no_arguments_and_no_enclosing_scope() {
+        // Probed: .NET builds a `FormatDetails` with `InitializationObject
+        // .ObjectList` for the arguments and a `FormattingInfo` with no parent,
+        // so a positional selector and a selector of an enclosing scope both
+        // fail — with the *outer* template quoted, and at an offset into it.
+        let smart = smart();
+
+        let args = Value::List(vec![Value::from("paper")]);
+        let message = match smart.format_with_culture_name("{:L(es):{0}}", &args, "") {
             Err(Error::Format { message, .. }) => message,
             other => panic!("expected a formatting error, got {other:?}"),
         };
-        assert!(
-            message.contains("No localized string found for '{ProductType}'"),
-            "{message}"
+        assert_eq!(
+            message,
+            "Error parsing format string: No source extension could handle the \
+             selector named \"0\" at 9\n{:L(es):{0}}\n---------^"
+        );
+
+        let args = map([
+            ("Outer", Value::from("paper")),
+            ("Inner", map([("X", Value::from(1i64))])),
+        ]);
+        let message = match smart.format_with_culture_name("{Inner:L:{Outer}}", &args, "") {
+            Err(Error::Format { message, .. }) => message,
+            other => panic!("expected a formatting error, got {other:?}"),
+        };
+        assert_eq!(
+            message,
+            "Error parsing format string: No source extension could handle the \
+             selector named \"Outer\" at 10\n{Inner:L:{Outer}}\n----------^"
+        );
+
+        // The same selector on the current value is found, which is what makes
+        // the two above a scope reset rather than a broken lookup.
+        let args = map([("Inner", map([("Outer", Value::from("paper"))]))]);
+        assert_eq!(
+            format_args_culture(&smart, "{Inner:L:{Outer}}", &args, ""),
+            "Paper"
+        );
+    }
+
+    #[test]
+    fn the_isolated_render_handles_its_own_errors() {
+        // The render runs under the call's error action, so a placeholder it
+        // cannot evaluate contributes nothing to the key instead of failing
+        // the call — and the miss that follows quotes the *raw text*, never the
+        // rendered key (probed under each action).
+        for (action, expected) in [
+            (ErrorAction::Ignore, ""),
+            (ErrorAction::MaintainTokens, "{:L(es):{0}}"),
+        ] {
+            let smart = smart_with_settings(
+                provider(),
+                SmartSettings {
+                    format_error_action: action,
+                    ..SmartSettings::default()
+                },
+            );
+            let args = Value::List(vec![Value::from("paper")]);
+            assert_eq!(
+                format_args_culture(&smart, "{:L(es):{0}}", &args, ""),
+                expected,
+                "{action:?}"
+            );
+        }
+
+        let smart = smart_with_settings(
+            provider(),
+            SmartSettings {
+                format_error_action: ErrorAction::OutputErrorInResult,
+                ..SmartSettings::default()
+            },
+        );
+        let args = Value::List(vec![Value::from("paper")]);
+        assert!(format_args_culture(&smart, "{:L(es):{0}}", &args, "")
+            .contains("No localized string found for '{0}'"));
+    }
+
+    #[test]
+    fn the_alignment_reaches_the_isolated_render() {
+        // .NET takes the isolated `FormattingInfo`'s alignment from
+        // `format.ParentPlaceholder`, and a nested placeholder inherits it from
+        // the parser, so both the literal and the placeholder of the key are
+        // padded — probed: `{,20:L:{ProductType}}` looks up
+        // "               paper" and misses.
+        let smart = smart_with(HashMapLocalizationProvider::from_triples([
+            ("", "               paper", "padded key"),
+            ("", "        pa       per", "padded literal and placeholder"),
+        ]));
+        let args = map([("ProductType", Value::from("paper"))]);
+        // The translation is then written with that same alignment, which is
+        // the ordinary `{,20:L:…}` padding and not the key's.
+        assert_eq!(
+            format_args_culture(&smart, "{,20:L:{ProductType}}", &args, ""),
+            "          padded key"
+        );
+        assert_eq!(
+            format_args_culture(
+                &smart,
+                "{,10:L:pa{Tail}}",
+                &map([("Tail", Value::from("per"))]),
+                ""
+            ),
+            "padded literal and placeholder"
+        );
+    }
+
+    /// The one divergence left in this formatter, pinned on our side because
+    /// .NET's side is not reproducible: .NET builds the isolated render's
+    /// `FormatDetails` with a `null` provider, so a culture-sensitive
+    /// placeholder in the key follows the ambient `CultureInfo.CurrentCulture`
+    /// — probed, the same template looks up `1 234,50` with a French ambient
+    /// culture and `1.234,50` with a German one. There is no ambient culture
+    /// here, so the render follows the culture in force. DESIGN.md, "Known
+    /// divergences".
+    #[test]
+    fn a_culture_sensitive_nested_key_renders_with_the_culture_in_force() {
+        let smart = smart_with(HashMapLocalizationProvider::from_triples([
+            ("", "1.234,50", "the German key"),
+            ("", "1,234.50", "the invariant key"),
+        ]));
+        let args = map([("Num", Value::from(1234.5f64))]);
+        assert_eq!(
+            format_args_culture(&smart, "{:L(de):{Num:N2}}", &args, ""),
+            "the German key"
+        );
+        assert_eq!(
+            format_args_culture(&smart, "{:L:{Num:N2}}", &args, ""),
+            "the invariant key"
+        );
+    }
+
+    #[test]
+    fn the_isolated_render_keeps_the_collection_index() {
+        // .NET holds the collection index in a `static`, which no
+        // `FormatDetails` of its own can hide, so `{Index}` inside the isolated
+        // render is the item's index (probed: looks up "0", then "1").
+        let smart = smart_with(HashMapLocalizationProvider::from_triples([
+            ("", "0", "first"),
+            ("", "1", "second"),
+        ]));
+        let args = Value::List(vec![Value::List(vec![Value::from("a"), Value::from("b")])]);
+        assert_eq!(
+            format_args_culture(&smart, "{0:list:{:L:{Index}}|,}", &args, ""),
+            "first,second"
         );
     }
 

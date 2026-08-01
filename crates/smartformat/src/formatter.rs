@@ -669,6 +669,7 @@ impl SmartFormatter {
             smart: self,
             args: arg_list,
             culture,
+            culture_override: Cell::new(None),
             base: &format.raw,
             collection_index: Cell::new(NO_COLLECTION_INDEX),
         };
@@ -704,7 +705,21 @@ pub const NO_COLLECTION_INDEX: i32 = -1;
 struct Engine<'a> {
     smart: &'a SmartFormatter,
     args: &'a [Value],
+    /// The culture the call was made with (.NET `FormatDetails.Provider`),
+    /// until [`culture_override`](Self::culture_override) replaces it.
     culture: &'a CultureData,
+    /// The culture a formatter switched to with
+    /// [`FormattingInfo::set_culture`], which belongs to the whole call because
+    /// .NET's `FormatDetails` does.
+    ///
+    /// A `Cell<&'a CultureData>` would say the same thing in one field, but it
+    /// would make `Engine<'a>` *invariant* in `'a`, and the engine leans on its
+    /// covariance: [`FormattingInfo::format_as_child`] renders a `Format` that
+    /// outlives nothing but the call — a translation out of a parse cache —
+    /// through a `FormattingInfo` shorter-lived than the engine it borrows.
+    /// `&'static` is what [`fmt::culture`](crate::fmt::culture) hands out, so
+    /// the split costs a caller nothing.
+    culture_override: Cell<Option<&'static CultureData>>,
     /// The whole template, quoted by error messages (.NET
     /// `FormatItem.BaseString`).
     base: &'a str,
@@ -723,6 +738,12 @@ struct Engine<'a> {
 }
 
 impl<'e> Engine<'e> {
+    /// The culture in force right now: the one the call was made with, or the
+    /// one a formatter switched to.
+    fn culture(&self) -> &'e CultureData {
+        self.culture_override.get().unwrap_or(self.culture)
+    }
+
     /// .NET `Evaluator.WriteFormat`. `scopes` holds the current value of every
     /// enclosing format, innermost last.
     fn write_format<'v>(
@@ -1169,8 +1190,37 @@ impl<'a> FormattingInfo<'a> {
         self.alignment
     }
 
+    /// The culture this placeholder formats with (.NET
+    /// `FormatDetails.Provider`, when it is a `CultureInfo`).
+    ///
+    /// It is the culture the format call was made with until a formatter
+    /// changes it with [`set_culture`](Self::set_culture).
     pub fn culture(&self) -> &'a CultureData {
-        self.engine.culture
+        self.engine.culture()
+    }
+
+    /// Sets the [`culture`](Self::culture) for the rest of this format call.
+    ///
+    /// .NET's `LocalizationFormatter` does exactly this — `formattingInfo
+    /// .FormatDetails.Provider = cultureInfo` — and `FormatDetails` belongs to
+    /// the whole call rather than to the placeholder, so `{:L(de):…}` switches
+    /// the culture for *every later placeholder of the template*, not only for
+    /// the placeholders of the localized string. Probed against 3.6.1:
+    /// `Format(en-US, "{0:N2}|{1:L(de):WeTranslateText}|{0:N2}", 1234.5, "")`
+    /// is `1,234.50|Wir übersetzen Text|1.234,50`.
+    ///
+    /// Nothing puts the old culture back, as nothing does in .NET; a formatter
+    /// that wants the change to be local saves and restores it the way
+    /// [`set_collection_index`](Self::set_collection_index) is bracketed. The
+    /// change dies with the format call: the next one starts from its own
+    /// culture again, and so does an isolated render started by
+    /// [`format_to_isolated_string`](Self::format_to_isolated_string).
+    ///
+    /// The culture is `&'static` because that is what
+    /// [`fmt::culture::get`](crate::fmt::culture::get) hands out; a caller who
+    /// built a [`CultureData`] of their own leaks it or keeps it in a `static`.
+    pub fn set_culture(&mut self, culture: &'static CultureData) {
+        self.engine.culture_override.set(Some(culture));
     }
 
     pub fn settings(&self) -> &'a SmartSettings {
@@ -1311,6 +1361,65 @@ impl<'a> FormattingInfo<'a> {
     ) -> Result<(), Error> {
         let current = self.current;
         self.write_child(format, &[current, value], alignment)
+    }
+
+    /// Renders `format` against `value` into a string of its own, with none of
+    /// this call's context but its registries — .NET's
+    /// `FormatDetailsPool.Instance.Get().Initialize(_formatter, format,
+    /// InitializationObject.ObjectList, null, zsOutput)`, the brand-new
+    /// `FormatDetails` `LocalizationFormatter` builds to turn a format with
+    /// nested placeholders into a lookup key.
+    ///
+    /// What "isolated" means, probed against 3.6.1:
+    ///
+    /// * the output is fresh, and is returned rather than appended;
+    /// * there are **no positional arguments** — `{:L(es):{0}}` with one
+    ///   argument fails with `No source extension could handle the selector
+    ///   named "0"`;
+    /// * the **scope chain is reset** to `value` alone, so `{Inner:L:{Outer}}`
+    ///   cannot see an `Outer` that only the root argument has;
+    /// * errors are handled by [`SmartSettings::format_error_action`] inside
+    ///   the isolated render, so under [`ErrorAction::Ignore`] a failing
+    ///   placeholder contributes nothing to the key rather than failing the
+    ///   call;
+    /// * the base string and every error position still refer to the *original*
+    ///   template, which is where `format`'s items were parsed from.
+    ///
+    /// The alignment is this placeholder's, as .NET's `Initialize` takes it
+    /// from `format.ParentPlaceholder`: `{,10:L:pa{B}}` builds its key from a
+    /// padded `pa` and a padded `B` (probed).
+    ///
+    /// One deliberate divergence: .NET passes `null` for the new
+    /// `FormatDetails`' provider, which sends every culture-sensitive
+    /// placeholder inside the isolated render to the ambient
+    /// `CultureInfo.CurrentCulture`. There is no ambient culture here, so the
+    /// render uses [`culture`](Self::culture) — the call's, or whatever
+    /// [`set_culture`](Self::set_culture) last put there. See DESIGN.md,
+    /// "Known divergences".
+    pub fn format_to_isolated_string(
+        &self,
+        format: &Format,
+        value: &Value,
+    ) -> Result<String, Error> {
+        let engine = Engine {
+            smart: self.engine.smart,
+            // .NET `InitializationObject.ObjectList`, an empty argument list.
+            args: &[],
+            culture: self.engine.culture(),
+            // A `{:L(x):…}` inside the isolated render switches *its* culture,
+            // not the outer call's, exactly as .NET's separate `FormatDetails`
+            // does.
+            culture_override: Cell::new(None),
+            base: self.engine.base,
+            // Not part of `FormatDetails` in .NET at all: the collection index
+            // lives in a `static`, so an isolated render inside a list still
+            // sees the item's index and `{0:list:{:L:{Index}}|,}` looks up
+            // `0` and `1` (probed).
+            collection_index: Cell::new(self.engine.collection_index.get()),
+        };
+        let mut output = String::new();
+        engine.write_format(format, &[value], self.alignment, &mut output)?;
+        Ok(output)
     }
 
     /// Renders `format` with `pushed` appended to this placeholder's scope
