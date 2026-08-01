@@ -377,6 +377,8 @@ fn dotnet_type_name(value: &Value) -> &'static str {
         Value::Map(_) => "System.Collections.Generic.Dictionary`2[System.String,System.Object]",
         #[cfg(feature = "time")]
         Value::DateTime(_) => "System.DateTime",
+        #[cfg(feature = "time")]
+        Value::TimeSpan(_) => "System.TimeSpan",
     }
 }
 

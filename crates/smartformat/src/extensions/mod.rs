@@ -8,6 +8,7 @@ pub mod conditional;
 #[cfg(feature = "regex-formatters")]
 pub mod ismatch;
 pub mod list;
+pub mod localization;
 pub mod null;
 #[cfg(feature = "plural")]
 pub mod plural;
@@ -15,6 +16,8 @@ pub mod plural;
 pub mod plural_rules;
 pub mod substring;
 pub mod template;
+#[cfg(feature = "time")]
+pub mod time;
 
 use std::fmt;
 

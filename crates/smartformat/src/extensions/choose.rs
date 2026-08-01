@@ -288,6 +288,10 @@ fn value_text(value: &Value, info: &FormattingInfo<'_>) -> (String, Matchable) {
         ),
         Value::List(_) => ("<list>".to_owned(), Matchable::No),
         Value::Map(_) => ("<map>".to_owned(), Matchable::No),
+        // Interim until TimeFormatter lands (M4): stringification comes with
+        // the .NET TimeSpan format support.
+        #[cfg(feature = "time")]
+        Value::TimeSpan(_) => ("<TimeSpan>".to_owned(), Matchable::No),
     }
 }
 

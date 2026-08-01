@@ -31,6 +31,15 @@ pub struct SmartSettings {
     /// the parser; [`SmartFormatter::with_parser_settings`](crate::SmartFormatter::with_parser_settings)
     /// takes it from the parser settings instead, like the error action.
     pub string_format_compatibility: bool,
+    /// The moment "now" means for time-relative formatting (`TimeFormatter`
+    /// on a `DateTime`, date conditions in `ConditionalFormatter`).
+    ///
+    /// `None` reads the system's local time when a template needs it, which is
+    /// what .NET's `SystemTime.Now` does by default; `Some` pins it, like
+    /// .NET's `SystemTime.SetDateTimeNow` (used by every golden so output is
+    /// deterministic).
+    #[cfg(feature = "time")]
+    pub now: Option<jiff::civil::DateTime>,
     /// The character alignment pads with (.NET
     /// `FormatterSettings.AlignmentFillCharacter`).
     pub alignment_fill_character: char,
@@ -44,6 +53,8 @@ impl Default for SmartSettings {
             format_error_action: ErrorAction::default(),
             case_sensitive: CaseSensitivity::default(),
             string_format_compatibility: false,
+            #[cfg(feature = "time")]
+            now: None,
             alignment_fill_character: ' ',
         }
     }

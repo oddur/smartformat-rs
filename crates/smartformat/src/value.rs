@@ -22,6 +22,11 @@ pub enum Value {
     /// kind. Zoned datetimes (`DateTimeOffset`) may come later.
     #[cfg(feature = "time")]
     DateTime(jiff::civil::DateTime),
+    /// A duration, like a .NET `TimeSpan`. .NET ticks are 100 ns; a
+    /// [`jiff::SignedDuration`] counts whole nanoseconds, so every `TimeSpan`
+    /// is representable exactly.
+    #[cfg(feature = "time")]
+    TimeSpan(jiff::SignedDuration),
 }
 
 /// Conversion into a [`Value`], implemented by hand or via
@@ -244,6 +249,20 @@ impl<T: ToSmartValue, S> From<HashMap<String, T, S>> for Value {
 impl ToSmartValue for jiff::civil::DateTime {
     fn to_smart_value(&self) -> Value {
         Value::DateTime(*self)
+    }
+}
+
+#[cfg(feature = "time")]
+impl ToSmartValue for jiff::SignedDuration {
+    fn to_smart_value(&self) -> Value {
+        Value::TimeSpan(*self)
+    }
+}
+
+#[cfg(feature = "time")]
+impl From<jiff::SignedDuration> for Value {
+    fn from(v: jiff::SignedDuration) -> Self {
+        Value::TimeSpan(v)
     }
 }
 

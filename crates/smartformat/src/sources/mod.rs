@@ -21,6 +21,7 @@ mod default_source;
 mod list;
 mod map;
 mod string;
+pub mod variables;
 
 pub use default_source::DefaultSource;
 pub use list::ListSource;
