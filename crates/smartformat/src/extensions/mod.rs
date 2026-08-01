@@ -8,6 +8,7 @@ pub mod conditional;
 #[cfg(feature = "regex-formatters")]
 pub mod ismatch;
 pub mod list;
+pub mod localization;
 pub mod null;
 #[cfg(feature = "plural")]
 pub mod plural;
@@ -27,6 +28,7 @@ pub use conditional::ConditionalFormatter;
 #[cfg(feature = "regex-formatters")]
 pub use ismatch::{IsMatchFormatter, RegexOptions};
 pub use list::ListFormatter;
+pub use localization::{HashMapLocalizationProvider, LocalizationFormatter, LocalizationProvider};
 pub use null::NullFormatter;
 #[cfg(feature = "plural")]
 pub use plural::PluralLocalizationFormatter;
