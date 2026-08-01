@@ -641,9 +641,11 @@ fn value_text<'v>(value: &'v Value, info: &FormattingInfo<'_>) -> Option<Cow<'v,
     let culture = info.culture();
     match value {
         Value::Null | Value::List(_) | Value::Map(_) => None,
-        // Interim until TimeFormatter lands (M4).
+        // .NET `TimeSpan.ToString()`, which is culture-independent.
         #[cfg(feature = "time")]
-        Value::TimeSpan(_) => None,
+        Value::TimeSpan(value) => Some(Cow::Owned(crate::extensions::time::timespan_to_string(
+            value,
+        ))),
         Value::String(text) => Some(Cow::Borrowed(text.as_str())),
         // .NET `bool.ToString()`.
         Value::Bool(true) => Some(Cow::Borrowed("True")),

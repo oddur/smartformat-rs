@@ -1282,15 +1282,14 @@ impl Formatter for DefaultFormatter {
                 position,
                 date::INVALID_SPEC_MESSAGE,
             )?),
-            // Interim until TimeFormatter lands (M4): .NET renders a TimeSpan
-            // through its own c/g/G formats, which arrive with that port.
+            // .NET `TimeSpan` is `ISpanFormattable` too, with its own standard
+            // specifiers: `c` (and its aliases `t` and `T`), `g` and `G`.
             #[cfg(feature = "time")]
-            Value::TimeSpan(_) => {
-                return Err(info.formatting_error(
-                    "TimeSpan formatting lands with the TimeFormatter port",
-                    info.error_position(),
-                ))
-            }
+            Value::TimeSpan(v) => Cow::Owned(spec_result(
+                crate::extensions::time::format_timespan(v, spec, info.culture()),
+                position,
+                crate::extensions::time::INVALID_SPEC_MESSAGE,
+            )?),
             // A deliberate divergence: .NET falls back to `object.ToString()`
             // and renders the CLR type name (`System.Object[]`,
             // `System.Collections.Generic.Dictionary`2[...]`), which is never
