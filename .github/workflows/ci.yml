@@ -36,5 +36,7 @@ jobs:
         with:
           toolchain: 1.75.0
       - uses: Swatinem/rust-cache@v2
+      # Library only (no --all-targets): rust-version promises the crates
+      # build as dependencies; dev-dependencies like criterion may need newer.
       - name: Check on the minimum supported Rust version
-        run: cargo check --workspace --all-features --all-targets
+        run: cargo check --workspace --all-features
