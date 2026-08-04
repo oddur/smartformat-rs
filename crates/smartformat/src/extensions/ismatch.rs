@@ -342,7 +342,7 @@ impl fmt::Debug for RegexOptions {
 ///
 /// .NET compiles the pattern on every call; this port compiles each pattern
 /// once and keeps it, which is the same rendering and much less of it. See
-/// [`compiled`](Self::compiled).
+/// `compiled`.
 pub struct IsMatchFormatter {
     name: String,
     split_char: char,

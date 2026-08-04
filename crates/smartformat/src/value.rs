@@ -150,7 +150,7 @@ impl ToSmartValue for String {
 }
 
 /// The one concrete `From` that is not
-/// [`impl_from_via_to_smart_value`](impl_from_via_to_smart_value): it takes
+/// `impl_from_via_to_smart_value!`: it takes
 /// the string it is given rather than cloning it, which delegating to
 /// `to_smart_value(&self)` could not do.
 impl From<String> for Value {
