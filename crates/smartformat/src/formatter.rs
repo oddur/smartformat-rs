@@ -42,6 +42,11 @@ static NULL: Value = Value::Null;
 /// array is eight pointers.
 const INLINE_SCOPES: usize = 8;
 
+/// The least room a render asks for, whatever the template's own length is.
+/// See [`SmartFormatter::format_parsed_with_culture`], which sizes the output
+/// buffer with it.
+const MIN_OUTPUT: usize = 16;
+
 // ---------------------------------------------------------------------------
 // Formatter extensions
 // ---------------------------------------------------------------------------
@@ -668,7 +673,14 @@ impl SmartFormatter {
             base: &format.raw,
             collection_index: Cell::new(NO_COLLECTION_INDEX),
         };
-        let mut output = String::new();
+        // The rendered text is the template's literals plus whatever the
+        // placeholders write, so the template's own length is a fair guess at
+        // it, and one allocation beats the four or five a `String` growing
+        // from empty costs. Undershooting only costs the growth that would
+        // have happened anyway; the floor is there because a template that is
+        // nearly all placeholder — `{0:N2}` renders longer than it is written
+        // — would otherwise reallocate for the sake of a few bytes.
+        let mut output = String::with_capacity(format.raw.len().max(MIN_OUTPUT));
         engine.write_format(format, &[current], 0, &mut output)?;
         Ok(output)
     }
@@ -1550,6 +1562,9 @@ impl Formatter for DefaultFormatter {
         // Counting them walks the whole template ahead of the placeholder, and
         // only an error ever reads the number, so it is counted lazily.
         let position = || info.engine.utf16_position(info.error_position());
+        // The digits of an integer written with no specifier at all, which is
+        // the commonest placeholder there is after a plain string.
+        let mut digits = [0u8; INT_DIGITS];
         // Borrowed wherever the text already exists, so the common
         // string / null / bool cases allocate nothing per placeholder.
         //
@@ -1564,16 +1579,28 @@ impl Formatter for DefaultFormatter {
             // .NET bool is not IFormattable, so the spec is ignored.
             Value::Bool(true) => Cow::Borrowed("True"),
             Value::Bool(false) => Cow::Borrowed("False"),
-            Value::Int(v) => Cow::Owned(spec_result(
-                number::format_number(Number::Int(*v), spec, info.culture()),
-                position,
-                number::INVALID_SPEC_MESSAGE,
-            )?),
-            Value::UInt(v) => Cow::Owned(spec_result(
-                number::format_number(Number::UInt(*v), spec, info.culture()),
-                position,
-                number::INVALID_SPEC_MESSAGE,
-            )?),
+            Value::Int(v) => match int_text(
+                &mut digits,
+                v.unsigned_abs(),
+                *v < 0,
+                spec,
+                info.culture().number.negative_sign,
+            ) {
+                Some(text) => Cow::Borrowed(text),
+                None => Cow::Owned(spec_result(
+                    number::format_number(Number::Int(*v), spec, info.culture()),
+                    position,
+                    number::INVALID_SPEC_MESSAGE,
+                )?),
+            },
+            Value::UInt(v) => match int_text(&mut digits, *v, false, spec, "") {
+                Some(text) => Cow::Borrowed(text),
+                None => Cow::Owned(spec_result(
+                    number::format_number(Number::UInt(*v), spec, info.culture()),
+                    position,
+                    number::INVALID_SPEC_MESSAGE,
+                )?),
+            },
             Value::Float(v) => Cow::Owned(spec_result(
                 number::format_number(Number::Float(*v), spec, info.culture()),
                 position,
@@ -1621,6 +1648,57 @@ impl Formatter for DefaultFormatter {
     }
 }
 
+/// Room for the 20 digits of a `u64` and a negative sign, which is at most the
+/// four bytes of a right-to-left mark and a dash.
+const INT_DIGITS: usize = 32;
+
+/// An integer with *no* specifier, rendered into `buffer` instead of onto the
+/// heap, or `None` when there is a specifier to obey.
+///
+/// This is not a second number formatter: it is the one case
+/// [`format_number`](number::format_number) itself special-cases — its `G`/`G0`
+/// integer path, `Number.FormatInt32`'s in .NET — which is the culture's
+/// negative sign in front of the decimal digits, and nothing else. Every
+/// specifier, and every value that is not an integer, goes to `fmt::number` as
+/// before. Reaching it costs two `String`s per placeholder (the digits, then
+/// the digits behind the sign), and `{Count}` is far too common a placeholder
+/// to pay that for.
+fn int_text<'b>(
+    buffer: &'b mut [u8; INT_DIGITS],
+    magnitude: u64,
+    negative: bool,
+    spec: &str,
+    negative_sign: &str,
+) -> Option<&'b str> {
+    if !spec.is_empty() {
+        return None;
+    }
+
+    let mut start = INT_DIGITS;
+    let mut rest = magnitude;
+    loop {
+        start -= 1;
+        buffer[start] = b'0' + (rest % 10) as u8;
+        rest /= 10;
+        if rest == 0 {
+            break;
+        }
+    }
+
+    if negative {
+        let sign = negative_sign.as_bytes();
+        // A sign longer than the buffer's slack cannot happen with the culture
+        // data this crate ships; a caller who built their own falls back to
+        // the heap rather than to a panic.
+        start = start.checked_sub(sign.len())?;
+        buffer[start..start + sign.len()].copy_from_slice(sign);
+    }
+
+    // The digits are ASCII and the sign came from a `&str`, so this only ever
+    // walks the bytes it just wrote.
+    std::str::from_utf8(&buffer[start..]).ok()
+}
+
 /// Turns a spec failure into an [`Error`]. A spec that is not valid .NET at
 /// all carries .NET's own `FormatException` message, which is what
 /// [`ErrorAction::OutputErrorInResult`] writes; a spec that is valid .NET but
@@ -1644,4 +1722,68 @@ fn spec_result(
             position: position(),
         },
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The integer fast path of [`DefaultFormatter`] must render exactly what
+    /// [`fmt::number`](crate::fmt::number) would have: it exists to skip the
+    /// two `String`s that path allocates, not to render anything of its own.
+    ///
+    /// The cultures are the three shapes of negative sign the shipped data has
+    /// — a hyphen, a minus sign (`sv`), and an Arabic letter mark before a
+    /// hyphen (`ar-SA`) — since the sign is the only part of an integer with
+    /// no specifier that a culture can change.
+    #[test]
+    fn the_integer_fast_path_renders_what_the_number_formatter_does() {
+        let smart = SmartFormatter::default();
+        let format = smart.parse("{0}").expect("`{0}` parses");
+
+        for culture_name in ["", "de-DE", "sv", "ar-SA"] {
+            let culture = culture::get(culture_name).expect("a shipped culture");
+            for value in [0i64, 1, -1, 7, -1234567890, i64::MAX, i64::MIN] {
+                let args = Value::List(vec![Value::Int(value)]);
+                assert_eq!(
+                    smart
+                        .format_parsed_with_culture(&format, &args, culture)
+                        .expect("an integer renders"),
+                    number::format_number(Number::Int(value), "", culture)
+                        .expect("the empty spec is valid"),
+                    "{value} in {culture_name:?}"
+                );
+            }
+            for value in [0u64, 1, u64::MAX] {
+                let args = Value::List(vec![Value::UInt(value)]);
+                assert_eq!(
+                    smart
+                        .format_parsed_with_culture(&format, &args, culture)
+                        .expect("an integer renders"),
+                    number::format_number(Number::UInt(value), "", culture)
+                        .expect("the empty spec is valid"),
+                    "{value} in {culture_name:?}"
+                );
+            }
+        }
+    }
+
+    /// The buffer holds the widest `u64` and every negative sign the shipped
+    /// culture data has; a sign no culture has is declined rather than
+    /// truncated, and the caller falls back to the heap.
+    #[test]
+    fn the_buffer_holds_a_whole_integer_or_declines() {
+        let mut buffer = [0u8; INT_DIGITS];
+        assert_eq!(
+            int_text(&mut buffer, u64::MAX, true, "", "\u{061c}-"),
+            Some("\u{061c}-18446744073709551615")
+        );
+        // 20 digits leave 12 bytes, which a 13-byte sign does not fit in.
+        assert_eq!(
+            int_text(&mut buffer, u64::MAX, true, "", &"-".repeat(13)),
+            None
+        );
+        // A specifier is nobody's business here, whatever the value is.
+        assert_eq!(int_text(&mut buffer, 1, false, "N2", "-"), None);
+    }
 }

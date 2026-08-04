@@ -100,8 +100,8 @@ where
         .collect()
 }
 
-/// Resolves a selector against the groups of `groups`, a port of
-/// `PersistentVariablesSource.TryEvaluateSelector`.
+/// Steps 1 and 2 of the selector resolution both sources share, a port of the
+/// first half of `PersistentVariablesSource.TryEvaluateSelector`.
 ///
 /// The three steps are .NET's, in .NET's order:
 ///
@@ -114,6 +114,10 @@ where
 ///    unconditionally, whatever the current value is, so a group named `Length`
 ///    answers `{0.Length}` on a string before [`StringSource`] gets to see it
 ///    (probed against 3.6.1).
+///
+/// Steps 1 and 2 are here; step 3 is the caller's, because the two sources
+/// hand a registered group out differently — [`PersistentVariablesSource`]
+/// lends it, [`GlobalVariablesSource`] can only copy it out of its lock.
 ///
 /// Both lookups are exact, ordinal comparisons: .NET reaches for a plain
 /// `Dictionary<string, …>` with the default comparer, and never consults
@@ -149,26 +153,23 @@ where
 ///
 /// [`StringSource`]: super::StringSource
 /// [`SmartSettings::case_sensitive`]: crate::SmartSettings::case_sensitive
-fn evaluate<'a>(groups: &VariablesGroup, info: SelectorInfo<'a>) -> Option<Cow<'a, Value>> {
+fn evaluate_current<'a>(
+    groups: &VariablesGroup,
+    info: &SelectorInfo<'a>,
+) -> Option<Cow<'a, Value>> {
     if let Some(null) = info.nullable_result() {
         return Some(null);
     }
 
     if let Value::Map(current) = info.current {
-        if descends_from_a_group(groups, &info) {
+        if descends_from_a_group(groups, info) {
             if let Some(value) = current.get(info.text()) {
                 return Some(Cow::Borrowed(value));
             }
         }
     }
 
-    // A registered group is cloned rather than borrowed: what a source returns
-    // is tied to the format call, not to the source, so there is no lifetime
-    // to lend it. Only the group itself is copied — the selector after it
-    // reads out of the copy without copying again.
-    groups
-        .get(info.text())
-        .map(|group| Cow::Owned(group.clone()))
+    None
 }
 
 /// Whether the current value can only have come out of a registered group:
@@ -293,8 +294,13 @@ impl Source for PersistentVariablesSource {
         Some(super::source_ranks::PERSISTENT_VARIABLES)
     }
 
-    fn try_evaluate_selector<'a>(&self, info: SelectorInfo<'a>) -> Option<Cow<'a, Value>> {
-        evaluate(&self.groups, info)
+    /// The source outlives the format call, so a registered group is *lent*
+    /// rather than copied: `{app.version}` borrows the group, then the leaf,
+    /// and the engine writes out of the source's own storage. .NET has nothing
+    /// to copy either — it hands out the reference its dictionary holds.
+    fn try_evaluate_selector<'a>(&'a self, info: SelectorInfo<'a>) -> Option<Cow<'a, Value>> {
+        evaluate_current(&self.groups, &info)
+            .or_else(|| self.groups.get(info.text()).map(Cow::Borrowed))
     }
 }
 
@@ -418,8 +424,18 @@ impl Source for GlobalVariablesSource {
         Some(super::source_ranks::GLOBAL_VARIABLES)
     }
 
-    fn try_evaluate_selector<'a>(&self, info: SelectorInfo<'a>) -> Option<Cow<'a, Value>> {
-        evaluate(&self.read(), info)
+    /// A registered group is copied, not lent: it lives behind the lock, and a
+    /// read guard cannot outlive this call. Only the group itself is copied —
+    /// the selector after it reads out of the copy without copying again.
+    /// [`PersistentVariablesSource`], which owns its groups outright, lends
+    /// them instead.
+    fn try_evaluate_selector<'a>(&'a self, info: SelectorInfo<'a>) -> Option<Cow<'a, Value>> {
+        let groups = self.read();
+        evaluate_current(&groups, &info).or_else(|| {
+            groups
+                .get(info.text())
+                .map(|group| Cow::Owned(group.clone()))
+        })
     }
 }
 

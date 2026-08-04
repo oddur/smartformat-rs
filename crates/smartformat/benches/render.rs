@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 
 use criterion::{criterion_group, criterion_main, Criterion};
 use smartformat::parsing::Format;
+use smartformat::sources::variables::{self, PersistentVariablesSource};
 use smartformat::{SmartFormatter, Value};
 use std::hint::black_box;
 
@@ -71,6 +72,23 @@ fn benches(c: &mut Criterion) {
     let list = cached(&smart, "{Items:list:{}|, |, and }");
     c.bench_function("render_list", |b| {
         b.iter(|| smart.format_parsed(black_box(&list), &args))
+    });
+
+    // A registered variables source, which resolves `{group.variable}` without
+    // the group being passed as an argument.
+    let mut with_variables = SmartFormatter::default();
+    with_variables.register_variables(PersistentVariablesSource::from_iter([(
+        "app",
+        variables::group([
+            ("name", Value::from("Acme")),
+            ("version", Value::from("1.4.2")),
+            ("vendor", Value::from("Globex")),
+        ]),
+    )]));
+    let no_args = Value::List(Vec::new());
+    let vars = cached(&with_variables, "{app.name} {app.version}");
+    c.bench_function("render_variables", |b| {
+        b.iter(|| with_variables.format_parsed(black_box(&vars), &no_args))
     });
 
     c.bench_function("format_oneshot", |b| {
