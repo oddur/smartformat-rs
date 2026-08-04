@@ -176,18 +176,72 @@ fn pattern_at(patterns: &[&'static str], index: u8) -> &'static str {
         .unwrap_or(patterns[0])
 }
 
+/// ASCII digits, which every digit sequence here is by construction.
+fn ascii(digits: &[u8]) -> &str {
+    std::str::from_utf8(digits).expect("digits are ASCII")
+}
+
+/// Appends `count` zeroes, in blocks rather than one `char` at a time — a
+/// precision of nine digits is legal, so this run can be long.
+fn push_zeros(out: &mut String, count: usize) {
+    const ZEROS: &str = "00000000000000000000000000000000";
+    let mut left = count;
+    while left > ZEROS.len() {
+        out.push_str(ZEROS);
+        left -= ZEROS.len();
+    }
+    out.push_str(&ZEROS[..left]);
+}
+
+/// Writes the decimal digits of `v` into the *end* of `dst`, returning where
+/// they start. `dst` needs room for 20 digits.
+fn write_digits_u64(dst: &mut [u8], mut v: u64) -> usize {
+    let mut at = dst.len();
+    loop {
+        at -= 1;
+        dst[at] = b'0' + (v % 10) as u8;
+        v /= 10;
+        if v == 0 {
+            return at;
+        }
+    }
+}
+
+/// Fills all of `dst` with the decimal digits of `v`, zero-padded on the left.
+fn write_padded_u64(dst: &mut [u8], mut v: u64) {
+    for slot in dst.iter_mut().rev() {
+        *slot = b'0' + (v % 10) as u8;
+        v /= 10;
+    }
+}
+
+/// Writes the decimal digits of `v` into the *end* of `dst`, returning where
+/// they start. `dst` needs room for 39 digits.
+fn write_digits_u128(dst: &mut [u8], mut v: u128) -> usize {
+    /// The largest power of ten a `u64` holds, so each step peels off a whole
+    /// chunk and the expensive 128-bit division runs at most twice.
+    const CHUNK: u128 = 10_000_000_000_000_000_000;
+    let mut at = dst.len();
+    while v > u128::from(u64::MAX) {
+        at -= 19;
+        write_padded_u64(&mut dst[at..at + 19], (v % CHUNK) as u64);
+        v /= CHUNK;
+    }
+    write_digits_u64(&mut dst[..at], v as u64)
+}
+
 /// `value.ToString("D<n>")`: magnitude zero-padded to `min_digits`, sign in
 /// front.
 fn int_to_dec_str(magnitude: u64, negative: bool, min_digits: u32, negative_sign: &str) -> String {
-    let digits = magnitude.to_string();
-    let mut out = String::new();
-    if negative {
-        out.push_str(negative_sign);
-    }
-    for _ in digits.len()..min_digits as usize {
-        out.push('0');
-    }
-    out.push_str(&digits);
+    let mut scratch = [0u8; 20];
+    let start = write_digits_u64(&mut scratch, magnitude);
+    let digits = &scratch[start..];
+    let pad = (min_digits as usize).saturating_sub(digits.len());
+    let sign = if negative { negative_sign } else { "" };
+    let mut out = String::with_capacity(sign.len() + pad + digits.len());
+    out.push_str(sign);
+    push_zeros(&mut out, pad);
+    out.push_str(ascii(digits));
     out
 }
 
@@ -200,30 +254,108 @@ fn int_to_radix_str(
     min_digits: u32,
     upper: bool,
 ) -> String {
-    let bits = if negative {
+    let mut bits = if negative {
         (magnitude as i64).wrapping_neg() as u64
     } else {
         magnitude
     };
-    let body = match (radix, upper) {
-        (16, true) => format!("{bits:X}"),
-        (16, false) => format!("{bits:x}"),
-        (2, _) => format!("{bits:b}"),
-        _ => unreachable!("only hex and binary have a radix specifier"),
+    let alphabet: &[u8; 16] = if upper {
+        b"0123456789ABCDEF"
+    } else {
+        b"0123456789abcdef"
     };
-    let mut out = String::new();
-    for _ in body.len()..min_digits as usize {
-        out.push('0');
+    debug_assert!(radix == 16 || radix == 2, "only hex and binary have a spec");
+    let shift = radix.trailing_zeros();
+    let mask = u64::from(radix - 1);
+    let mut scratch = [0u8; 64];
+    let mut at = scratch.len();
+    loop {
+        at -= 1;
+        scratch[at] = alphabet[(bits & mask) as usize];
+        bits >>= shift;
+        if bits == 0 {
+            break;
+        }
     }
-    out.push_str(&body);
+    let body = &scratch[at..];
+    let pad = (min_digits as usize).saturating_sub(body.len());
+    let mut out = String::with_capacity(pad + body.len());
+    push_zeros(&mut out, pad);
+    out.push_str(ascii(body));
     out
+}
+
+/// Room for every digit sequence a template is likely to produce: 20 digits
+/// for a `u64` magnitude, 39 for the widest expansion the 128-bit path below
+/// reaches, and enough beyond that to cover the exact expansion of a small
+/// fraction — `0.1` alone spans 56 digits. Only a value with a large binary
+/// exponent, whose expansion runs to hundreds of digits, spills to the heap.
+const INLINE_DIGITS: usize = 64;
+
+/// A digit sequence, ASCII, most significant first.
+enum Digits {
+    Inline {
+        buf: [u8; INLINE_DIGITS],
+        len: usize,
+    },
+    Heap(Vec<u8>),
+}
+
+impl Digits {
+    fn empty() -> Self {
+        Digits::Inline {
+            buf: [0; INLINE_DIGITS],
+            len: 0,
+        }
+    }
+
+    /// The digits of `scratch[start..]`, moved to the front of an inline
+    /// buffer — the writers above fill from the right.
+    fn from_tail(scratch: &[u8; INLINE_DIGITS], start: usize) -> Self {
+        let mut buf = *scratch;
+        buf.copy_within(start.., 0);
+        Digits::Inline {
+            buf,
+            len: INLINE_DIGITS - start,
+        }
+    }
+
+    fn as_slice(&self) -> &[u8] {
+        match self {
+            Digits::Inline { buf, len } => &buf[..*len],
+            Digits::Heap(digits) => digits,
+        }
+    }
+
+    fn as_mut_slice(&mut self) -> &mut [u8] {
+        match self {
+            Digits::Inline { buf, len } => &mut buf[..*len],
+            Digits::Heap(digits) => digits,
+        }
+    }
+
+    fn len(&self) -> usize {
+        self.as_slice().len()
+    }
+
+    fn truncate(&mut self, len: usize) {
+        match self {
+            Digits::Inline { len: current, .. } => *current = (*current).min(len),
+            Digits::Heap(digits) => digits.truncate(len),
+        }
+    }
+
+    fn pop_trailing_zeros(&mut self) {
+        let keep = self.as_slice().iter().rposition(|&d| d != b'0');
+        self.truncate(keep.map_or(0, |last| last + 1));
+    }
 }
 
 /// A value split into decimal digits and a scale, mirroring .NET's
 /// `NumberBuffer`: the value is `0.<digits> * 10^scale`, and `digits` is empty
 /// for zero.
 struct NumberBuffer {
-    digits: Vec<u8>,
+    digits: Digits,
     scale: i32,
     negative: bool,
     is_float: bool,
@@ -250,7 +382,8 @@ fn format_buffered(
         (_, None) => unreachable!("a non-float always has an integer form"),
     };
 
-    let mut out = String::new();
+    // One allocation covers every rendering that is not a wall of digits.
+    let mut out = String::with_capacity(32);
     match upper {
         'C' => {
             let decimals = precision.unwrap_or(u32::from(info.currency_decimal_digits)) as i32;
@@ -307,9 +440,11 @@ fn format_buffered(
 
 fn int_buffer(magnitude: u64, negative: bool) -> NumberBuffer {
     let digits = if magnitude == 0 {
-        Vec::new()
+        Digits::empty()
     } else {
-        magnitude.to_string().into_bytes()
+        let mut scratch = [0u8; INLINE_DIGITS];
+        let start = write_digits_u64(&mut scratch, magnitude);
+        Digits::from_tail(&scratch, start)
     };
     NumberBuffer {
         scale: digits.len() as i32,
@@ -319,23 +454,65 @@ fn int_buffer(magnitude: u64, negative: bool) -> NumberBuffer {
     }
 }
 
+/// A short ASCII sink, so the two places that need `core::fmt` do not have to
+/// allocate a `String` to read it back.
+struct Scratch {
+    buf: [u8; 48],
+    len: usize,
+}
+
+impl Scratch {
+    fn new() -> Self {
+        Scratch {
+            buf: [0; 48],
+            len: 0,
+        }
+    }
+
+    fn as_str(&self) -> &str {
+        ascii(&self.buf[..self.len])
+    }
+}
+
+impl std::fmt::Write for Scratch {
+    fn write_str(&mut self, text: &str) -> std::fmt::Result {
+        let end = self.len + text.len();
+        // `LowerExp` on an `f64` never exceeds 24 bytes, and neither does the
+        // round-trip probe, so this is unreachable.
+        let room = self.buf.get_mut(self.len..end).ok_or(std::fmt::Error)?;
+        room.copy_from_slice(text.as_bytes());
+        self.len = end;
+        Ok(())
+    }
+}
+
 /// The shortest digits that round-trip back to `v`, which is what `G` without
 /// a precision asks for. Rust's `LowerExp` produces exactly those.
 fn shortest_float_buffer(v: f64) -> NumberBuffer {
     if v == 0.0 {
         return NumberBuffer {
-            digits: Vec::new(),
+            digits: Digits::empty(),
             scale: 0,
             negative: v.is_sign_negative(),
             is_float: true,
         };
     }
-    let repr = format!("{:e}", v.abs());
-    let (mantissa, exponent) = repr.split_once('e').expect("LowerExp emits an exponent");
-    let digits: Vec<u8> = mantissa.bytes().filter(u8::is_ascii_digit).collect();
+    use std::fmt::Write;
+    let mut repr = Scratch::new();
+    write!(repr, "{:e}", v.abs()).expect("LowerExp on a finite f64 is short");
+    let (mantissa, exponent) = repr
+        .as_str()
+        .split_once('e')
+        .expect("LowerExp emits an exponent");
+    let mut scratch = [0u8; INLINE_DIGITS];
+    let mut len = 0;
+    for digit in mantissa.bytes().filter(u8::is_ascii_digit) {
+        scratch[len] = digit;
+        len += 1;
+    }
     let exponent: i32 = exponent.parse().expect("LowerExp emits a decimal exponent");
     let mut buf = NumberBuffer {
-        digits,
+        digits: Digits::Inline { buf: scratch, len },
         scale: exponent + 1,
         negative: v.is_sign_negative(),
         is_float: true,
@@ -346,9 +523,9 @@ fn shortest_float_buffer(v: f64) -> NumberBuffer {
     if may_land_on_midpoint(v) {
         let mut even = exact_float_buffer(v);
         let len = buf.digits.len();
-        if even.digits.len() == len + 1 && even.digits[len] == b'5' {
+        if even.digits.len() == len + 1 && even.digits.as_slice()[len] == b'5' {
             round(&mut even, len as i32);
-            if even.digits != buf.digits && round_trips(&even, v) {
+            if even.digits.as_slice() != buf.digits.as_slice() && round_trips(&even, v) {
                 buf = even;
             }
         }
@@ -377,9 +554,13 @@ fn may_land_on_midpoint(v: f64) -> bool {
 }
 
 fn round_trips(buf: &NumberBuffer, v: f64) -> bool {
-    let digits = std::str::from_utf8(&buf.digits).expect("digits are ASCII");
+    use std::fmt::Write;
+    let digits = ascii(buf.digits.as_slice());
     let exponent = buf.scale - buf.digits.len() as i32;
-    format!("{digits}e{exponent}")
+    let mut probe = Scratch::new();
+    write!(probe, "{digits}e{exponent}").expect("a rounded shortest form is short");
+    probe
+        .as_str()
         .parse::<f64>()
         .is_ok_and(|parsed| parsed == v.abs())
 }
@@ -391,7 +572,7 @@ fn exact_float_buffer(v: f64) -> NumberBuffer {
     let negative = v.is_sign_negative();
     let biased_exponent = ((bits >> 52) & 0x7ff) as i32;
     let raw_mantissa = bits & ((1u64 << 52) - 1);
-    let (mantissa, exponent) = if biased_exponent == 0 {
+    let (mut mantissa, mut exponent) = if biased_exponent == 0 {
         (raw_mantissa, -1074)
     } else {
         (raw_mantissa | (1u64 << 52), biased_exponent - 1075)
@@ -399,13 +580,31 @@ fn exact_float_buffer(v: f64) -> NumberBuffer {
 
     if mantissa == 0 {
         return NumberBuffer {
-            digits: Vec::new(),
+            digits: Digits::empty(),
             scale: 0,
             negative,
             is_float: true,
         };
     }
 
+    // The trailing zero bits of the mantissa cancel against the negative
+    // exponent — `m * 2^-k` is `(m >> s) * 2^-(k - s)` — which is the whole
+    // difference between the 42 fraction digits `1234.5` asks for as raw
+    // IEEE fields and the single one it actually has. The expansion is the
+    // same either way, so this only decides how much work computing it takes.
+    if exponent < 0 {
+        let shift = mantissa.trailing_zeros().min(exponent.unsigned_abs());
+        mantissa >>= shift;
+        exponent += shift as i32;
+    }
+
+    short_float_buffer(mantissa, exponent, negative)
+        .unwrap_or_else(|| big_float_buffer(mantissa, exponent, negative))
+}
+
+/// The exact expansion of `mantissa * 2^exponent` for any exponent, at the
+/// cost of big-integer arithmetic and a heap buffer.
+fn big_float_buffer(mantissa: u64, exponent: i32, negative: bool) -> NumberBuffer {
     let mut value = BigDecimal::new(mantissa);
     let fraction_digits = if exponent >= 0 {
         value.mul_pow2(exponent as u32);
@@ -415,11 +614,9 @@ fn exact_float_buffer(v: f64) -> NumberBuffer {
         exponent.unsigned_abs() as i32
     };
 
-    let mut digits = value.into_digits();
+    let mut digits = value.digits();
     let scale = digits.len() as i32 - fraction_digits;
-    while digits.last() == Some(&b'0') {
-        digits.pop();
-    }
+    digits.pop_trailing_zeros();
     NumberBuffer {
         digits,
         scale,
@@ -428,33 +625,86 @@ fn exact_float_buffer(v: f64) -> NumberBuffer {
     }
 }
 
-/// An arbitrary-precision non-negative integer in base 10^9, least
-/// significant limb first.
+/// `5^k` for every `k` whose power still fits a `u128`; `5^56` does not.
+const POW5: [u128; 56] = {
+    let mut table = [1u128; 56];
+    let mut k = 1;
+    while k < 56 {
+        table[k] = table[k - 1] * 5;
+        k += 1;
+    }
+    table
+};
+
+/// The exact expansion of `mantissa * 2^exponent` when it fits 128 bits, which
+/// covers every value whose binary exponent is small once the mantissa's
+/// trailing zeros are cancelled — that is, essentially every number a template
+/// formats. `None` asks for the big-integer path.
+fn short_float_buffer(mantissa: u64, exponent: i32, negative: bool) -> Option<NumberBuffer> {
+    let mantissa = u128::from(mantissa);
+    let (value, fraction_digits) = if exponent >= 0 {
+        let shift = exponent as u32;
+        if shift > mantissa.leading_zeros() {
+            return None;
+        }
+        (mantissa << shift, 0)
+    } else {
+        let power = POW5.get(exponent.unsigned_abs() as usize)?;
+        (
+            mantissa.checked_mul(*power)?,
+            exponent.unsigned_abs() as i32,
+        )
+    };
+
+    let mut scratch = [0u8; INLINE_DIGITS];
+    let start = write_digits_u128(&mut scratch, value);
+    let mut digits = Digits::from_tail(&scratch, start);
+    let scale = digits.len() as i32 - fraction_digits;
+    digits.pop_trailing_zeros();
+    Some(NumberBuffer {
+        digits,
+        scale,
+        negative,
+        is_float: true,
+    })
+}
+
+/// A non-negative integer in base 10^9, least significant limb first. The
+/// widest value that ever lands here is `2^52 * 5^1074` — 767 digits, or 86
+/// limbs — so the limbs live in a fixed array and the expansion costs no
+/// allocation at all.
 struct BigDecimal {
-    limbs: Vec<u32>,
+    limbs: [u32; MAX_LIMBS],
+    len: usize,
 }
 
 const LIMB_BASE: u64 = 1_000_000_000;
+const MAX_LIMBS: usize = 87;
 
 impl BigDecimal {
     fn new(mut v: u64) -> Self {
-        let mut limbs = Vec::new();
+        let mut value = BigDecimal {
+            limbs: [0; MAX_LIMBS],
+            len: 0,
+        };
         while v > 0 {
-            limbs.push((v % LIMB_BASE) as u32);
+            value.limbs[value.len] = (v % LIMB_BASE) as u32;
+            value.len += 1;
             v /= LIMB_BASE;
         }
-        BigDecimal { limbs }
+        value
     }
 
     fn mul_small(&mut self, factor: u32) {
         let mut carry: u64 = 0;
-        for limb in &mut self.limbs {
+        for limb in &mut self.limbs[..self.len] {
             let product = u64::from(*limb) * u64::from(factor) + carry;
             *limb = (product % LIMB_BASE) as u32;
             carry = product / LIMB_BASE;
         }
         while carry > 0 {
-            self.limbs.push((carry % LIMB_BASE) as u32);
+            self.limbs[self.len] = (carry % LIMB_BASE) as u32;
+            self.len += 1;
             carry /= LIMB_BASE;
         }
     }
@@ -477,16 +727,32 @@ impl BigDecimal {
         }
     }
 
-    fn into_digits(self) -> Vec<u8> {
-        let mut out = Vec::new();
-        for (i, limb) in self.limbs.iter().enumerate().rev() {
-            if i + 1 == self.limbs.len() {
-                out.extend_from_slice(limb.to_string().as_bytes());
-            } else {
-                out.extend_from_slice(format!("{limb:09}").as_bytes());
+    fn digits(&self) -> Digits {
+        let Some((&top, rest)) = self.limbs[..self.len].split_last() else {
+            return Digits::empty();
+        };
+        let mut head = [0u8; 10];
+        let start = write_digits_u64(&mut head, u64::from(top));
+        let head = &head[start..];
+        let total = head.len() + rest.len() * 9;
+
+        // Nine digits per limb after the first, most significant limb first.
+        let mut digits = if total <= INLINE_DIGITS {
+            Digits::Inline {
+                buf: [0; INLINE_DIGITS],
+                len: total,
             }
+        } else {
+            Digits::Heap(vec![0; total])
+        };
+        let out = digits.as_mut_slice();
+        out[..head.len()].copy_from_slice(head);
+        let mut at = head.len();
+        for &limb in rest.iter().rev() {
+            write_padded_u64(&mut out[at..at + 9], u64::from(limb));
+            at += 9;
         }
-        out
+        digits
     }
 }
 
@@ -496,18 +762,20 @@ fn round(buf: &mut NumberBuffer, pos: i32) {
     let mut kept = pos.clamp(0, buf.digits.len() as i32) as usize;
 
     if pos >= 0 && should_round_up(buf, pos as usize) {
-        while kept > 0 && buf.digits[kept - 1] == b'9' {
+        let digits = buf.digits.as_mut_slice();
+        while kept > 0 && digits[kept - 1] == b'9' {
             kept -= 1;
         }
         if kept > 0 {
-            buf.digits[kept - 1] += 1;
+            digits[kept - 1] += 1;
         } else {
             buf.scale += 1;
-            buf.digits[0] = b'1';
+            buf.digits.as_mut_slice()[0] = b'1';
             kept = 1;
         }
     } else {
-        while kept > 0 && buf.digits[kept - 1] == b'0' {
+        let digits = buf.digits.as_slice();
+        while kept > 0 && digits[kept - 1] == b'0' {
             kept -= 1;
         }
     }
@@ -523,7 +791,8 @@ fn round(buf: &mut NumberBuffer, pos: i32) {
 }
 
 fn should_round_up(buf: &NumberBuffer, pos: usize) -> bool {
-    let Some(&digit) = buf.digits.get(pos) else {
+    let digits = buf.digits.as_slice();
+    let Some(&digit) = digits.get(pos) else {
         return false;
     };
     if !buf.is_float {
@@ -535,37 +804,41 @@ fn should_round_up(buf: &NumberBuffer, pos: usize) -> bool {
         // The digits are exact, so a bare trailing `5` is a true midpoint and
         // IEEE rounding takes it to the even neighbour.
         std::cmp::Ordering::Equal => {
-            buf.digits[pos + 1..].iter().any(|&d| d != b'0')
-                || (pos > 0 && (buf.digits[pos - 1] - b'0') % 2 == 1)
+            digits[pos + 1..].iter().any(|&d| d != b'0')
+                || (pos > 0 && (digits[pos - 1] - b'0') % 2 == 1)
         }
     }
 }
 
-/// Integral digits split into groups, left to right, per .NET
-/// `NumberGroupSizes`: the last size repeats, and a `0` size ends grouping.
-fn grouping(int_len: usize, group_sizes: Option<&[u8]>) -> Vec<usize> {
-    let sizes = match group_sizes {
-        Some(sizes) if !sizes.is_empty() && sizes[0] != 0 => sizes,
-        _ => return vec![int_len],
-    };
-
-    let mut groups = Vec::new();
+/// How many groups the integral digits split into and how many digits the
+/// leading one takes, per .NET `NumberGroupSizes`: the sizes apply right to
+/// left, the last one repeats, and a `0` size ends grouping. Counting the
+/// groups instead of listing them keeps this allocation-free; emitting them
+/// left to right then walks the sizes backwards.
+fn group_layout(int_len: usize, sizes: &[u8]) -> (usize, usize) {
     let mut remaining = int_len;
     let mut index = 0;
-    while remaining > 0 {
+    let mut groups = 1;
+    loop {
         let size = usize::from(sizes[index]);
         if size == 0 || size >= remaining {
-            groups.push(remaining);
-            break;
+            return (groups, remaining);
         }
-        groups.push(size);
         remaining -= size;
+        groups += 1;
         if index + 1 < sizes.len() {
             index += 1;
         }
     }
-    groups.reverse();
-    groups
+}
+
+/// Appends `count` digits starting at `from`, treating anything past the end
+/// of the sequence as a zero.
+fn push_digits(out: &mut String, digits: &[u8], from: usize, count: usize) {
+    let from = from.min(digits.len());
+    let available = (digits.len() - from).min(count);
+    out.push_str(ascii(&digits[from..from + available]));
+    push_zeros(out, count - available);
 }
 
 fn format_fixed(
@@ -576,38 +849,34 @@ fn format_fixed(
     s_decimal: &str,
     s_group: &str,
 ) {
+    let digits = buf.digits.as_slice();
     let int_len = buf.scale.max(0) as usize;
-    let mut next = int_len.min(buf.digits.len());
+    let next = int_len.min(digits.len());
 
-    if int_len > 0 {
-        let mut emitted = 0;
-        for (i, group) in grouping(int_len, group_sizes).iter().enumerate() {
-            if i > 0 {
+    match group_sizes {
+        _ if int_len == 0 => out.push('0'),
+        Some(sizes) if !sizes.is_empty() && sizes[0] != 0 => {
+            let (groups, leading) = group_layout(int_len, sizes);
+            push_digits(out, digits, 0, leading);
+            let mut emitted = leading;
+            for group in (0..groups - 1).rev() {
                 out.push_str(s_group);
-            }
-            for _ in 0..*group {
-                out.push(char::from(*buf.digits.get(emitted).unwrap_or(&b'0')));
-                emitted += 1;
+                let size = usize::from(sizes[group.min(sizes.len() - 1)]);
+                push_digits(out, digits, emitted, size);
+                emitted += size;
             }
         }
-    } else {
-        out.push('0');
+        _ => push_digits(out, digits, 0, int_len),
     }
 
     if n_max_digits > 0 {
         out.push_str(s_decimal);
         if buf.scale < 0 {
             let zeroes = (-buf.scale).min(n_max_digits);
-            for _ in 0..zeroes {
-                out.push('0');
-            }
+            push_zeros(out, zeroes as usize);
             n_max_digits -= zeroes;
         }
-        while n_max_digits > 0 {
-            out.push(char::from(*buf.digits.get(next).unwrap_or(&b'0')));
-            next += 1;
-            n_max_digits -= 1;
-        }
+        push_digits(out, digits, next, n_max_digits as usize);
     }
 }
 
@@ -682,26 +951,17 @@ fn format_grouped(out: &mut String, buf: &NumberBuffer, n_max_digits: i32, info:
 fn format_scientific(
     out: &mut String,
     buf: &NumberBuffer,
-    mut n_max_digits: i32,
+    n_max_digits: i32,
     info: &NumberFormat,
     exp_char: char,
 ) {
-    out.push(char::from(*buf.digits.first().unwrap_or(&b'0')));
+    let digits = buf.digits.as_slice();
+    push_digits(out, digits, 0, 1);
     if n_max_digits != 1 {
         out.push_str(info.decimal_separator);
     }
-    let mut next = 1;
-    n_max_digits -= 1;
-    while n_max_digits > 0 {
-        out.push(char::from(*buf.digits.get(next).unwrap_or(&b'0')));
-        next += 1;
-        n_max_digits -= 1;
-    }
-    let exponent = if buf.digits.is_empty() {
-        0
-    } else {
-        buf.scale - 1
-    };
+    push_digits(out, digits, 1, (n_max_digits - 1).max(0) as usize);
+    let exponent = if digits.is_empty() { 0 } else { buf.scale - 1 };
     format_exponent(out, info, exponent, exp_char, 3);
 }
 
@@ -712,6 +972,7 @@ fn format_general(
     info: &NumberFormat,
     exp_char: char,
 ) {
+    let digits = buf.digits.as_slice();
     let mut dig_pos = buf.scale;
     let scientific = dig_pos > n_max_digits || dig_pos < -3;
     if scientific {
@@ -720,27 +981,16 @@ fn format_general(
 
     let mut next = 0;
     if dig_pos > 0 {
-        for _ in 0..dig_pos {
-            match buf.digits.get(next) {
-                Some(&digit) => {
-                    out.push(char::from(digit));
-                    next += 1;
-                }
-                None => out.push('0'),
-            }
-        }
+        next = digits.len().min(dig_pos as usize);
+        push_digits(out, digits, 0, dig_pos as usize);
     } else {
         out.push('0');
     }
 
-    if next < buf.digits.len() || dig_pos < 0 {
+    if next < digits.len() || dig_pos < 0 {
         out.push_str(info.decimal_separator);
-        for _ in dig_pos..0 {
-            out.push('0');
-        }
-        for &digit in &buf.digits[next..] {
-            out.push(char::from(digit));
-        }
+        push_zeros(out, dig_pos.min(0).unsigned_abs() as usize);
+        out.push_str(ascii(&digits[next..]));
     }
 
     if scientific {
@@ -761,11 +1011,11 @@ fn format_exponent(
     } else {
         out.push_str(info.positive_sign);
     }
-    let digits = value.unsigned_abs().to_string();
-    for _ in digits.len()..min_digits {
-        out.push('0');
-    }
-    out.push_str(&digits);
+    let mut scratch = [0u8; 20];
+    let start = write_digits_u64(&mut scratch, u64::from(value.unsigned_abs()));
+    let digits = &scratch[start..];
+    push_zeros(out, min_digits.saturating_sub(digits.len()));
+    out.push_str(ascii(digits));
 }
 
 #[cfg(test)]
@@ -779,6 +1029,91 @@ mod tests {
 
     fn float(v: f64, spec: &str) -> String {
         format_number(Number::Float(v), spec, invariant()).expect("standard spec")
+    }
+
+    /// The limb array is sized for the widest expansion any `f64` has, which
+    /// belongs to the largest denormal: an odd 52-bit mantissa over 5^1074.
+    /// Running short of limbs would panic, so pin the count.
+    #[test]
+    fn the_widest_expansion_fits_the_limb_array() {
+        let widest = f64::from_bits((1u64 << 52) - 1);
+        let buf = exact_float_buffer(widest);
+        assert_eq!(buf.digits.len(), 767);
+        assert_eq!(buf.scale, -307);
+        assert_eq!(float(widest, "E5"), "2.22507E-308");
+        // The other end: the widest integral expansion, from `f64::MAX`.
+        assert_eq!(exact_float_buffer(f64::MAX).digits.len(), 309);
+    }
+
+    /// The 128-bit fast path and the big-integer path have to agree digit for
+    /// digit, since which one runs is invisible in the output.
+    #[test]
+    fn the_short_expansion_agrees_with_the_big_integer_one() {
+        // A xorshift walk over the bit patterns, so the sample covers every
+        // exponent range rather than the values a literal would suggest.
+        let mut state = 0x2545_f491_4f6c_dd1du64;
+        let mut checked = 0;
+        for _ in 0..200_000 {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            let v = f64::from_bits(state);
+            if !v.is_finite() || v == 0.0 {
+                continue;
+            }
+            let bits = v.to_bits();
+            let biased = ((bits >> 52) & 0x7ff) as i32;
+            let raw = bits & ((1u64 << 52) - 1);
+            let (mut mantissa, mut exponent) = if biased == 0 {
+                (raw, -1074)
+            } else {
+                (raw | (1u64 << 52), biased - 1075)
+            };
+            if mantissa == 0 {
+                continue;
+            }
+            if exponent < 0 {
+                let shift = mantissa.trailing_zeros().min(exponent.unsigned_abs());
+                mantissa >>= shift;
+                exponent += shift as i32;
+            }
+            let Some(short) = short_float_buffer(mantissa, exponent, false) else {
+                continue;
+            };
+            let big = big_float_buffer(mantissa, exponent, false);
+            assert_eq!(
+                ascii(short.digits.as_slice()),
+                ascii(big.digits.as_slice()),
+                "digits of {v:e}"
+            );
+            assert_eq!(short.scale, big.scale, "scale of {v:e}");
+            checked += 1;
+        }
+        assert!(checked > 1000, "only {checked} values took the fast path");
+
+        // And directly over the fast path's own boundary: every exponent it
+        // accepts, against mantissas that straddle the 128-bit limit.
+        for exponent in -60i32..80 {
+            for mantissa in [
+                1u64,
+                3,
+                12345,
+                (1 << 52) + 1,
+                (1 << 53) - 1,
+                u64::from(u32::MAX),
+            ] {
+                let Some(short) = short_float_buffer(mantissa, exponent, false) else {
+                    continue;
+                };
+                let big = big_float_buffer(mantissa, exponent, false);
+                assert_eq!(
+                    ascii(short.digits.as_slice()),
+                    ascii(big.digits.as_slice()),
+                    "digits of {mantissa} * 2^{exponent}"
+                );
+                assert_eq!(short.scale, big.scale, "scale of {mantissa} * 2^{exponent}");
+            }
+        }
     }
 
     #[test]
