@@ -25,6 +25,8 @@
 //! );
 //! ```
 
+use std::borrow::Cow;
+
 use crate::error::Error;
 use crate::formatter::{Formatter, FormattingInfo, NO_COLLECTION_INDEX};
 use crate::parsing::chars::NULLABLE_OPERATOR;
@@ -272,11 +274,18 @@ fn write_spacer(
 
 /// The literal text of a format (.NET `Format.GetLiteralText`), which resolves
 /// the escape sequences and throws where one resolves to nothing.
-fn literal_text(info: &FormattingInfo<'_>, format: &Format) -> Result<String, Error> {
+///
+/// A spacer is written once per gap, and the ordinary one — `, ` — is a single
+/// literal whose resolved text is already the answer, so that case borrows
+/// rather than building the string again per gap.
+fn literal_text<'f>(info: &FormattingInfo<'_>, format: &'f Format) -> Result<Cow<'f, str>, Error> {
     if let Some((message, _)) = format.first_escape_error() {
         return Err(info.plain_error_here(message));
     }
-    Ok(format.literal_text())
+    if let [FormatItem::Literal(literal)] = format.items.as_slice() {
+        return Ok(Cow::Borrowed(&literal.text));
+    }
+    Ok(Cow::Owned(format.literal_text()))
 }
 
 /// A format holding one placeholder that has no selectors and `format` as its

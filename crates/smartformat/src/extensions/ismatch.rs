@@ -101,8 +101,10 @@
 //!
 //! [fancy-regex]: https://docs.rs/fancy-regex
 
-use std::collections::BTreeMap;
+use std::borrow::Cow;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt;
+use std::sync::{Arc, RwLock};
 
 use fancy_regex::{Regex, RegexBuilder, RuntimeError};
 
@@ -338,8 +340,9 @@ impl fmt::Debug for RegexOptions {
 /// [`set_can_auto_detect`](Self::set_can_auto_detect) turns auto-detection on
 /// (.NET `CanAutoDetect`, which defaults to `false` here as it does there).
 ///
-/// The pattern is compiled on every call, as .NET's `new Regex(…)` is.
-#[derive(Debug, Clone)]
+/// .NET compiles the pattern on every call; this port compiles each pattern
+/// once and keeps it, which is the same rendering and much less of it. See
+/// [`compiled`](Self::compiled).
 pub struct IsMatchFormatter {
     name: String,
     split_char: char,
@@ -347,6 +350,59 @@ pub struct IsMatchFormatter {
     regex_options: RegexOptions,
     placeholder_name_for_matches: String,
     backtrack_limit: usize,
+    /// The patterns compiled so far, under the options they were compiled
+    /// with. See [`compiled`](Self::compiled).
+    cache: RwLock<PatternCache>,
+}
+
+/// A pattern compiled, or the message of the error that compiling it produced.
+///
+/// The failure is cached like the success: it is just as repeatable, and
+/// re-deriving it every render would cost a compile to say the same thing.
+/// Only the message is kept, so that each call still positions the error at
+/// its own placeholder.
+type Compiled = Arc<Result<Regex, String>>;
+
+/// Compiled patterns, keyed first by the knobs that go into building one and
+/// then by the pattern itself.
+///
+/// Two levels rather than one tuple key, so that a lookup that hits allocates
+/// nothing: a `HashMap<String, _>` can be probed with a `&str`, and a
+/// `HashMap<(RegexOptions, usize, String), _>` cannot. Both knobs are settable
+/// at any time, and a formatter whose options changed must not answer from the
+/// entries compiled under the old ones.
+type PatternCache = HashMap<(RegexOptions, usize), HashMap<String, Compiled>>;
+
+impl Clone for IsMatchFormatter {
+    /// Clones the compiled patterns along with the settings: they are what
+    /// those settings mean, and each is behind an [`Arc`].
+    fn clone(&self) -> Self {
+        Self {
+            name: self.name.clone(),
+            split_char: self.split_char,
+            can_auto_detect: self.can_auto_detect,
+            regex_options: self.regex_options,
+            placeholder_name_for_matches: self.placeholder_name_for_matches.clone(),
+            backtrack_limit: self.backtrack_limit,
+            cache: RwLock::new(self.read_cache().clone()),
+        }
+    }
+}
+
+impl fmt::Debug for IsMatchFormatter {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("IsMatchFormatter")
+            .field("name", &self.name)
+            .field("split_char", &self.split_char)
+            .field("can_auto_detect", &self.can_auto_detect)
+            .field("regex_options", &self.regex_options)
+            .field(
+                "placeholder_name_for_matches",
+                &self.placeholder_name_for_matches,
+            )
+            .field("backtrack_limit", &self.backtrack_limit)
+            .finish_non_exhaustive()
+    }
 }
 
 impl IsMatchFormatter {
@@ -361,6 +417,7 @@ impl IsMatchFormatter {
             regex_options: RegexOptions::NONE,
             placeholder_name_for_matches: DEFAULT_PLACEHOLDER_NAME_FOR_MATCHES.to_owned(),
             backtrack_limit: DEFAULT_BACKTRACK_LIMIT,
+            cache: RwLock::new(PatternCache::new()),
         }
     }
 
@@ -441,14 +498,50 @@ impl IsMatchFormatter {
         self.backtrack_limit = backtrack_limit;
     }
 
-    /// The compiled pattern, or the error .NET's `new Regex(…)` would throw as
-    /// an `ArgumentException` — with fancy-regex's message, which is the only
-    /// one we have.
-    fn compile(&self, info: &FormattingInfo<'_>, pattern: &str) -> Result<Regex, Error> {
+    /// The compiled pattern, or the message of the error .NET's `new Regex(…)`
+    /// would throw as an `ArgumentException` — fancy-regex's, which is the
+    /// only one we have.
+    ///
+    /// .NET builds a `Regex` per call and this does not: compiling is the
+    /// expensive half of a match, a template renders the same handful of
+    /// patterns over and over, and the result depends on nothing but the
+    /// pattern and the two knobs it is cached under. What renders is unchanged
+    /// — the same pattern compiles to the same matcher, and a pattern that
+    /// does not compile answers with the same message.
+    fn compiled(&self, pattern: &str) -> Compiled {
+        let knobs = (self.regex_options, self.backtrack_limit);
+        if let Some(hit) = self
+            .read_cache()
+            .get(&knobs)
+            .and_then(|by_pattern| by_pattern.get(pattern))
+        {
+            return Arc::clone(hit);
+        }
+
+        let compiled = Arc::new(self.build(pattern));
+        self.cache
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .entry(knobs)
+            .or_default()
+            .entry(pattern.to_owned())
+            .or_insert_with(|| Arc::clone(&compiled));
+        compiled
+    }
+
+    /// The cache for reading. A poisoned lock is recovered from rather than
+    /// propagated: nothing here can panic while the lock is held, and a cache
+    /// is not state a panic can have left inconsistent.
+    fn read_cache(&self) -> std::sync::RwLockReadGuard<'_, PatternCache> {
+        self.cache
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    /// One compile, the body [`compiled`](Self::compiled) memoizes.
+    fn build(&self, pattern: &str) -> Result<Regex, String> {
         let flags = self.regex_options.inline_flags().map_err(|option| {
-            info.plain_error_here(&format!(
-                "RegexOptions.{option} has no equivalent in the regex engine of this port"
-            ))
+            format!("RegexOptions.{option} has no equivalent in the regex engine of this port")
         })?;
 
         // The flags go in front of the pattern rather than into the builder,
@@ -456,14 +549,15 @@ impl IsMatchFormatter {
         // start of a pattern applies to all of it, alternation branches
         // included, and opens no capturing group, so the numbering `{m[i]}`
         // reads stays as the author wrote it.
-        RegexBuilder::new(&format!("{flags}{pattern}"))
+        let source = if flags.is_empty() {
+            Cow::Borrowed(pattern)
+        } else {
+            Cow::Owned(format!("{flags}{pattern}"))
+        };
+        RegexBuilder::new(&source)
             .backtrack_limit(self.backtrack_limit)
             .build()
-            .map_err(|error| {
-                info.plain_error_here(&format!(
-                    "Invalid regular expression \"{pattern}\": {error}"
-                ))
-            })
+            .map_err(|error| format!("Invalid regular expression \"{pattern}\": {error}"))
     }
 
     /// Renders the "matched" format, .NET's loop over `formats[0].Items`.
@@ -570,7 +664,11 @@ impl Formatter for IsMatchFormatter {
             }
         };
 
-        let regex = self.compile(info, expression)?;
+        let compiled = self.compiled(expression);
+        let regex = match compiled.as_ref() {
+            Ok(regex) => regex,
+            Err(issue) => return Err(info.plain_error_here(issue)),
+        };
         let captures = regex.captures(&value).map_err(|error| {
             // The stand-in for .NET's `RegexMatchTimeoutException` names the
             // budget it ran out of, since that is the knob to turn.

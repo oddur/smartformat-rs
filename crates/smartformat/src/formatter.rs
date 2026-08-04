@@ -1546,7 +1546,9 @@ impl Formatter for DefaultFormatter {
         // format as the specifier, not the escape-resolved `Format.ToString()`.
         let spec = format.map(|format| format.raw.as_str()).unwrap_or_default();
         // .NET reports the index in UTF-16 code units, as everywhere else.
-        let position = info.engine.utf16_position(info.error_position());
+        // Counting them walks the whole template ahead of the placeholder, and
+        // only an error ever reads the number, so it is counted lazily.
+        let position = || info.engine.utf16_position(info.error_position());
         // Borrowed wherever the text already exists, so the common
         // string / null / bool cases allocate nothing per placeholder.
         let text: Cow<'_, str> = match current {
@@ -1594,14 +1596,14 @@ impl Formatter for DefaultFormatter {
             Value::List(_) => {
                 return Err(Error::Format {
                     message: "Default formatting of a list is not supported; use a formatter such as \"list\"".to_owned(),
-                    position,
+                    position: position(),
                 })
             }
             Value::Map(_) => {
                 return Err(Error::Format {
                     message: "Default formatting of a map is not supported; select a value from it"
                         .to_owned(),
-                    position,
+                    position: position(),
                 })
             }
         };
@@ -1615,20 +1617,23 @@ impl Formatter for DefaultFormatter {
 /// all carries .NET's own `FormatException` message, which is what
 /// [`ErrorAction::OutputErrorInResult`] writes; a spec that is valid .NET but
 /// outside our subset carries ours, since .NET has no error to mirror there.
+///
+/// `position` is a closure because it is only ever read on an error path, and
+/// counting UTF-16 code units walks the template.
 fn spec_result(
     result: Result<String, FormatSpecError>,
-    position: usize,
+    position: impl FnOnce() -> usize,
     invalid_message: &str,
 ) -> Result<String, Error> {
     result.map_err(|error| match error {
         FormatSpecError::Unsupported(spec) => Error::UnsupportedSpec {
             message: format!("unsupported format spec: {spec}"),
             spec,
-            position,
+            position: position(),
         },
         FormatSpecError::Invalid(_) => Error::Format {
             message: invalid_message.to_owned(),
-            position,
+            position: position(),
         },
     })
 }

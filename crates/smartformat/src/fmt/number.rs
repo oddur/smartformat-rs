@@ -132,13 +132,13 @@ fn parse_spec(spec: &str) -> Result<(char, Option<u32>), FormatSpecError> {
     let Some(letter) = chars.next() else {
         return Ok(('G', None));
     };
-    let digits = spec.as_bytes()[1..].to_vec();
+    let digits = &spec.as_bytes()[1..];
     if !letter.is_ascii_alphabetic() || !digits.iter().all(u8::is_ascii_digit) {
         return Err(FormatSpecError::Unsupported(spec.to_owned()));
     }
 
     let mut precision: u32 = 0;
-    for &b in &digits {
+    for &b in digits {
         if precision >= 100_000_000 {
             return Err(FormatSpecError::Invalid(spec.to_owned()));
         }

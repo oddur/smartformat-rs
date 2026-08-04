@@ -466,14 +466,18 @@ impl LocalizationFormatter {
     /// `ParseFormat` throws its `ParsingErrors` straight through
     /// `TryEvaluateFormat`.
     fn parsed(&self, localized: &str) -> Result<Arc<Format>, Error> {
+        // A hit is the common case, and the case-sensitive key is the string
+        // itself, so the lookup borrows and only an insert owns.
         let key = self.cache_key(localized);
-        if let Some(cached) = self.cache().get(&key) {
+        if let Some(cached) = self.cache().get(key.as_ref()) {
             return Ok(Arc::clone(cached));
         }
         let parsed = Arc::new(self.parser.parse(localized)?);
         // Another thread may have parsed the same string in the meantime; its
         // format renders the same, so whichever landed first stays.
-        Ok(Arc::clone(self.cache_mut().entry(key).or_insert(parsed)))
+        Ok(Arc::clone(
+            self.cache_mut().entry(key.into_owned()).or_insert(parsed),
+        ))
     }
 
     /// The cache key of a localized string: the string itself, or its
@@ -484,10 +488,10 @@ impl LocalizationFormatter {
     /// .NET folds with `StringComparer.OrdinalIgnoreCase`, whose *simple*
     /// mapping leaves `ß` alone where `to_uppercase` writes `SS`; two
     /// translations that differ only in that collide here and not there.
-    fn cache_key(&self, localized: &str) -> String {
+    fn cache_key<'k>(&self, localized: &'k str) -> Cow<'k, str> {
         match self.case_sensitivity {
-            CaseSensitivity::CaseSensitive => localized.to_owned(),
-            CaseSensitivity::CaseInsensitive => localized.to_uppercase(),
+            CaseSensitivity::CaseSensitive => Cow::Borrowed(localized),
+            CaseSensitivity::CaseInsensitive => Cow::Owned(localized.to_uppercase()),
         }
     }
 
