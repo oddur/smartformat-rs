@@ -22,6 +22,20 @@
 //! The formatter auto-detects, so a placeholder that names no formatter but
 //! whose format holds a `|` is handled here — `{0:part(s)|car}` renders
 //! `part(s)` for `true`.
+//!
+//! Unlike [`ChooseFormatter`](super::ChooseFormatter) and
+//! [`PluralLocalizationFormatter`](super::plural::PluralLocalizationFormatter),
+//! this formatter never raises a .NET `FormattingException`: every one of its
+//! errors is a plain `FormatException`, `ArgumentOutOfRangeException` or
+//! `OverflowException` that the evaluator catches, so every one of them goes
+//! through [`FormattingInfo::plain_error_here`] and carries no
+//! `Error parsing format string: … at {index}` envelope —
+//! `ErrorAction::OutputErrorInResult` writes the inner exception's message,
+//! which is the bare text. Probed against 3.6.1: `{0:cond:Yes}` outputs
+//! `Formatter named 'cond' requires at least 2 format parameters.` and nothing
+//! else. (Only `ErrorAction::Error` sees the envelope in .NET, since the
+//! evaluator adds it while rethrowing; see `Engine::handle_format_error`,
+//! which does not, for every wrapped error alike.)
 
 use std::cmp::Ordering;
 
@@ -170,17 +184,9 @@ impl Formatter for ConditionalFormatter {
 
         // Check whether the arguments can be handled by this formatter.
         if parameters.len() < 2 {
-            let name = &info.placeholder().formatter_name;
-            // Auto detection calls just return a failure to evaluate.
-            if name.is_empty() {
-                return Ok(false);
-            }
-            // .NET throws a plain `FormatException` when the formatter was
-            // called explicitly.
-            return Err(formatting_error(
-                info,
-                &format!("Formatter named '{name}' requires at least 2 format parameters."),
-            ));
+            return info.decline_or_error(|name| {
+                format!("Formatter named '{name}' requires at least 2 format parameters.")
+            });
         }
 
         let current = info.current();
@@ -195,7 +201,7 @@ impl Formatter for ConditionalFormatter {
             Value::UInt(value) => Some(Decimal::from_i128(i128::from(*value))),
             Value::Float(value) => match Decimal::from_f64(*value) {
                 Some(number) => Some(number),
-                None => return Err(formatting_error(info, DECIMAL_OVERFLOW)),
+                None => return Err(info.plain_error_here(DECIMAL_OVERFLOW)),
             },
             _ => None,
         };
@@ -209,11 +215,11 @@ impl Formatter for ConditionalFormatter {
                 // complex conditions that all turn out false indexes past the
                 // end and throws.
                 if index >= param_count {
-                    return Err(formatting_error(info, INDEX_OUT_OF_RANGE));
+                    return Err(info.plain_error_here(INDEX_OUT_OF_RANGE));
                 }
 
                 match try_evaluate_condition(split_part(info, &parameters[index])?, &number)
-                    .map_err(|issue| formatting_error(info, &issue))?
+                    .map_err(|issue| info.plain_error_here(&issue))?
                 {
                     Some((condition_was_true, output)) => {
                         // If the conditional statement was true, then we can
@@ -254,7 +260,7 @@ impl Formatter for ConditionalFormatter {
                     // value above `int.MaxValue` throws rather than picking
                     // the last parameter.
                     let floor = i32::try_from(number.floor())
-                        .map_err(|_| formatting_error(info, INT32_OVERFLOW))?;
+                        .map_err(|_| info.plain_error_here(INT32_OVERFLOW))?;
                     (floor as usize).min(param_count - 1)
                 }
             }
@@ -279,25 +285,6 @@ impl Formatter for ConditionalFormatter {
         info.format_as_child(split_part(info, &parameters[param_index])?, current)?;
         Ok(true)
     }
-}
-
-/// An error raised by the formatter itself, positioned at the start of the
-/// placeholder's format.
-///
-/// Unlike [`ChooseFormatter`](super::ChooseFormatter) and
-/// [`PluralLocalizationFormatter`](super::plural::PluralLocalizationFormatter),
-/// this formatter never raises a .NET `FormattingException`: every one of its
-/// errors is a plain `FormatException`, `ArgumentOutOfRangeException` or
-/// `OverflowException` that the evaluator catches. That is why the message
-/// carries no `Error parsing format string: … at {index}` envelope —
-/// `ErrorAction::OutputErrorInResult` writes the inner exception's message,
-/// which is the bare text. Probed against 3.6.1: `{0:cond:Yes}` outputs
-/// `Formatter named 'cond' requires at least 2 format parameters.` and nothing
-/// else. (Only `ErrorAction::Error` sees the envelope in .NET, since the
-/// evaluator adds it while rethrowing; see `Engine::handle_format_error`,
-/// which does not, for every wrapped error alike.)
-fn formatting_error(info: &FormattingInfo<'_>, issue: &str) -> Error {
-    info.plain_error(issue, info.error_position())
 }
 
 // ---------------------------------------------------------------------------

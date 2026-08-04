@@ -73,7 +73,7 @@ use std::sync::{Arc, PoisonError, RwLock};
 
 use crate::fmt::culture::{self, CultureData};
 use crate::formatter::{Formatter, FormattingInfo};
-use crate::parsing::{Format, FormatItem, Parser};
+use crate::parsing::{Format, Parser};
 use crate::settings::CaseSensitivity;
 use crate::Error;
 
@@ -569,10 +569,9 @@ impl Formatter for LocalizationFormatter {
             // reported at the start of the format. The key quoted is the raw
             // text even when the nested-key lookup above was the one that
             // missed.
-            return Err(info.formatting_error(
-                &format!("No localized string found for '{key}'"),
-                info.error_position(),
-            ));
+            return Err(
+                info.formatting_error_here(&format!("No localized string found for '{key}'"))
+            );
         };
 
         let localized = self.parsed(&localized)?;
@@ -605,12 +604,8 @@ impl fmt::Debug for LocalizationFormatter {
 /// `ArgumentException` while `Format.ToString()` concatenates the items — so
 /// the first failing literal decides, and the message carries no envelope.
 fn raw_text(info: &FormattingInfo<'_>, format: &Format) -> Result<String, Error> {
-    for item in &format.items {
-        if let FormatItem::Literal(literal) = item {
-            if let Some(message) = &literal.escape_error {
-                return Err(info.plain_error(message, literal.start));
-            }
-        }
+    if let Some((message, start)) = format.first_escape_error() {
+        return Err(info.plain_error(message, start));
     }
     // `Display` writes exactly what .NET concatenates: `LiteralText.AsSpan()`
     // is escape-resolved, `Placeholder.AsSpan()` is the source text.

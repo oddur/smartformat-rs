@@ -125,6 +125,31 @@ impl Format {
         result
     }
 
+    /// The message of the first literal whose escape sequence resolves to
+    /// nothing, with the byte offset that literal starts at.
+    ///
+    /// .NET resolves the escape sequences while it concatenates a format's
+    /// items — `LiteralText.AsSpan()` inside `Format.ToString()` — and throws
+    /// at the first one that resolves to nothing. So anything that builds a
+    /// format's text without writing it, `Format.RawText` and
+    /// `Format.GetLiteralText` alike, asks this first.
+    ///
+    /// What the message becomes, and where it is reported, is the caller's:
+    /// the formatters that do this deliberately differ, some raising an escape
+    /// error and some a plain one, some at the literal and some at the
+    /// placeholder's [`error_position`]. This only finds the failing literal.
+    ///
+    /// [`error_position`]: crate::formatter::FormattingInfo::error_position
+    pub fn first_escape_error(&self) -> Option<(&str, usize)> {
+        self.items.iter().find_map(|item| match item {
+            FormatItem::Literal(literal) => literal
+                .escape_error
+                .as_deref()
+                .map(|message| (message, literal.start)),
+            FormatItem::Placeholder(_) => None,
+        })
+    }
+
     /// Splits this format on `separator` at the top nesting level, the way the
     /// `choose`, `cond` and `plural` formatters read their parts
     /// (.NET `Format.Split` over `SplitList`).

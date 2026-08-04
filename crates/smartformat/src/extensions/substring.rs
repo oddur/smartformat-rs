@@ -170,7 +170,7 @@ impl SubStringFormatter {
             _ => {}
         }
 
-        let out_of_range = || info.plain_error(OUT_OF_RANGE, info.error_position());
+        let out_of_range = || info.plain_error_here(OUT_OF_RANGE);
 
         // .NET `ReadOnlySpan<char>.Slice`, whose two overloads differ in the
         // bounds they check: with one parameter everything from the start index
@@ -218,20 +218,11 @@ impl Formatter for SubStringFormatter {
         };
         let is_string_or_null = matches!(current, Value::String(_) | Value::Null);
         if !is_string_or_null || (parameters.len() == 1 && parameters[0].is_empty()) {
-            let name = &info.placeholder().formatter_name;
-            // Auto detection calls just return a failure to evaluate.
-            if name.is_empty() {
-                return Ok(false);
-            }
-            // .NET throws a plain `FormatException` when the formatter was
-            // called explicitly, which reaches the output without the
-            // `Error parsing format string: …` envelope (probed against 3.6.1).
-            return Err(info.plain_error(
-                &format!(
+            return info.decline_or_error(|name| {
+                format!(
                     "Formatter named '{name}' requires at least 1 formatter option and a string? argument."
-                ),
-                info.error_position(),
-            ));
+                )
+            });
         }
 
         // Past the check above, a value that is not a string is a null one.
@@ -311,7 +302,7 @@ fn start_and_length(
 /// rendered with never reaches this call in .NET either.
 fn parse_int(info: &FormattingInfo<'_>, text: &str) -> Result<i32, Error> {
     // The message quotes the option as written, whitespace included (probed).
-    let invalid = || info.plain_error(&not_in_a_correct_format(text), info.error_position());
+    let invalid = || info.plain_error_here(&not_in_a_correct_format(text));
 
     let trimmed = text.trim_matches(is_dotnet_white);
     let (negative, digits) = match trimmed.strip_prefix('-') {
@@ -327,11 +318,11 @@ fn parse_int(info: &FormattingInfo<'_>, text: &str) -> Result<i32, Error> {
     for byte in digits.bytes() {
         value = value * 10 + i64::from(byte - b'0');
         if value > -i64::from(i32::MIN) {
-            return Err(info.plain_error(INT32_OVERFLOW, info.error_position()));
+            return Err(info.plain_error_here(INT32_OVERFLOW));
         }
     }
     let value = if negative { -value } else { value };
-    i32::try_from(value).map_err(|_| info.plain_error(INT32_OVERFLOW, info.error_position()))
+    i32::try_from(value).map_err(|_| info.plain_error_here(INT32_OVERFLOW))
 }
 
 // ---------------------------------------------------------------------------

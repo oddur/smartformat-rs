@@ -182,7 +182,7 @@ impl Formatter for ListFormatter {
             .map(|format| {
                 format
                     .split_max(self.split_char, MAX_SEPARATORS)
-                    .map_err(|error| info.plain_error(&error.to_string(), info.error_position()))
+                    .map_err(|error| info.plain_error_here(&error.to_string()))
             })
             .transpose()?;
 
@@ -192,22 +192,11 @@ impl Formatter for ListFormatter {
         let (parts, items) = match (parts, current) {
             (Some(parts), Value::List(items)) if parts.len() >= 2 => (parts, items),
             _ => {
-                let name = &info.placeholder().formatter_name;
-                // An auto-detection call just reports a failure to evaluate.
-                if name.is_empty() {
-                    return Ok(false);
-                }
-                // .NET throws a plain `FormatException` when the formatter was
-                // called explicitly, and the evaluator only wraps that on the
-                // way out, so the message carries no envelope: with
-                // `ErrorAction::OutputErrorInResult` this bare text is what
-                // lands in the result (probed).
-                return Err(info.plain_error(
-                    &format!(
+                return info.decline_or_error(|name| {
+                    format!(
                         "Formatter named '{name}' requires an IEnumerable argument and at least 2 format parameters."
-                    ),
-                    info.error_position(),
-                ));
+                    )
+                })
             }
         };
 
@@ -277,12 +266,8 @@ fn write_spacer(
 /// The literal text of a format (.NET `Format.GetLiteralText`), which resolves
 /// the escape sequences and throws where one resolves to nothing.
 fn literal_text(info: &FormattingInfo<'_>, format: &Format) -> Result<String, Error> {
-    for item in &format.items {
-        if let FormatItem::Literal(literal) = item {
-            if let Some(message) = &literal.escape_error {
-                return Err(info.plain_error(message, info.error_position()));
-            }
-        }
+    if let Some((message, _)) = format.first_escape_error() {
+        return Err(info.plain_error_here(message));
     }
     Ok(format.literal_text())
 }

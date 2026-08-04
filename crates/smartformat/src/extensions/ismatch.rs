@@ -450,12 +450,9 @@ impl IsMatchFormatter {
     /// one we have.
     fn compile(&self, info: &FormattingInfo<'_>, pattern: &str) -> Result<Regex, Error> {
         let flags = self.regex_options.inline_flags().map_err(|option| {
-            plain_error(
-                info,
-                &format!(
-                    "RegexOptions.{option} has no equivalent in the regex engine of this port"
-                ),
-            )
+            info.plain_error_here(&format!(
+                "RegexOptions.{option} has no equivalent in the regex engine of this port"
+            ))
         })?;
 
         // The flags go in front of the pattern rather than into the builder,
@@ -467,10 +464,9 @@ impl IsMatchFormatter {
             .backtrack_limit(self.backtrack_limit)
             .build()
             .map_err(|error| {
-                plain_error(
-                    info,
-                    &format!("Invalid regular expression \"{pattern}\": {error}"),
-                )
+                info.plain_error_here(&format!(
+                    "Invalid regular expression \"{pattern}\": {error}"
+                ))
             })
     }
 
@@ -495,7 +491,7 @@ impl IsMatchFormatter {
         for item in &matched.items {
             let child = parent
                 .substring(item.start(), item.end())
-                .map_err(|error| plain_error(info, &error.to_string()))?;
+                .map_err(|error| info.plain_error_here(&error.to_string()))?;
 
             // .NET compares `Selectors[0].RawText` with an ordinal `==`, so a
             // placeholder is magic only when the name is spelled exactly.
@@ -541,8 +537,7 @@ impl Formatter for IsMatchFormatter {
             // the like — so, as the default formatter does with the same
             // rendering, we fail loudly rather than match a CLR type name.
             if matches!(info.current(), Value::List(_) | Value::Map(_)) {
-                return Err(plain_error(
-                    info,
+                return Err(info.plain_error_here(
                     "Matching a list or a map with \"ismatch\" is not supported; select a value from it",
                 ));
             }
@@ -566,19 +561,9 @@ impl Formatter for IsMatchFormatter {
         let formats = match formats {
             Some(formats) if formats.len() == 2 => formats,
             _ => {
-                let name = &info.placeholder().formatter_name;
-                // Auto detection calls just return a failure to evaluate.
-                if name.is_empty() {
-                    return Ok(false);
-                }
-                // .NET throws a plain `FormatException` when the formatter was
-                // called explicitly, which the evaluator only wraps in a
-                // `FormattingException` while rethrowing — so the message
-                // carries no `Error parsing format string: …` envelope.
-                return Err(plain_error(
-                    info,
-                    &format!("Formatter named '{name}' requires at least 2 format options."),
-                ));
+                return info.decline_or_error(|name| {
+                    format!("Formatter named '{name}' requires at least 2 format options.")
+                })
             }
         };
 
@@ -593,7 +578,7 @@ impl Formatter for IsMatchFormatter {
                 ),
                 error => format!("Regular expression \"{expression}\" failed to match: {error}"),
             };
-            plain_error(info, &issue)
+            info.plain_error_here(&issue)
         })?;
 
         let Some(captures) = captures else {
@@ -665,13 +650,6 @@ fn value_text<'v>(value: &'v Value, info: &FormattingInfo<'_>) -> Option<Cow<'v,
             date::format_datetime(value, "", culture).unwrap_or_default(),
         )),
     }
-}
-
-/// An error .NET raises as a plain exception inside `TryEvaluateFormat` — and
-/// the ones this port raises where .NET raises nothing — positioned where the
-/// evaluator positions a formatter failure.
-fn plain_error(info: &FormattingInfo<'_>, issue: &str) -> Error {
-    info.plain_error(issue, info.error_position())
 }
 
 // ---------------------------------------------------------------------------

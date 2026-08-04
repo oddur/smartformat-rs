@@ -52,7 +52,7 @@ pub mod utility;
 
 use crate::fmt::culture::{named_culture_language, two_letter_iso_language_name};
 use crate::formatter::{Formatter, FormattingInfo};
-use crate::parsing::{Format, FormatItem};
+use crate::parsing::Format;
 use crate::value::{dotnet_type_name, Value};
 use crate::Error;
 
@@ -246,7 +246,7 @@ impl TimeFormatter {
             time_text_info,
             info.culture(),
         )
-        .map_err(|overflow| info.plain_error(&overflow.to_string(), info.error_position()))
+        .map_err(|overflow| info.plain_error_here(&overflow.to_string()))
     }
 
     /// .NET `GetTimeTextInfo`: the text of the language the options name, of
@@ -278,8 +278,7 @@ impl TimeFormatter {
             // .NET resolves the name through `CultureInfo.GetCultureInfo`,
             // which rejects a malformed one with a `CultureNotFoundException`
             // — a plain exception, so its message reaches the output bare.
-            named_culture_language(named)
-                .map_err(|message| info.plain_error(&message, info.error_position()))?
+            named_culture_language(named).map_err(|message| info.plain_error_here(&message))?
         };
 
         if let Some(text_info) = self.language(&language) {
@@ -387,22 +386,15 @@ impl Formatter for TimeFormatter {
 /// is rejected, so `{0:time:h\ours}` fails here rather than quietly parsing no
 /// options at all (probed against 3.6.1).
 fn raw_text(format: &Format, info: &FormattingInfo<'_>) -> Result<String, Error> {
-    let mut text = String::with_capacity(format.raw.len());
-    for item in &format.items {
-        match item {
-            FormatItem::Literal(literal) => {
-                if let Some(message) = &literal.escape_error {
-                    return Err(Error::Escape {
-                        message: message.clone(),
-                        position: info.error_position(),
-                    });
-                }
-                text.push_str(&literal.text);
-            }
-            FormatItem::Placeholder(placeholder) => text.push_str(&placeholder.raw),
-        }
+    if let Some((message, _)) = format.first_escape_error() {
+        return Err(Error::Escape {
+            message: message.to_owned(),
+            position: info.error_position(),
+        });
     }
-    Ok(text)
+    // `Display` writes exactly what .NET concatenates: `LiteralText.AsSpan()`
+    // is escape-resolved, `Placeholder.AsSpan()` is the source text.
+    Ok(format.to_string())
 }
 
 /// The format with its first item dropped, .NET's `format.Items.RemoveAt(0)`.

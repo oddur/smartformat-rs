@@ -180,22 +180,13 @@ impl Formatter for ChooseFormatter {
         // Check whether the arguments can be handled by this formatter.
         let formats = match formats {
             Some(formats) if formats.len() >= 2 => formats,
+            // Unlike the `FormattingException`s below, a formatter asked for
+            // by name that cannot deliver throws a plain `FormatException`, so
+            // this message carries no envelope.
             _ => {
-                let name = &info.placeholder().formatter_name;
-                // Auto detection calls just return a failure to evaluate.
-                if name.is_empty() {
-                    return Ok(false);
-                }
-                // .NET throws a plain `FormatException` when the formatter was
-                // called explicitly, and the evaluator only wraps that in a
-                // `FormattingException` on the way out. So, unlike the errors
-                // below, this one carries no `Error parsing format string: …`
-                // envelope: `ErrorAction::OutputErrorInResult` writes the inner
-                // exception's message, which is the bare text (probed).
-                return Err(info.plain_error(
-                    &format!("Formatter named '{name}' requires at least 2 format options."),
-                    info.error_position(),
-                ));
+                return info.decline_or_error(|name| {
+                    format!("Formatter named '{name}' requires at least 2 format options.")
+                })
             }
         };
 
@@ -203,24 +194,21 @@ impl Formatter for ChooseFormatter {
 
         // Validate the number of formats.
         if formats.len() < options.len() {
-            return Err(formatting_error(
-                info,
-                &format!("You must specify at least {} choices", options.len()),
-            ));
+            return Err(info.formatting_error_here(&format!(
+                "You must specify at least {} choices",
+                options.len()
+            )));
         }
         if formats.len() > options.len() + 1 {
-            return Err(formatting_error(
-                info,
-                &format!("You cannot specify more than {} choices", options.len() + 1),
-            ));
+            return Err(info.formatting_error_here(&format!(
+                "You cannot specify more than {} choices",
+                options.len() + 1
+            )));
         }
         if chosen.is_none() && formats.len() == options.len() {
-            return Err(formatting_error(
-                info,
-                &format!(
-                    "\"{value_text}\" is not a valid choice, and a \"default\" choice was not supplied"
-                ),
-            ));
+            return Err(info.formatting_error_here(&format!(
+                "\"{value_text}\" is not a valid choice, and a \"default\" choice was not supplied"
+            )));
         }
 
         // Without a match, the one extra format is the "else" branch.
@@ -296,13 +284,6 @@ fn value_text(value: &Value, info: &FormattingInfo<'_>) -> (String, Matchable) {
             Matchable::Yes,
         ),
     }
-}
-
-/// A .NET `FormattingException` raised by the formatter itself
-/// (`IFormattingInfo.FormattingException`), positioned at the start of the
-/// placeholder's format.
-fn formatting_error(info: &FormattingInfo<'_>, issue: &str) -> Error {
-    info.formatting_error(issue, info.error_position())
 }
 
 // ---------------------------------------------------------------------------

@@ -115,31 +115,17 @@ impl Formatter for NullFormatter {
 
         // Check whether the arguments can be handled by this formatter.
         if !options.is_empty() {
-            let name = &info.placeholder().formatter_name;
-            // Auto detection calls just return a failure to evaluate.
-            if name.is_empty() {
-                return Ok(false);
-            }
-            // .NET throws a plain `FormatException` when the formatter was
-            // called explicitly, which reaches the output without the
-            // `Error parsing format string: …` envelope (probed against 3.6.1).
-            return Err(info.plain_error(
-                &format!("Formatter named '{name}' does not allow choose options"),
-                info.error_position(),
-            ));
+            return info.decline_or_error(|name| {
+                format!("Formatter named '{name}' does not allow choose options")
+            });
         }
 
         let formats = match formats {
             Some(formats) if matches!(formats.len(), 1 | 2) => formats,
             _ => {
-                let name = &info.placeholder().formatter_name;
-                if name.is_empty() {
-                    return Ok(false);
-                }
-                return Err(info.plain_error(
-                    &format!("Formatter named '{name}' must have 1 or 2 format options"),
-                    info.error_position(),
-                ));
+                return info.decline_or_error(|name| {
+                    format!("Formatter named '{name}' must have 1 or 2 format options")
+                })
             }
         };
 

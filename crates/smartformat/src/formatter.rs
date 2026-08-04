@@ -1324,6 +1324,44 @@ impl<'a> FormattingInfo<'a> {
         }
     }
 
+    /// [`formatting_error`](Self::formatting_error) at
+    /// [`error_position`](Self::error_position), which is where a formatter
+    /// reports an error it has no more precise position for. Nearly every one
+    /// of them is of that kind.
+    pub fn formatting_error_here(&self, issue: &str) -> Error {
+        self.formatting_error(issue, self.error_position())
+    }
+
+    /// [`plain_error`](Self::plain_error) at
+    /// [`error_position`](Self::error_position), the same convenience as
+    /// [`formatting_error_here`](Self::formatting_error_here) for the errors
+    /// .NET raises as plain exceptions.
+    pub fn plain_error_here(&self, issue: &str) -> Error {
+        self.plain_error(issue, self.error_position())
+    }
+
+    /// What a formatter answers for a value it cannot handle: `Ok(false)` when
+    /// the placeholder named no formatter, so that the next extension gets a
+    /// turn, and the error `issue` describes when it named this one.
+    ///
+    /// Every ported extension ends its "can I handle this?" check this way,
+    /// because .NET's do: auto-detection is a `return false`, while a formatter
+    /// asked for by name that cannot deliver throws a plain `FormatException`.
+    /// The evaluator only wraps that while rethrowing, so the message carries
+    /// no [`formatting_error`](Self::formatting_error) envelope —
+    /// [`ErrorAction::OutputErrorInResult`] writes the bare text (probed
+    /// against 3.6.1).
+    ///
+    /// `issue` is handed the formatter name the placeholder used, which every
+    /// one of those messages quotes.
+    pub fn decline_or_error(&self, issue: impl FnOnce(&str) -> String) -> Result<bool, Error> {
+        let name = &self.placeholder.formatter_name;
+        if name.is_empty() {
+            return Ok(false);
+        }
+        Err(self.plain_error_here(&issue(name)))
+    }
+
     /// Renders `format` with `value` as the current scope, appending to the
     /// same output (.NET `IFormattingInfo.FormatAsChild`).
     pub fn format_as_child(&mut self, format: &Format, value: &Value) -> Result<(), Error> {

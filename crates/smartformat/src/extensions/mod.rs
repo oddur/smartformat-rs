@@ -103,7 +103,7 @@ pub(crate) fn split_format(
 ) -> Result<Vec<SplitPiece>, Error> {
     format
         .split(separator)
-        .map_err(|error| info.plain_error(&error.to_string(), info.error_position()))
+        .map_err(|error| info.plain_error_here(&error.to_string()))
 }
 
 /// The part a formatter picked, or the formatting error .NET's
@@ -119,5 +119,5 @@ pub(crate) fn split_part<'a>(
     part: &'a SplitPiece,
 ) -> Result<&'a Format, Error> {
     part.as_ref()
-        .map_err(|error| info.plain_error(&error.to_string(), info.error_position()))
+        .map_err(|error| info.plain_error_here(&error.to_string()))
 }

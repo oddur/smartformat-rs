@@ -293,12 +293,9 @@ fn language_rule(language: &str, info: &FormattingInfo<'_>) -> Result<PluralRule
         // a plain exception rather than a `FormattingException`, it carries no
         // `Error parsing format string: … at {index}` envelope in the output:
         // probed, `ErrorAction::OutputErrorInResult` writes the bare message.
-        info.plain_error(
-            &format!(
-                "IsoLangToDelegate not found for {language} (Parameter 'twoLetterIsoLanguageName')"
-            ),
-            info.error_position(),
-        )
+        info.plain_error_here(&format!(
+            "IsoLangToDelegate not found for {language} (Parameter 'twoLetterIsoLanguageName')"
+        ))
     })
 }
 

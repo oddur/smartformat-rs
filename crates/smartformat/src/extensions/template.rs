@@ -38,7 +38,7 @@
 use std::fmt;
 
 use crate::formatter::{Formatter, FormattingInfo};
-use crate::parsing::{Format, FormatItem, Parser};
+use crate::parsing::{Format, Parser};
 use crate::settings::CaseSensitivity;
 use crate::Error;
 
@@ -214,7 +214,7 @@ impl TemplateFormatter {
             // formatter always has a format, empty as it may be — `{:t()}`
             // carries one of length zero. .NET would hand the `null` to
             // `Dictionary.TryGetValue` and get an `ArgumentNullException`.
-            None => Err(info.plain_error(NULL_KEY, info.error_position())),
+            None => Err(info.plain_error_here(NULL_KEY)),
         }
     }
 }
@@ -253,7 +253,7 @@ impl Formatter for TemplateFormatter {
                 "Formatter named '{}' found no registered template named '{name}'",
                 info.placeholder().formatter_name
             );
-            return Err(info.plain_error(&issue, info.error_position()));
+            return Err(info.plain_error_here(&issue));
         };
 
         // .NET `FormatAsChild(template, CurrentValue)`: the template is
@@ -273,12 +273,8 @@ impl Formatter for TemplateFormatter {
 /// `ArgumentException` while `Format.ToString()` concatenates the literals —
 /// so the first failing literal decides, and the message carries no envelope.
 fn raw_text(info: &FormattingInfo<'_>, format: &Format) -> Result<String, Error> {
-    for item in &format.items {
-        if let FormatItem::Literal(literal) = item {
-            if let Some(message) = &literal.escape_error {
-                return Err(info.plain_error(message, literal.start));
-            }
-        }
+    if let Some((message, start)) = format.first_escape_error() {
+        return Err(info.plain_error(message, start));
     }
     Ok(format.literal_text())
 }
