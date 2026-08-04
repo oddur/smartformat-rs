@@ -1,4 +1,4 @@
-//! Port of SmartFormat.NET's `LocalizationFormatter` (milestone M4).
+//! Port of SmartFormat.NET's `LocalizationFormatter`.
 //!
 //! Ported from `src/SmartFormat/Extensions/LocalizationFormatter.cs`,
 //! `Utilities/ILocalizationProvider.cs` and `Utilities/LocalizationProvider.cs`.

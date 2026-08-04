@@ -1,4 +1,4 @@
-//! Port of SmartFormat.NET's `TemplateFormatter` (milestone M3).
+//! Port of SmartFormat.NET's `TemplateFormatter`.
 //!
 //! Ported from `src/SmartFormat/Extensions/TemplateFormatter.cs`.
 //!

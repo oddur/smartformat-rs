@@ -1,4 +1,4 @@
-//! Port of SmartFormat.NET's `SubStringFormatter` (milestone M3).
+//! Port of SmartFormat.NET's `SubStringFormatter`.
 //!
 //! Ported from `src/SmartFormat/Extensions/SubStringFormatter.cs`.
 //!

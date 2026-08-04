@@ -1,4 +1,4 @@
-//! Port of SmartFormat.NET's `TimeFormatter` and its time-text resources (milestone M4).
+//! Port of SmartFormat.NET's `TimeFormatter` and its time-text resources.
 //!
 //! Ported from the `SmartFormat.Extensions.Time` package, version 3.6.1 — the
 //! release that goes with the core the rest of this crate is ported from:

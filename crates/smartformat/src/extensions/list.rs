@@ -1,4 +1,4 @@
-//! Port of SmartFormat.NET's `ListFormatter` — both formatter and source (milestone M3).
+//! Port of SmartFormat.NET's `ListFormatter` — both formatter and source.
 //!
 //! Ported from `src/SmartFormat/Extensions/ListFormatter.cs`. The source half —
 //! the `{Index}` selector, and indexing a second list with it — is

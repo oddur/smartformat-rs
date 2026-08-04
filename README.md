@@ -70,6 +70,9 @@ translations come from wherever you keep them.
 | `{0:substr(0,3)}` | `"Alice"` | `Ali` |
 | `{0:ismatch(^\\d+$):number\|not}` | `"42"` | `number` |
 | `{0:isnull:missing\|{}}` | `null` | `missing` |
+| `{0:time:}` (opt-in) | `2h 3m as TimeSpan` | `2 hours 3 minutes` |
+| `{:L(fr):Hello}` (opt-in) | provider has `fr` entry | `Bonjour` |
+| `{:t:greeting}` (opt-in) | registered template | rendered template |
 
 Escaping uses `\`, as SmartFormat does by default: `\{`, `\}`, `\n`, `\\`,
 `\u0041`. The `string.Format`-compatible mode (`{{` escaping) is available
@@ -123,6 +126,15 @@ All on by default.
 | `plural` | `PluralLocalizationFormatter` and the plural-rules table (no external deps) |
 | `time` | `Value::DateTime`, `Value::TimeSpan`, the date/time specifiers and `TimeFormatter`, backed by [jiff](https://crates.io/crates/jiff). Implies `plural`, because the unit words are picked with the plural rules, as .NET's `TimeTextInfo` does |
 | `regex-formatters` | `IsMatchFormatter`, backed by [fancy-regex](https://crates.io/crates/fancy-regex) |
+
+## Guides
+
+- [Run your existing .NET SmartFormat templates from Rust](docs/using-dotnet-templates.md)
+  — settings mapping, opt-in registrations, feeding values, validating a corpus.
+- [Write your own formatter or source](docs/extending.md) — the two traits,
+  the `FormattingInfo` toolkit, and the ready-made registration points.
+- Regenerating test data: [goldens](tools/goldens/README.md) and
+  [culture data](tools/culturegen/README.md).
 
 ## How compatibility is verified
 

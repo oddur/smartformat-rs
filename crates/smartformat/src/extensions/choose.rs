@@ -1,4 +1,4 @@
-//! Port of SmartFormat.NET's `ChooseFormatter` (milestone M2).
+//! Port of SmartFormat.NET's `ChooseFormatter`.
 //!
 //! Ported from `src/SmartFormat/Extensions/ChooseFormatter.cs`.
 //!

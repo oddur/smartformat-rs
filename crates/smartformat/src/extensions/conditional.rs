@@ -1,4 +1,4 @@
-//! Port of SmartFormat.NET's `ConditionalFormatter` (milestone M2).
+//! Port of SmartFormat.NET's `ConditionalFormatter`.
 //!
 //! Ported from `src/SmartFormat/Extensions/ConditionalFormatter.cs`.
 //!

@@ -1,4 +1,4 @@
-//! Port of SmartFormat.NET's `IsMatchFormatter`, backed by fancy-regex (milestone M3).
+//! Port of SmartFormat.NET's `IsMatchFormatter`, backed by fancy-regex.
 //!
 //! Ported from `src/SmartFormat/Extensions/IsMatchFormatter.cs`.
 //!

@@ -333,7 +333,8 @@ pub struct SmartFormatter {
 }
 
 impl SmartFormatter {
-    /// A formatter with the M1 source and formatter extensions registered.
+    /// A formatter with the default source and formatter extensions registered,
+    /// matching .NET's `Smart.CreateDefaultSmartFormat`.
     pub fn new(settings: SmartSettings) -> Self {
         let parser_settings = ParserSettings {
             error_action: settings.parse_error_action,

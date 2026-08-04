@@ -1,4 +1,4 @@
-//! Port of SmartFormat.NET's `PluralLocalizationFormatter` (milestone M2).
+//! Port of SmartFormat.NET's `PluralLocalizationFormatter`.
 //!
 //! Ported from `src/SmartFormat/Extensions/PluralLocalizationFormatter.cs` and
 //! `src/SmartFormat/Extensions/CustomPluralRuleProvider.cs`.
@@ -868,7 +868,7 @@ mod tests {
         // formatter and the default one. They pin what *this* formatter does
         // with an unnamed format, not what the default registry renders: .NET
         // sorts `ListFormatter` — which auto-detects as well — ahead of this
-        // one, so `{0:one|many}` on a list is a list there once M3 lands.
+        // one, so `{0:one|many}` on a list is claimed by `ListFormatter` first.
         //
         // Two words and no formatter name: the plural formatter takes it.
         assert_eq!(format_in("en", "{0:one|many}", Value::Int(1)), "one");

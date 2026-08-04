@@ -1,4 +1,4 @@
-//! Port of SmartFormat.NET's self-contained `Utilities/PluralRules.cs` language table (milestone M2).
+//! Port of SmartFormat.NET's self-contained `Utilities/PluralRules.cs` language table.
 //!
 //! Every language SmartFormat.NET knows maps to a rule that picks one of the
 //! plural words of a format by the value being pluralized:

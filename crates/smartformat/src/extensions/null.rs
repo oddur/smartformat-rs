@@ -1,4 +1,4 @@
-//! Port of SmartFormat.NET's `NullFormatter` (milestone M3).
+//! Port of SmartFormat.NET's `NullFormatter`.
 //!
 //! Ported from `src/SmartFormat/Extensions/NullFormatter.cs`.
 //!
