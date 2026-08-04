@@ -219,6 +219,10 @@ const SKIPPED: &[(&str, &str)] = &[
         "loc-error-inside-nested-translation-outputerrorinresult",
         ERROR_INSIDE_A_FOREIGN_FORMAT,
     ),
+    (
+        "loc-nested-key-culture-sensitive-number",
+        "the scratch render that builds a nested lookup key gets a null provider in .NET, so a number in the key follows the ambient CultureInfo.CurrentCulture (invariant in the harness) where the port follows the culture in force",
+    ),
 ];
 
 /// An error raised while a `Format` parsed somewhere else is being rendered:
@@ -622,6 +626,8 @@ fn localization_fixture(set: &str) -> HashMapLocalizationProvider {
         ("", "{RawKey}", "the raw text won"),
         ("", "0", "first"),
         ("", "1", "second"),
+        ("", "1,234,567", "the ambient culture rendered the key"),
+        ("", "1.234.567", "the culture in force rendered the key"),
     ]);
     match set {
         "Standard" => provider,

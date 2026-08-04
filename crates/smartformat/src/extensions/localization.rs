@@ -1315,14 +1315,15 @@ mod tests {
         );
     }
 
-    /// The one divergence left in this formatter, pinned on our side because
-    /// .NET's side is not reproducible: .NET builds the isolated render's
-    /// `FormatDetails` with a `null` provider, so a culture-sensitive
+    /// The one divergence left in this formatter, pinned on our side here and
+    /// on .NET's by the skipped golden
+    /// `loc-nested-key-culture-sensitive-number`: .NET builds the isolated
+    /// render's `FormatDetails` with a `null` provider, so a culture-sensitive
     /// placeholder in the key follows the ambient `CultureInfo.CurrentCulture`
     /// — probed, the same template looks up `1 234,50` with a French ambient
-    /// culture and `1.234,50` with a German one. There is no ambient culture
-    /// here, so the render follows the culture in force. DESIGN.md, "Known
-    /// divergences".
+    /// culture and `1.234,50` with a German one, and the golden holds the
+    /// invariant one the harness pins. There is no ambient culture here, so the
+    /// render follows the culture in force. DESIGN.md, "Known divergences".
     #[test]
     fn a_culture_sensitive_nested_key_renders_with_the_culture_in_force() {
         let smart = smart_with(HashMapLocalizationProvider::from_triples([

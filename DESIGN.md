@@ -40,7 +40,7 @@ Everything in SmartFormat's core plus the built-in extensions, in this order:
   at .NET's rank.
 
 **The port's original scope is now complete.** Everything M1–M4 lists is
-implemented and pinned against SmartFormat.NET 3.6.1 by 2831 golden cases and
+implemented and pinned against SmartFormat.NET 3.6.1 by 2833 golden cases and
 the ported NUnit tests. What is left is written down: the entries under "Known
 divergences" below, and the non-goals above — "Deferred, not divergent" is
 empty.
@@ -372,8 +372,16 @@ answer is not reproducible.
   culture in force, which is the one `{:L(de):…}` just chose. Only a key built
   out of a number, a date or anything else culture-sensitive differs; a key
   built out of strings, which is every use the formatter was designed for,
-  agrees. There is no golden, because .NET's answer depends on the machine the
-  harness runs on: the `loc-nested-key-*` cases build their keys out of strings.
+  agrees. The golden `loc-nested-key-culture-sensitive-number`
+  (`{:L(de):{Num:N0}}` over `1234567`) holds the answer an *invariant* ambient
+  culture gives, which is the one the harness pins — the port would only agree
+  with a .NET process whose ambient culture happened to be the `de` the options
+  named, so the Rust runner skips it. Every other `loc-nested-key-*` case is an
+  ordinary golden: they build their keys out of strings, plus the small
+  unsigned integers of `loc-nested-key-collection-index` (`{Index}` is `0` and
+  `1`, which carry no sign, no grouping and no decimals, so no culture renders
+  them differently). Extending that pattern with a grouped or negative number
+  would move a case into the divergence.
   *Pin:* `extensions::localization::tests::a_culture_sensitive_nested_key_renders_with_the_culture_in_force`.
 - **`substr` option parsing is culture-invariant.** .NET's `int.Parse(string)`
   uses `NumberFormatInfo.CurrentInfo`, so the sign characters it accepts are
@@ -845,7 +853,9 @@ are done:
   engine leans on `Engine<'a>` being covariant — `format_as_child` renders a
   `Format` borrowed for less than the call (a translation out of a parse cache)
   through a `FormattingInfo` shorter-lived than the engine.
-  *Pins:* `loc-option-culture-leaks`, `loc-option-culture-leaks-after-miss-*`,
+  *Pins:* `loc-option-culture-leaks`,
+  `loc-option-culture-leaks-after-translation` (the switch surviving a
+  *successful* translation), `loc-option-culture-leaks-after-miss-*`,
   `loc-option-culture-inside-*`, `loc-option-culture-no-leak-*`, and
   `extensions::localization::tests::the_options_culture_{reaches_the_localized_placeholders,leaks_into_the_rest_of_the_call,leaks_even_when_the_lookup_fails}`.
 - `FormattingInfo::format_to_isolated_string` renders a format into a string of
@@ -857,7 +867,8 @@ are done:
   looks up a padded `paper` and misses), the collection index carried through,
   the call's error action applied inside the render, and the base string and
   every error position still pointing at the original template.
-  *Pins:* the `loc-nested-key-*` goldens and
+  *Pins:* the `loc-nested-key-*` goldens (all but
+  `loc-nested-key-culture-sensitive-number`, which is the divergence above) and
   `extensions::localization::tests::{a_nested_key_is_rendered_and_looked_up_again,the_isolated_render_*,the_alignment_reaches_the_isolated_render}`.
 - `FormatterRegistry::new()` sorts to .NET's `list, plural, cond, ismatch,
   isnull, choose, substr, d`, so `ListFormatter` claims a `|`-separated format

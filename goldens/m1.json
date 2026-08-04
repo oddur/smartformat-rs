@@ -33691,6 +33691,20 @@
       }
     },
     {
+      "id": "loc-nested-key-inner-alignment-outputerrorinresult",
+      "template": "{:L:{ProductType,10}}",
+      "args": {
+        "ProductType": "paper"
+      },
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      },
+      "expected": {
+        "result": "Error parsing format string: No localized string found for '{ProductType,10}' at 4\n{:L:{ProductType,10}}\n----^"
+      }
+    },
+    {
       "id": "loc-nested-key-collection-index",
       "template": "{0:list:{:L:{Index}}|,}",
       "args": [
@@ -33702,6 +33716,17 @@
       "culture": "",
       "expected": {
         "result": "first,second"
+      }
+    },
+    {
+      "id": "loc-nested-key-culture-sensitive-number",
+      "template": "{:L(de):{Num:N0}}",
+      "args": {
+        "Num": 1234567
+      },
+      "culture": "",
+      "expected": {
+        "result": "the ambient culture rendered the key"
       }
     },
     {

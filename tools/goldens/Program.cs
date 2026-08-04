@@ -26,12 +26,16 @@ const string smartFormatVersion = "3.6.1";
 var pinnedNow = new DateTime(2026, 7, 31, 12, 0, 0, DateTimeKind.Unspecified);
 SystemTime.SetDateTime(pinnedNow);
 
-// Three extensions read the *thread* culture rather than the provider of the
-// call — `ChooseFormatter` and `IsMatchFormatter` when they stringify a value,
-// and `TimeFormatter` when it writes a unit's number — so the machine's locale
-// would otherwise leak into the expected output. The invariant culture is the
-// one the port behaves like: its negative sign is '-' and its group separator
-// is ','.
+// Four renders read the *thread* culture rather than the provider of the call:
+// `ChooseFormatter` and `IsMatchFormatter` when they stringify a value,
+// `TimeFormatter` when it writes a unit's number, and `LocalizationFormatter`'s
+// scratch render of a nested lookup key — that one builds a `FormatDetails`
+// with a *null* provider, so every culture-sensitive placeholder inside the key
+// reaches `CultureInfo.CurrentCulture` (see the `LocalizationCases` banner for
+// what that pins and what it makes divergent). Without this, the machine's
+// locale would leak into the expected output. The invariant culture is the one
+// the port behaves like: its negative sign is '-' and its group separator is
+// ','.
 CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
 CultureInfo.CurrentUICulture = CultureInfo.InvariantCulture;
 
@@ -858,11 +862,7 @@ static void SettingsCases(List<GoldenCase> cases)
         ("index-out-of-range", "[{5}]", one),
         ("no-error", "[{0:D3}]", one),
     };
-    foreach (var action in new[]
-             {
-                 FormatErrorAction.Ignore, FormatErrorAction.MaintainTokens,
-                 FormatErrorAction.OutputErrorInResult,
-             })
+    foreach (var action in ErrorActions.NonThrowing)
     foreach (var (slug, template, args) in failing)
         cases.Add(new GoldenCase(
             $"set-fmterr-{action.ToString().ToLowerInvariant()}-{slug}", template, args,
@@ -960,11 +960,7 @@ static void SettingsCases(List<GoldenCase> cases)
         ("substr-format-is-text", "[{0:substr(0,2):plain}]", @"[""abcd""]"),
         ("isnull-three-formats", "[{0:isnull:a|b|c}]", "[null]"),
     };
-    foreach (var action in new[]
-             {
-                 FormatErrorAction.Ignore, FormatErrorAction.MaintainTokens,
-                 FormatErrorAction.OutputErrorInResult,
-             })
+    foreach (var action in ErrorActions.NonThrowing)
     foreach (var (slug, template, args) in m3Failing)
         cases.Add(new GoldenCase(
             $"set-fmterr-{action.ToString().ToLowerInvariant()}-{slug}", template, args,
@@ -3060,13 +3056,15 @@ static void TimeSpanDefaultCases(List<GoldenCase> cases)
 // dictionary-backed ILocalizationProvider rather than the resx-backed one
 // SmartFormat ships, so the table is in the source of both harnesses.
 //
-// One shape is deliberately absent: a key built by rendering nested
-// placeholders that format a *number or a date*. .NET renders it with a
-// `FormatDetails` whose provider is null, which reaches the ambient
-// `CultureInfo.CurrentCulture` — pinned to invariant at the top of this file,
-// but ambient all the same — while the port renders it with the culture in
-// force. See DESIGN.md, "Known divergences". A key built out of strings, which
-// is every use the formatter was designed for, agrees.
+// One shape diverges: a key built by rendering nested placeholders that format
+// a *number or a date*. .NET renders it with a `FormatDetails` whose provider
+// is null, which reaches the ambient `CultureInfo.CurrentCulture` — pinned to
+// invariant at the top of this file, but ambient all the same — while the port
+// renders it with the culture in force. The case
+// `loc-nested-key-culture-sensitive-number` holds the invariant-ambient answer
+// and is skipped by the Rust runner. See DESIGN.md, "Known divergences". A key
+// built out of strings, which is every use the formatter was designed for,
+// agrees.
 // ---------------------------------------------------------------------------
 
 static void LocalizationCases(List<GoldenCase> cases)
@@ -3123,11 +3121,7 @@ static void LocalizationCases(List<GoldenCase> cases)
              })
     {
         Add($"error-{slug}", template);
-        foreach (var action in new[]
-                 {
-                     FormatErrorAction.Ignore, FormatErrorAction.MaintainTokens,
-                     FormatErrorAction.OutputErrorInResult,
-                 })
+        foreach (var action in ErrorActions.NonThrowing)
             Add($"error-{slug}-{action.ToString().ToLowerInvariant()}", template,
                 settings: new CaseSettings(FormatErrorAction: action));
     }
@@ -3207,11 +3201,7 @@ static void LocalizationCases(List<GoldenCase> cases)
     Add("option-culture-leaks-after-translation",
         "{0} {1:L(de):has {:N0} inhabitants} {1:N0}", city, "en-US");
     // It happens before the lookup, so a lookup that then fails leaks too …
-    foreach (var action in new[]
-             {
-                 FormatErrorAction.Ignore, FormatErrorAction.MaintainTokens,
-                 FormatErrorAction.OutputErrorInResult,
-             })
+    foreach (var action in ErrorActions.NonThrowing)
         Add($"option-culture-leaks-after-miss-{action.ToString().ToLowerInvariant()}",
             "{0:N2}|{1:L(de):NonExisting}|{0:N2}", leakArgs, "en-US",
             new CaseSettings(FormatErrorAction: action));
@@ -3247,23 +3237,18 @@ static void LocalizationCases(List<GoldenCase> cases)
     // The scratch render is isolated: a brand-new `FormatDetails` with no
     // positional arguments, and a `FormattingInfo` with no parent, so the scope
     // chain is the current value alone. Both failures quote the *outer*
-    // template and point into it.
-    foreach (var (slug, template, args) in new (string, string, string)[]
-             {
-                 ("isolated-no-arguments", "{:L(es):{0}}", """["paper"]"""),
-                 ("isolated-no-parent-scope", "{Inner:L:{Outer}}",
-                     """{"Outer":"paper","Inner":{"X":1}}"""),
-             })
+    // template and point into it, under every error action.
+    void AddIsolated(string slug, string template, string args)
     {
-        Add($"nested-key-{slug}", template, args);
-        foreach (var action in new[]
-                 {
-                     FormatErrorAction.Ignore, FormatErrorAction.MaintainTokens,
-                     FormatErrorAction.OutputErrorInResult,
-                 })
-            Add($"nested-key-{slug}-{action.ToString().ToLowerInvariant()}", template, args,
+        Add(slug, template, args);
+        foreach (var action in ErrorActions.NonThrowing)
+            Add($"{slug}-{action.ToString().ToLowerInvariant()}", template, args,
                 settings: new CaseSettings(FormatErrorAction: action));
     }
+
+    AddIsolated("nested-key-isolated-no-arguments", "{:L(es):{0}}", """["paper"]""");
+    AddIsolated("nested-key-isolated-no-parent-scope", "{Inner:L:{Outer}}",
+        """{"Outer":"paper","Inner":{"X":1}}""");
     // The same selector on the current value is found, which is what makes the
     // two above a reset scope rather than a broken lookup.
     Add("nested-key-current-scope", "{Inner:L:{Outer}}", """{"Inner":{"Outer":"paper"}}""");
@@ -3275,11 +3260,25 @@ static void LocalizationCases(List<GoldenCase> cases)
     Add("nested-key-alignment-outputerrorinresult", "{,20:L:{ProductType}}", paper,
         settings: new CaseSettings(FormatErrorAction: FormatErrorAction.OutputErrorInResult));
     Add("nested-key-inner-alignment", "{:L:{ProductType,10}}", paper);
+    Add("nested-key-inner-alignment-outputerrorinresult", "{:L:{ProductType,10}}", paper,
+        settings: new CaseSettings(FormatErrorAction: FormatErrorAction.OutputErrorInResult));
 
     // `ListFormatter.CollectionIndex` is a static in .NET, which no
     // `FormatDetails` of its own can hide, so `{Index}` inside the scratch
-    // render is still the item's index.
+    // render is still the item's index. The index is a small unsigned integer,
+    // which every culture writes the same way, so this case is machine-
+    // independent although it goes through the culture-sensitive path below.
     Add("nested-key-collection-index", "{0:list:{:L:{Index}}|,}", """[["a","b"]]""");
+
+    // The divergence the banner names, pinned rather than avoided: a key built
+    // by rendering a *grouped number*. The scratch render's `FormatDetails`
+    // carries a null provider, so `{Num:N0}` follows the ambient culture — the
+    // invariant one, pinned at the top of this file — and looks up `1,234,567`,
+    // while the port renders the key with the culture `L(de)` just chose and
+    // looks up `1.234.567`. Both keys are in the fixture, with different
+    // translations, so the answers cannot be confused; the Rust runner skips
+    // this case. See DESIGN.md, "Known divergences".
+    Add("nested-key-culture-sensitive-number", "{:L(de):{Num:N0}}", """{"Num":1234567}""");
 
     // The formatter's name is matched with the settings' comparer, and `L` is
     // the only name it has — `localize` was a 2.x alias.
@@ -3325,11 +3324,7 @@ static void VariablesCases(List<GoldenCase> cases)
              })
     {
         Add(slug, template);
-        foreach (var action in new[]
-                 {
-                     FormatErrorAction.Ignore, FormatErrorAction.MaintainTokens,
-                     FormatErrorAction.OutputErrorInResult,
-                 })
+        foreach (var action in ErrorActions.NonThrowing)
             Add($"{slug}-{action.ToString().ToLowerInvariant()}", template,
                 settings: new CaseSettings(FormatErrorAction: action, Variables: VariableSet.Standard));
     }
@@ -3612,6 +3607,21 @@ static string JsonDouble(double value)
     return IsIntegerLiteral(text) ? text + ".0" : text;
 }
 
+/// <summary>
+/// The three <see cref="FormatErrorAction"/> values that do not throw. Every
+/// expected-error case is repeated under all three, so the message .NET writes
+/// and the tokens it keeps are pinned and not just the exception type.
+/// </summary>
+internal static class ErrorActions
+{
+    public static readonly FormatErrorAction[] NonThrowing =
+    [
+        FormatErrorAction.Ignore,
+        FormatErrorAction.MaintainTokens,
+        FormatErrorAction.OutputErrorInResult,
+    ];
+}
+
 internal readonly record struct GoldenCase(
     string Id, string Template, string ArgsJson, CaseSettings? Settings = null,
     string Culture = "");
@@ -3800,6 +3810,11 @@ internal sealed class LocalizationFixture : ILocalizationProvider
         // What `{Index}` renders to inside a scratch render of a list item.
         ("", "0", "first"),
         ("", "1", "second"),
+        // The two keys `{:L(de):{Num:N0}}` reaches: the first one when the
+        // scratch render follows the ambient culture (.NET, invariant here),
+        // the second when it follows the culture in force (the port).
+        ("", "1,234,567", "the ambient culture rendered the key"),
+        ("", "1.234.567", "the culture in force rendered the key"),
     ];
 
     /// <summary>The fallback culture of <see cref="LocalizationSet.Fallback"/>.</summary>
