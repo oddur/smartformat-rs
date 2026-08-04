@@ -61,7 +61,7 @@ fn named_fields(input: &DeriveInput) -> syn::Result<&FieldsNamed> {
     let unsupported = |what: &str| {
         syn::Error::new_spanned(
             input,
-            format!("#[derive(ToSmartValue)] supports only structs with named fields; {what} is not supported in M1"),
+            format!("#[derive(ToSmartValue)] supports only structs with named fields; {what} is not supported"),
         )
     };
 

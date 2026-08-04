@@ -47,6 +47,25 @@ impl<T: ToSmartValue + ?Sized> ToSmartValue for &T {
     }
 }
 
+/// The `From<T>` twin of a hand-written [`ToSmartValue`] impl: the same
+/// conversion under the name a caller reaches for with `Value::from` or
+/// `.into()`.
+///
+/// Only the concrete types get one this way. The generic impls — `Option<T>`,
+/// `Vec<T>` and the two map types — are written out, because each carries a
+/// `T: ToSmartValue` bound the macro has no way to name, and `From<String>`
+/// stays hand-written because it *consumes* the string where
+/// `to_smart_value(&self)` would have to clone it.
+macro_rules! impl_from_via_to_smart_value {
+    ($($t:ty),* $(,)?) => {$(
+        impl From<$t> for Value {
+            fn from(v: $t) -> Self {
+                ToSmartValue::to_smart_value(&v)
+            }
+        }
+    )*};
+}
+
 macro_rules! impl_via_into_i64 {
     ($($t:ty),* $(,)?) => {$(
         impl ToSmartValue for $t {
@@ -54,27 +73,16 @@ macro_rules! impl_via_into_i64 {
                 Value::Int(i64::from(*self))
             }
         }
-
-        impl From<$t> for Value {
-            fn from(v: $t) -> Self {
-                Value::Int(i64::from(v))
-            }
-        }
     )*};
 }
 
 impl_via_into_i64!(i8, i16, i32, i64, u8, u16, u32);
+impl_from_via_to_smart_value!(i8, i16, i32, i64, u8, u16, u32);
 
 // isize is at most 64 bits wide on every Rust target, so this never truncates.
 impl ToSmartValue for isize {
     fn to_smart_value(&self) -> Value {
         Value::Int(*self as i64)
-    }
-}
-
-impl From<isize> for Value {
-    fn from(v: isize) -> Self {
-        Value::Int(v as i64)
     }
 }
 
@@ -95,16 +103,11 @@ macro_rules! impl_via_u64 {
                 u64_to_value(*self as u64)
             }
         }
-
-        impl From<$t> for Value {
-            fn from(v: $t) -> Self {
-                u64_to_value(v as u64)
-            }
-        }
     )*};
 }
 
 impl_via_u64!(u64, usize);
+impl_from_via_to_smart_value!(u64, usize);
 
 // f32 widens to f64 exactly, so a value that was inexact as f32 (0.1f32)
 // renders with the artifacts of its f64 widening, not as ".NET float".
@@ -114,21 +117,9 @@ impl ToSmartValue for f32 {
     }
 }
 
-impl From<f32> for Value {
-    fn from(v: f32) -> Self {
-        Value::Float(f64::from(v))
-    }
-}
-
 impl ToSmartValue for f64 {
     fn to_smart_value(&self) -> Value {
         Value::Float(*self)
-    }
-}
-
-impl From<f64> for Value {
-    fn from(v: f64) -> Self {
-        Value::Float(v)
     }
 }
 
@@ -138,21 +129,9 @@ impl ToSmartValue for bool {
     }
 }
 
-impl From<bool> for Value {
-    fn from(v: bool) -> Self {
-        Value::Bool(v)
-    }
-}
-
 impl ToSmartValue for char {
     fn to_smart_value(&self) -> Value {
         Value::String(self.to_string())
-    }
-}
-
-impl From<char> for Value {
-    fn from(v: char) -> Self {
-        Value::String(v.to_string())
     }
 }
 
@@ -162,11 +141,7 @@ impl ToSmartValue for str {
     }
 }
 
-impl From<&str> for Value {
-    fn from(v: &str) -> Self {
-        Value::String(v.to_owned())
-    }
-}
+impl_from_via_to_smart_value!(isize, f32, f64, bool, char, &str);
 
 impl ToSmartValue for String {
     fn to_smart_value(&self) -> Value {
@@ -174,6 +149,10 @@ impl ToSmartValue for String {
     }
 }
 
+/// The one concrete `From` that is not
+/// [`impl_from_via_to_smart_value`](impl_from_via_to_smart_value): it takes
+/// the string it is given rather than cloning it, which delegating to
+/// `to_smart_value(&self)` could not do.
 impl From<String> for Value {
     fn from(v: String) -> Self {
         Value::String(v)
@@ -260,18 +239,7 @@ impl ToSmartValue for jiff::SignedDuration {
 }
 
 #[cfg(feature = "time")]
-impl From<jiff::SignedDuration> for Value {
-    fn from(v: jiff::SignedDuration) -> Self {
-        Value::TimeSpan(v)
-    }
-}
-
-#[cfg(feature = "time")]
-impl From<jiff::civil::DateTime> for Value {
-    fn from(v: jiff::civil::DateTime) -> Self {
-        Value::DateTime(v)
-    }
-}
+impl_from_via_to_smart_value!(jiff::SignedDuration, jiff::civil::DateTime);
 
 /// The name .NET's error messages give the CLR type of a value, as
 /// `Type.ToString()` spells it.

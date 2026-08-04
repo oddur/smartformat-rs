@@ -1551,6 +1551,13 @@ impl Formatter for DefaultFormatter {
         let position = || info.engine.utf16_position(info.error_position());
         // Borrowed wherever the text already exists, so the common
         // string / null / bool cases allocate nothing per placeholder.
+        //
+        // This is one of three value-to-text tables in the crate, and the only
+        // one that carries a format specifier. `extensions::value_text` builds
+        // a *match key* — always the empty specifier, and `None` rather than an
+        // error for the values below that have no useful rendering — and
+        // `value::dotnet_type_name` names a value's type for an error message.
+        // The three look alike and must not be merged.
         let text: Cow<'_, str> = match current {
             Value::Null => Cow::Borrowed(""),
             // .NET bool is not IFormattable, so the spec is ignored.

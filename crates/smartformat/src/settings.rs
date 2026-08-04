@@ -3,6 +3,16 @@
 /// Mirrors SmartFormat.NET's `ParseErrorAction` / `FormatErrorAction`.
 /// The .NET default (`ThrowError`) maps to returning `Err`; the lenient
 /// modes return `Ok` with the corresponding recovery behavior applied.
+///
+/// One enum, two mechanisms, deliberately not shared. `Parser::handle_errors`
+/// recovers at *parse* time, where the offending item is a stretch of the
+/// template the parser could not read and recovery means deciding what tree to
+/// build for it; `Engine::handle_format_error` recovers at *format* time,
+/// where the offending item is a placeholder that parsed fine and recovery
+/// means deciding what to write for it. .NET keeps the two apart the same way,
+/// down to the two separate settings ([`SmartSettings::parse_error_action`]
+/// and [`SmartSettings::format_error_action`]), and each variant means the
+/// analogous thing on each side rather than the same thing on both.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ErrorAction {
     /// Fail the call with an error. (.NET: `ThrowError`, the default.)

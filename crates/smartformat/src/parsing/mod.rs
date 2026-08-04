@@ -515,6 +515,12 @@ pub struct Placeholder {
     /// The format after the formatter name, if the placeholder has one.
     pub format: Option<Format>,
     /// The nesting level, starting at 1 for a top-level placeholder.
+    ///
+    /// Carried because .NET's `Placeholder.NestedDepth` is, and for a caller
+    /// walking the tree. The engine never reads it: nesting depth reaches the
+    /// evaluator as the length of the scope chain
+    /// [`FormattingInfo`](crate::formatter::FormattingInfo) builds, not as a
+    /// number on the node.
     pub nested_depth: usize,
     /// The text this placeholder was parsed from, including the braces.
     /// Used to put the tokens back when recovering from a parse error.
