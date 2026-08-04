@@ -273,6 +273,35 @@ impl From<jiff::civil::DateTime> for Value {
     }
 }
 
+/// The name .NET's error messages give the CLR type of a value, as
+/// `Type.ToString()` spells it.
+///
+/// `null_name` is what [`Value::Null`] answers, because the two callers
+/// disagree and each is quoting .NET verbatim: `PluralLocalizationFormatter`
+/// names the type of the argument `Convert.ToDecimal` rejected, which is
+/// `"null"`, while `TimeFormatter` interpolates `CurrentValue?.GetType()`,
+/// which writes nothing at all for a null.
+///
+/// A map has no faithful counterpart: .NET quotes the CLR type name of
+/// whatever dictionary was passed. We quote the type the goldens use,
+/// `Dictionary<string, object>`.
+pub(crate) fn dotnet_type_name(value: &Value, null_name: &'static str) -> &'static str {
+    match value {
+        Value::Null => null_name,
+        Value::Bool(_) => "System.Boolean",
+        Value::Int(_) => "System.Int64",
+        Value::UInt(_) => "System.UInt64",
+        Value::Float(_) => "System.Double",
+        Value::String(_) => "System.String",
+        Value::List(_) => "System.Object[]",
+        Value::Map(_) => "System.Collections.Generic.Dictionary`2[System.String,System.Object]",
+        #[cfg(feature = "time")]
+        Value::DateTime(_) => "System.DateTime",
+        #[cfg(feature = "time")]
+        Value::TimeSpan(_) => "System.TimeSpan",
+    }
+}
+
 /// ```compile_fail
 /// #[derive(smartformat::ToSmartValue)]
 /// struct Tuple(i32);

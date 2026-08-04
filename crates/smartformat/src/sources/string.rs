@@ -3,6 +3,7 @@
 use std::borrow::Cow;
 
 use super::{SelectorInfo, Source};
+use crate::fmt::utf16_len;
 use crate::value::Value;
 
 /// Resolves the string "methods" SmartFormat exposes as selectors, as in
@@ -49,7 +50,7 @@ impl Source for StringSource {
         let method = METHODS.iter().find(|name| info.selector_is(name))?;
         let result = match *method {
             // .NET string.Length counts UTF-16 code units.
-            "Length" => Value::Int(current.encode_utf16().count() as i64),
+            "Length" => Value::Int(utf16_len(current) as i64),
             "ToUpper" | "ToUpperInvariant" => Value::String(current.to_uppercase()),
             "ToLower" | "ToLowerInvariant" => Value::String(current.to_lowercase()),
             "Trim" => Value::String(current.trim().to_owned()),

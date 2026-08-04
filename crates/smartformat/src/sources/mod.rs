@@ -14,6 +14,7 @@ use std::borrow::Cow;
 
 use crate::parsing::chars::NULLABLE_OPERATOR;
 use crate::parsing::{Placeholder, Selector};
+use crate::registry;
 use crate::settings::SmartSettings;
 use crate::value::Value;
 
@@ -193,19 +194,10 @@ impl SourceRegistry {
     /// `WellKnownExtensionTypes.GetIndexToInsert`: after the last source ranked
     /// at or before it, or at the end when either is not well known.
     fn index_to_insert(&self, rank: Option<u32>) -> usize {
-        if self.sources.is_empty() {
-            return 0;
-        }
-        let Some(rank) = rank else {
-            return self.sources.len();
-        };
-        for (index, source) in self.sources.iter().enumerate().rev() {
-            match source.well_known_rank() {
-                Some(other) if other <= rank => return index + 1,
-                _ => continue,
-            }
-        }
-        0
+        registry::index_to_insert(
+            self.sources.iter().map(|source| source.well_known_rank()),
+            rank,
+        )
     }
 
     /// Inserts a source at `index`, which is consulted before the sources

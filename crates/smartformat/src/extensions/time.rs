@@ -50,10 +50,10 @@ pub mod standard;
 pub mod text_info;
 pub mod utility;
 
-use crate::fmt::culture;
+use crate::fmt::culture::{named_culture_language, two_letter_iso_language_name};
 use crate::formatter::{Formatter, FormattingInfo};
 use crate::parsing::{Format, FormatItem};
-use crate::value::Value;
+use crate::value::{dotnet_type_name, Value};
 use crate::Error;
 
 pub use options::{parse as parse_options, TimeSpanFormatOptions};
@@ -432,69 +432,11 @@ fn unsupported_type(info: &FormattingInfo<'_>, value: &Value) -> Error {
     };
     let issue = format!(
         "'TimeFormatter' can only process types of TimeSpan, DateTime, DateTimeOffset, TimeOnly, but not '{}'",
-        dotnet_type_name(value)
+        dotnet_type_name(value, "")
     );
     Error::Format {
         message: format!("Error parsing format string: {issue} at 0\n{base}\n^"),
         position: 0,
-    }
-}
-
-/// The .NET type name the "can only process types of" error quotes, which is
-/// `CurrentValue?.GetType()` — so a null value leaves the quotes empty.
-///
-/// A map has no faithful counterpart: .NET quotes the CLR type name of
-/// whatever dictionary was passed. We quote the type the goldens use,
-/// `Dictionary<string, object>`.
-fn dotnet_type_name(value: &Value) -> &'static str {
-    match value {
-        Value::Null => "",
-        Value::Bool(_) => "System.Boolean",
-        Value::Int(_) => "System.Int64",
-        Value::UInt(_) => "System.UInt64",
-        Value::Float(_) => "System.Double",
-        Value::String(_) => "System.String",
-        Value::List(_) => "System.Object[]",
-        Value::Map(_) => "System.Collections.Generic.Dictionary`2[System.String,System.Object]",
-        Value::DateTime(_) => "System.DateTime",
-        Value::TimeSpan(_) => "System.TimeSpan",
-    }
-}
-
-/// .NET `CultureInfo.TwoLetterISOLanguageName`: the primary subtag of a
-/// culture name, lowercased.
-///
-/// The names this is given come from the culture table, which holds the names
-/// .NET itself spelled, so they need no validation; a name out of a `time(…)`
-/// option goes through [`named_culture_language`] instead.
-fn two_letter_iso_language_name(culture_name: &str) -> String {
-    culture_name
-        .split(culture::SUBTAG_SEPARATORS)
-        .next()
-        .unwrap_or_default()
-        .to_ascii_lowercase()
-}
-
-/// The language of the culture a `time(…)` option names, .NET
-/// `CultureInfo.GetCultureInfo(options).TwoLetterISOLanguageName`, or the
-/// message of the `CultureNotFoundException` .NET throws for a name it rejects.
-///
-/// The primary subtag is taken as written, which is the
-/// `TwoLetterISOLanguageName` of every culture .NET knows except a three-letter
-/// ISO 639-2/T code with a two-letter equivalent: ICU folds `deu` to `de` and
-/// this does not, so `{0:time(deu):weeks}` writes German in .NET and English
-/// here. That is the `language_subtag` gap DESIGN.md records under
-/// "A culture name is validated, not resolved", and it is louder for this
-/// formatter than for `plural(…)`, because a whole language's words change.
-fn named_culture_language(name: &str) -> Result<String, String> {
-    match culture::language_subtag(name) {
-        Some(language) => Ok(language.to_ascii_lowercase()),
-        // .NET's `CultureNotFoundException.Message`. `CultureInfo.GetCultureInfo`
-        // looks the name up ASCII-lowercased, and quotes that spelling here.
-        None => Err(format!(
-            "Culture is not supported. (Parameter 'name')\n{} is an invalid culture identifier.",
-            name.to_ascii_lowercase()
-        )),
     }
 }
 

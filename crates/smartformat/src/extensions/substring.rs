@@ -19,7 +19,10 @@
 //! The formatter only handles a string or a null value, it never auto-detects,
 //! and — unlike the `|`-splitting formatters — it splits its options on a comma.
 
+use crate::dotnet_messages::{not_in_a_correct_format, INT32_OVERFLOW, OUT_OF_RANGE};
+use crate::fmt::utf16_len;
 use crate::formatter::{Formatter, FormattingInfo};
+use crate::parsing::is_dotnet_white;
 use crate::value::Value;
 use crate::Error;
 
@@ -32,14 +35,11 @@ const NAME: &str = "substr";
 /// rather than the pipe the other option-splitting formatters use.
 const DEFAULT_SPLIT_CHAR: char = VALID_SPLIT_CHARS[1];
 
-// The messages .NET's own exceptions carry. Every one of them is a plain
-// exception the evaluator catches, so it reaches the output bare; see
+// `INT32_OVERFLOW` is the `OverflowException` from `int.Parse`, and
+// `OUT_OF_RANGE` the `ArgumentOutOfRangeException` from
+// `ReadOnlySpan<char>.Slice`, which passes no parameter name. Both are plain
+// exceptions the evaluator catches, so each reaches the output bare; see
 // [`FormattingInfo::plain_error`].
-/// `OverflowException` from `int.Parse` (`System.SR.Overflow_Int32`).
-const INT32_OVERFLOW: &str = "Value was either too large or too small for an Int32.";
-/// `ArgumentOutOfRangeException` from `ReadOnlySpan<char>.Slice`, which passes
-/// no parameter name (`System.SR.Arg_ArgumentOutOfRangeException`).
-const OUT_OF_RANGE: &str = "Specified argument was out of the range of valid values.";
 /// The `FormattingException` .NET raises for a format that is plain text, which
 /// — being a `FormattingException` — does carry the message envelope.
 const NEEDS_NESTED: &str = "The format requires a nested placeholder";
@@ -311,12 +311,7 @@ fn start_and_length(
 /// rendered with never reaches this call in .NET either.
 fn parse_int(info: &FormattingInfo<'_>, text: &str) -> Result<i32, Error> {
     // The message quotes the option as written, whitespace included (probed).
-    let invalid = || {
-        info.plain_error(
-            &format!("The input string '{text}' was not in a correct format."),
-            info.error_position(),
-        )
-    };
+    let invalid = || info.plain_error(&not_in_a_correct_format(text), info.error_position());
 
     let trimmed = text.trim_matches(is_dotnet_white);
     let (negative, digits) = match trimmed.strip_prefix('-') {
@@ -339,20 +334,9 @@ fn parse_int(info: &FormattingInfo<'_>, text: &str) -> Result<i32, Error> {
     i32::try_from(value).map_err(|_| info.plain_error(INT32_OVERFLOW, info.error_position()))
 }
 
-/// The characters .NET's number parser skips (`Number.IsWhite`), which are the
-/// ASCII ones only — not every character `char.IsWhiteSpace` accepts.
-fn is_dotnet_white(character: char) -> bool {
-    character == ' ' || ('\u{9}'..='\u{d}').contains(&character)
-}
-
 // ---------------------------------------------------------------------------
 // UTF-16 slicing
 // ---------------------------------------------------------------------------
-
-/// The length of `text` in UTF-16 code units, which is what .NET counts.
-fn utf16_len(text: &str) -> usize {
-    text.chars().map(char::len_utf16).sum()
-}
 
 /// `length` UTF-16 code units of `text`, starting at unit `start`.
 ///

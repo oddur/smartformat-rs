@@ -26,9 +26,9 @@
 use std::fmt;
 
 use crate::extensions::plural_rules::{get_plural_rule, PluralRule};
-use crate::fmt::culture;
+use crate::fmt::culture::{named_culture_language, two_letter_iso_language_name};
 use crate::formatter::{Formatter, FormattingInfo};
-use crate::value::Value;
+use crate::value::{dotnet_type_name, Value};
 use crate::Error;
 
 use super::{split_format, split_part, InvalidSplitChar, DEFAULT_SPLIT_CHAR};
@@ -236,7 +236,7 @@ impl Formatter for PluralLocalizationFormatter {
                     &format!(
                         "Formatter named '{}' can format numbers and IEnumerables, but the argument was of type '{}'",
                         info.placeholder().formatter_name,
-                        dotnet_type_name(current)
+                        dotnet_type_name(current, "null")
                     ),
                     0,
                 ));
@@ -302,45 +302,6 @@ fn language_rule(language: &str, info: &FormattingInfo<'_>) -> Result<PluralRule
     })
 }
 
-/// .NET `CultureInfo.TwoLetterISOLanguageName`: the primary subtag of a
-/// culture name, lowercased — `pl-PL` and `PL` are both `pl`, `zh-Hans` is
-/// `zh`, and a language with no two-letter code keeps its three-letter one
-/// (`kde`).
-///
-/// The names this is given come from the culture table, which holds the names
-/// .NET itself spelled, so they need no validation; a name out of a
-/// `plural(…)` option goes through [`named_culture_language`] instead.
-fn two_letter_iso_language_name(culture_name: &str) -> String {
-    culture_name
-        .split(culture::SUBTAG_SEPARATORS)
-        .next()
-        .unwrap_or_default()
-        .to_ascii_lowercase()
-}
-
-/// The language of the culture a `plural(…)` option names, .NET
-/// `CultureInfo.GetCultureInfo(options).TwoLetterISOLanguageName`, or the
-/// message of the `CultureNotFoundException` .NET throws for a name it rejects.
-///
-/// .NET hands the name to ICU, which normalizes it and answers the language
-/// subtag: `en-US`, `EN`, `en_US` and `en-us-x-private` are all `en`, and a
-/// language with no two-letter code keeps its own (`kde`). That is
-/// [`culture::language_subtag`], which validates the name the way .NET does
-/// and answers its primary subtag — the crate's one notion of a .NET culture
-/// name, shared with [`culture::get`]; the ICU resolutions it does not
-/// reproduce are listed there.
-fn named_culture_language(name: &str) -> Result<String, String> {
-    match culture::language_subtag(name) {
-        Some(language) => Ok(language.to_ascii_lowercase()),
-        // .NET's `CultureNotFoundException.Message`. `CultureInfo.GetCultureInfo`
-        // looks the name up ASCII-lowercased, and quotes that spelling here.
-        None => Err(format!(
-            "Culture is not supported. (Parameter 'name')\n{} is an invalid culture identifier.",
-            name.to_ascii_lowercase()
-        )),
-    }
-}
-
 /// The number a value pluralizes by: a number as itself, a list by how many
 /// items it holds (.NET `IEnumerable<object>.Count()`), and anything else not
 /// at all.
@@ -357,28 +318,6 @@ fn quantity(value: &Value) -> Option<f64> {
         // not pluralized (axuno/SmartFormat#345) — and everything else either
         // is not `IConvertible` or throws on the conversion.
         _ => None,
-    }
-}
-
-/// The .NET type name the "argument was of type" error quotes.
-///
-/// A map has no faithful counterpart: .NET quotes the CLR type name of
-/// whatever dictionary was passed. We quote the type the goldens use,
-/// `Dictionary<string, object>`.
-fn dotnet_type_name(value: &Value) -> &'static str {
-    match value {
-        Value::Null => "null",
-        Value::Bool(_) => "System.Boolean",
-        Value::Int(_) => "System.Int64",
-        Value::UInt(_) => "System.UInt64",
-        Value::Float(_) => "System.Double",
-        Value::String(_) => "System.String",
-        Value::List(_) => "System.Object[]",
-        Value::Map(_) => "System.Collections.Generic.Dictionary`2[System.String,System.Object]",
-        #[cfg(feature = "time")]
-        Value::DateTime(_) => "System.DateTime",
-        #[cfg(feature = "time")]
-        Value::TimeSpan(_) => "System.TimeSpan",
     }
 }
 

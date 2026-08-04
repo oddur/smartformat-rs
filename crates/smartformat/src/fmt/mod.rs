@@ -31,3 +31,10 @@ impl fmt::Display for FormatSpecError {
 }
 
 impl std::error::Error for FormatSpecError {}
+
+/// The length of `text` in UTF-16 code units, which is the unit .NET counts
+/// text in: `string.Length`, the alignment width `string.Format` pads to, and
+/// every index a `FormattingException` reports.
+pub(crate) fn utf16_len(text: &str) -> usize {
+    text.chars().map(char::len_utf16).sum()
+}

@@ -25,6 +25,9 @@
 
 use std::cmp::Ordering;
 
+use crate::dotnet_messages::{
+    not_in_a_correct_format, INT32_OVERFLOW, OUT_OF_RANGE_INDEX as INDEX_OUT_OF_RANGE,
+};
 use crate::formatter::{Formatter, FormattingInfo};
 use crate::parsing::Format;
 use crate::value::Value;
@@ -42,14 +45,10 @@ const NAME: &str = "cond";
 /// `OverflowException` from `Convert.ToDecimal` and from `decimal.Parse`
 /// (`System.SR.Overflow_Decimal`).
 const DECIMAL_OVERFLOW: &str = "Value was either too large or too small for a Decimal.";
-/// `OverflowException` from the `(int)` cast of the value
-/// (`System.SR.Overflow_Int32`).
-const INT32_OVERFLOW: &str = "Value was either too large or too small for an Int32.";
-/// `ArgumentOutOfRangeException` from indexing one past the last parameter,
-/// which .NET does when every parameter is a complex condition and none of
-/// them holds (`System.SR.Arg_ArgumentOutOfRangeException`).
-const INDEX_OUT_OF_RANGE: &str =
-    "Specified argument was out of the range of valid values. (Parameter 'index')";
+// `INT32_OVERFLOW` is the `OverflowException` from the `(int)` cast of the
+// value, and `INDEX_OUT_OF_RANGE` the `ArgumentOutOfRangeException` from
+// indexing one past the last parameter, which .NET does when every parameter
+// is a complex condition and none of them holds.
 
 /// Picks one of several formats by the value, ported from .NET
 /// `ConditionalFormatter`.
@@ -612,7 +611,7 @@ fn cmp_magnitude(left: &Decimal, right: &Decimal) -> Ordering {
 /// `Number.TryNumberToDecimal` does as it fills the mantissa digit by digit
 /// and rounds once it is full.
 fn parse_decimal(text: &str) -> Result<Decimal, String> {
-    let invalid = || format!("The input string '{text}' was not in a correct format.");
+    let invalid = || not_in_a_correct_format(text);
 
     let mut rest = text;
     let mut negative = false;

@@ -61,11 +61,15 @@ pub(crate) fn try_get_char(
         })
 }
 
-/// Whether `input` is one of the characters .NET's number parser skips for
-/// `NumberStyles.AllowLeadingWhite` / `AllowTrailingWhite`: the space and the
-/// ASCII controls `0x09..=0x0D`. Unicode whitespace is *not* included, so
-/// `\u\u{a0}123` is an error in .NET as it is here.
-fn is_dotnet_white(input: char) -> bool {
+/// Whether `input` is one of the characters .NET's number parser skips
+/// (`Number.IsWhite`) for `NumberStyles.AllowLeadingWhite` /
+/// `AllowTrailingWhite`: the space and the ASCII controls `0x09..=0x0D`.
+/// Unicode whitespace is *not* included, so `\u\u{a0}123` is an error in .NET
+/// as it is here, and so is `{Name:substr(\u{a0}1)}`.
+///
+/// Shared with `SubStringFormatter`, whose options go through the same
+/// `int.Parse`.
+pub(crate) fn is_dotnet_white(input: char) -> bool {
     input == ' ' || ('\u{9}'..='\u{d}').contains(&input)
 }
 

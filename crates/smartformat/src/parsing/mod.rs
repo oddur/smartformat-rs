@@ -6,18 +6,21 @@
 //! was parsed from so the engine can reproduce the original tokens.
 
 pub(crate) mod chars;
-mod escaped_literal;
+pub(crate) mod escaped_literal;
 mod parser;
 mod settings;
 
 #[cfg(test)]
 mod tests;
 
+pub(crate) use escaped_literal::is_dotnet_white;
 pub use parser::Parser;
 pub use settings::{CustomCharError, ParserSettings, SelectorFilter};
 
 use std::fmt;
 use std::fmt::Write as _;
+
+use crate::dotnet_messages;
 
 /// The `ArgumentOutOfRangeException` .NET throws while splitting a format that
 /// holds a literal whose ends are crossed — the ones the parser leaves behind
@@ -58,8 +61,8 @@ impl SplitError {
     pub const fn message(self) -> &'static str {
         match self {
             SplitError::Count => "Count must be positive and count must refer to a location within the string/array/collection. (Parameter 'count')",
-            SplitError::Start => "Specified argument was out of the range of valid values. (Parameter 'start')",
-            SplitError::Length => "Specified argument was out of the range of valid values. (Parameter 'length')",
+            SplitError::Start => dotnet_messages::OUT_OF_RANGE_START,
+            SplitError::Length => dotnet_messages::OUT_OF_RANGE_LENGTH,
         }
     }
 }

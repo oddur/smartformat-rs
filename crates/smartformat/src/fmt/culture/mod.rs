@@ -243,6 +243,52 @@ pub(crate) fn language_subtag(name: &str) -> Option<&str> {
     (language.len() >= if has_more { 1 } else { 2 }).then_some(language)
 }
 
+/// .NET `CultureInfo.TwoLetterISOLanguageName`: the primary subtag of a
+/// culture name, lowercased — `pl-PL` and `PL` are both `pl`, `zh-Hans` is
+/// `zh`, and a language with no two-letter code keeps its three-letter one
+/// (`kde`).
+///
+/// The names this is given come from the culture table, which holds the names
+/// .NET itself spelled, so they need no validation; a name out of a `plural(…)`
+/// or `time(…)` option goes through [`named_culture_language`] instead.
+pub(crate) fn two_letter_iso_language_name(culture_name: &str) -> String {
+    culture_name
+        .split(SUBTAG_SEPARATORS)
+        .next()
+        .unwrap_or_default()
+        .to_ascii_lowercase()
+}
+
+/// The language of the culture a `plural(…)` or `time(…)` option names, .NET
+/// `CultureInfo.GetCultureInfo(options).TwoLetterISOLanguageName`, or the
+/// message of the `CultureNotFoundException` .NET throws for a name it rejects.
+///
+/// .NET hands the name to ICU, which normalizes it and answers the language
+/// subtag: `en-US`, `EN`, `en_US` and `en-us-x-private` are all `en`, and a
+/// language with no two-letter code keeps its own (`kde`). That is
+/// [`language_subtag`], which validates the name the way .NET does and answers
+/// its primary subtag — the crate's one notion of a .NET culture name, shared
+/// with [`get`]; the ICU resolutions it does not reproduce are listed there.
+///
+/// The primary subtag is taken as written, which is the
+/// `TwoLetterISOLanguageName` of every culture .NET knows except a three-letter
+/// ISO 639-2/T code with a two-letter equivalent: ICU folds `deu` to `de` and
+/// this does not, so `{0:time(deu):weeks}` writes German in .NET and English
+/// here. That is the `language_subtag` gap DESIGN.md records under
+/// "A culture name is validated, not resolved", and it is louder for the `time`
+/// formatter than for `plural(…)`, because a whole language's words change.
+pub(crate) fn named_culture_language(name: &str) -> Result<String, String> {
+    match language_subtag(name) {
+        Some(language) => Ok(language.to_ascii_lowercase()),
+        // .NET's `CultureNotFoundException.Message`. `CultureInfo.GetCultureInfo`
+        // looks the name up ASCII-lowercased, and quotes that spelling here.
+        None => Err(format!(
+            "Culture is not supported. (Parameter 'name')\n{} is an invalid culture identifier.",
+            name.to_ascii_lowercase()
+        )),
+    }
+}
+
 static INVARIANT: CultureData = CultureData {
     name: "",
     number: NumberFormat {

@@ -31,11 +31,13 @@ documentation."
 //! Compatibility scope and every known divergence from .NET live in
 //! `DESIGN.md` in the repository.
 
+pub(crate) mod dotnet_messages;
 pub mod error;
 pub mod extensions;
 pub mod fmt;
 pub mod formatter;
 pub mod parsing;
+pub(crate) mod registry;
 pub mod settings;
 pub mod sources;
 pub mod value;

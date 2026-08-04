@@ -24,9 +24,10 @@ use crate::fmt::culture::{self, CultureData};
 #[cfg(feature = "time")]
 use crate::fmt::date;
 use crate::fmt::number::{self, Number};
-use crate::fmt::FormatSpecError;
+use crate::fmt::{utf16_len, FormatSpecError};
 use crate::parsing::chars::ALIGNMENT_OPERATOR;
 use crate::parsing::{Format, FormatItem, Parser, ParserSettings, Placeholder, Selector};
+use crate::registry;
 use crate::settings::{CaseSensitivity, ErrorAction, SmartSettings};
 use crate::sources::variables::{GlobalVariablesSource, PersistentVariablesSource};
 use crate::sources::{SelectorInfo, SourceRegistry};
@@ -229,19 +230,12 @@ impl FormatterRegistry {
     /// key on and uses the formatter's name instead, which is the same thing
     /// for a formatter that was not renamed.
     fn index_to_insert(&self, name: &str) -> usize {
-        if self.formatters.is_empty() {
-            return 0;
-        }
-        let Some(rank) = well_known_rank(name) else {
-            return self.formatters.len();
-        };
-        for (index, formatter) in self.formatters.iter().enumerate().rev() {
-            match well_known_rank(formatter.name()) {
-                Some(other) if other <= rank => return index + 1,
-                _ => continue,
-            }
-        }
-        0
+        registry::index_to_insert(
+            self.formatters
+                .iter()
+                .map(|formatter| well_known_rank(formatter.name())),
+            well_known_rank(name),
+        )
     }
 
     /// The [`TemplateFormatter`] in this registry, if one was added.
@@ -794,7 +788,7 @@ impl<'e> Engine<'e> {
         // boundary of the template it was parsed from. A `Format` built by
         // hand can only make the position wrong, never panic.
         match self.base.get(..offset) {
-            Some(prefix) => prefix.encode_utf16().count(),
+            Some(prefix) => utf16_len(prefix),
             None => offset,
         }
     }
@@ -1114,7 +1108,7 @@ fn write_aligned(output: &mut String, text: &str, alignment: i32, fill: char) {
     }
 
     // .NET measures the alignment in UTF-16 code units.
-    let width = text.encode_utf16().count();
+    let width = utf16_len(text);
     let filler = alignment.unsigned_abs() as usize;
     let padding = filler.saturating_sub(width);
 
