@@ -251,6 +251,10 @@ pub(crate) fn language_subtag(name: &str) -> Option<&str> {
 /// The names this is given come from the culture table, which holds the names
 /// .NET itself spelled, so they need no validation; a name out of a `plural(…)`
 /// or `time(…)` option goes through [`named_culture_language`] instead.
+///
+/// Only the two formatters that name a language ask for this, so a build
+/// without `plural` — and so without `time`, which implies it — has no caller.
+#[cfg(feature = "plural")]
 pub(crate) fn two_letter_iso_language_name(culture_name: &str) -> String {
     culture_name
         .split(SUBTAG_SEPARATORS)
@@ -277,6 +281,7 @@ pub(crate) fn two_letter_iso_language_name(culture_name: &str) -> String {
 /// here. That is the `language_subtag` gap DESIGN.md records under
 /// "A culture name is validated, not resolved", and it is louder for the `time`
 /// formatter than for `plural(…)`, because a whole language's words change.
+#[cfg(feature = "plural")]
 pub(crate) fn named_culture_language(name: &str) -> Result<String, String> {
     match language_subtag(name) {
         Some(language) => Ok(language.to_ascii_lowercase()),

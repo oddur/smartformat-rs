@@ -101,21 +101,17 @@
 //!
 //! [fancy-regex]: https://docs.rs/fancy-regex
 
-use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::fmt;
 
 use fancy_regex::{Regex, RegexBuilder, RuntimeError};
 
-#[cfg(feature = "time")]
-use crate::fmt::date;
-use crate::fmt::number::{self, Number};
 use crate::formatter::{Formatter, FormattingInfo};
 use crate::parsing::{Format, FormatItem};
 use crate::value::Value;
 use crate::Error;
 
-use super::{split_format, split_part, InvalidSplitChar, DEFAULT_SPLIT_CHAR};
+use super::{split_format, split_part, value_text, InvalidSplitChar, DEFAULT_SPLIT_CHAR};
 
 /// The default formatter name, .NET `IsMatchFormatter.Name`.
 const NAME: &str = "ismatch";
@@ -521,6 +517,13 @@ impl Default for IsMatchFormatter {
 }
 
 impl Formatter for IsMatchFormatter {
+    /// Itself, so that a caller who registered it can find it again through
+    /// [`FormatterRegistry::get_mut`](crate::formatter::FormatterRegistry::get_mut)
+    /// and set its knobs.
+    fn as_any_mut(&mut self) -> Option<&mut dyn std::any::Any> {
+        Some(self)
+    }
+
     fn name(&self) -> &str {
         &self.name
     }
@@ -610,45 +613,6 @@ impl Formatter for IsMatchFormatter {
         self.write_match(info, parent, matched, groups)?;
 
         Ok(true)
-    }
-}
-
-/// The text .NET matches the pattern against, `CurrentValue.ToString()`.
-///
-/// `None` is "no text to match": a null value, which .NET declines before it
-/// does anything else, and the two values whose .NET rendering is a CLR type
-/// name.
-///
-/// As in [`ChooseFormatter`](super::ChooseFormatter), the conversion uses the
-/// culture of the format call where .NET uses the thread culture — the same
-/// thing whenever the two agree.
-fn value_text<'v>(value: &'v Value, info: &FormattingInfo<'_>) -> Option<Cow<'v, str>> {
-    let culture = info.culture();
-    match value {
-        Value::Null | Value::List(_) | Value::Map(_) => None,
-        // .NET `TimeSpan.ToString()`, which is culture-independent.
-        #[cfg(feature = "time")]
-        Value::TimeSpan(value) => Some(Cow::Owned(crate::extensions::time::timespan_to_string(
-            value,
-        ))),
-        Value::String(text) => Some(Cow::Borrowed(text.as_str())),
-        // .NET `bool.ToString()`.
-        Value::Bool(true) => Some(Cow::Borrowed("True")),
-        Value::Bool(false) => Some(Cow::Borrowed("False")),
-        // The empty specifier is always valid, so these cannot fail.
-        Value::Int(value) => Some(Cow::Owned(
-            number::format_number(Number::Int(*value), "", culture).unwrap_or_default(),
-        )),
-        Value::UInt(value) => Some(Cow::Owned(
-            number::format_number(Number::UInt(*value), "", culture).unwrap_or_default(),
-        )),
-        Value::Float(value) => Some(Cow::Owned(
-            number::format_number(Number::Float(*value), "", culture).unwrap_or_default(),
-        )),
-        #[cfg(feature = "time")]
-        Value::DateTime(value) => Some(Cow::Owned(
-            date::format_datetime(value, "", culture).unwrap_or_default(),
-        )),
     }
 }
 

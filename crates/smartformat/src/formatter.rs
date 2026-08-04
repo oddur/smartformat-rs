@@ -73,39 +73,28 @@ pub trait Formatter: Send + Sync {
         false
     }
 
-    /// This formatter as a [`TemplateFormatter`], if it is one — the port's
-    /// stand-in for .NET's `GetFormatterExtension<TemplateFormatter>()`, used
-    /// by [`SmartFormatter::register_template`] to reach a template registry
-    /// the [`FormatterRegistry`] already owns.
+    /// This formatter as an [`Any`], so that a caller who registered it can
+    /// find it again and set its knobs — the port's stand-in for .NET's
+    /// `GetFormatterExtension<T>()`, which
+    /// [`FormatterRegistry::get_mut`] is built on.
     ///
     /// A `dyn Formatter` cannot be downcast the ordinary way: `Any` would have
     /// to be a supertrait, and coercing `&mut dyn Formatter` to `&mut dyn Any`
-    /// needs trait upcasting, stable well past this crate's MSRV. So instead of
-    /// a general downcast there is one question per formatter that has to be
-    /// found again after it is registered — this one and
-    /// [`as_localization_formatter_mut`](Self::as_localization_formatter_mut).
-    /// [`TemplateFormatter`] overrides this one; no other formatter should.
+    /// needs trait upcasting, stable well past this crate's MSRV. Handing the
+    /// coercion to the implementer costs one line and asks nothing of the
+    /// compiler.
     ///
-    /// [`TemplateFormatter`]: crate::extensions::TemplateFormatter
-    fn as_template_formatter_mut(&mut self) -> Option<&mut TemplateFormatter> {
-        None
-    }
-
-    /// This formatter as a [`LocalizationFormatter`], if it is one — the same
-    /// stand-in for a downcast as
-    /// [`as_template_formatter_mut`](Self::as_template_formatter_mut), used by
-    /// [`SmartFormatter::register_localization`] and
-    /// [`FormatterRegistry::localization_formatter_mut`].
+    /// Every formatter this crate ships answers `Some(self)`, and a formatter
+    /// of your own wants to as well; the default is `None` only so that adding
+    /// the method breaks nobody. A formatter that declines is invisible to
+    /// [`get_mut`](FormatterRegistry::get_mut) — [`register_localization`] and
+    /// [`register_template`] would then register a second extension that name
+    /// lookup could never reach.
     ///
-    /// .NET keeps the provider in `SmartSettings.Localization`, one slot for
-    /// the whole formatter, so registering a second provider there replaces the
-    /// first. Finding the registered formatter again is what lets this port do
-    /// the same instead of registering a second extension that name lookup
-    /// would never reach. [`LocalizationFormatter`] overrides this; no other
-    /// formatter should.
-    ///
-    /// [`LocalizationFormatter`]: crate::extensions::LocalizationFormatter
-    fn as_localization_formatter_mut(&mut self) -> Option<&mut LocalizationFormatter> {
+    /// [`Any`]: std::any::Any
+    /// [`register_localization`]: SmartFormatter::register_localization
+    /// [`register_template`]: SmartFormatter::register_template
+    fn as_any_mut(&mut self) -> Option<&mut dyn std::any::Any> {
         None
     }
 }
@@ -238,29 +227,40 @@ impl FormatterRegistry {
         )
     }
 
-    /// The [`TemplateFormatter`] in this registry, if one was added.
+    /// The registered formatter of type `T`, if there is one — .NET's
+    /// `SmartFormatter.GetFormatterExtension<T>()`.
     ///
-    /// [`SmartFormatter::register_template`] fills its registry through this;
-    /// a caller who registered a template formatter by hand can reach it the
-    /// same way. The first one wins, as name lookup does.
+    /// This is how a knob that is not a setting gets turned: .NET's
+    /// `IFormatter` implementations carry properties of their own
+    /// (`ListFormatter.SplitChar`, `SubStringFormatter.NullDisplayString`,
+    /// `IsMatchFormatter.RegexOptions`), and the way to reach them is to find
+    /// the instance the registry already owns rather than to build a second
+    /// one. [`SmartFormatter::register_template`] and
+    /// [`SmartFormatter::register_localization`] are both this call plus a
+    /// registration when it misses.
     ///
-    /// [`TemplateFormatter`]: crate::extensions::TemplateFormatter
-    pub fn template_formatter_mut(&mut self) -> Option<&mut TemplateFormatter> {
+    /// The first formatter of that type wins, as name lookup does. A formatter
+    /// that does not implement [`Formatter::as_any_mut`] is not found.
+    ///
+    /// ```
+    /// use smartformat::extensions::ListFormatter;
+    /// use smartformat::{SmartFormatter, Value};
+    ///
+    /// let mut smart = SmartFormatter::default();
+    /// smart
+    ///     .formatters_mut()
+    ///     .get_mut::<ListFormatter>()
+    ///     .expect("the default registry holds one")
+    ///     .set_split_char(',')
+    ///     .unwrap();
+    ///
+    /// let args = Value::List(vec![Value::List(vec![Value::Int(1), Value::Int(2)])]);
+    /// assert_eq!(smart.format("{0:list:{}, and }", &args).unwrap(), "1 and 2");
+    /// ```
+    pub fn get_mut<T: Formatter + 'static>(&mut self) -> Option<&mut T> {
         self.formatters
             .iter_mut()
-            .find_map(|formatter| formatter.as_template_formatter_mut())
-    }
-
-    /// The [`LocalizationFormatter`] in this registry, if one was added.
-    ///
-    /// [`SmartFormatter::register_localization`] replaces its provider through
-    /// this. The first one wins, as name lookup does.
-    ///
-    /// [`LocalizationFormatter`]: crate::extensions::LocalizationFormatter
-    pub fn localization_formatter_mut(&mut self) -> Option<&mut LocalizationFormatter> {
-        self.formatters
-            .iter_mut()
-            .find_map(|formatter| formatter.as_localization_formatter_mut())
+            .find_map(|formatter| formatter.as_any_mut()?.downcast_mut::<T>())
     }
 
     pub fn push(&mut self, formatter: Box<dyn Formatter>) {
@@ -436,14 +436,14 @@ impl SmartFormatter {
         name: impl Into<String>,
         template: &str,
     ) -> Result<(), RegisterError> {
-        if self.formatters.template_formatter_mut().is_none() {
+        if self.formatters.get_mut::<TemplateFormatter>().is_none() {
             let formatter = TemplateFormatter::new(self.settings.case_sensitive);
             self.formatters.add(Box::new(formatter));
         }
         // Disjoint fields: the parser is read while the registry is written.
         let parser = &self.parser;
         self.formatters
-            .template_formatter_mut()
+            .get_mut::<TemplateFormatter>()
             .expect("a template formatter was just added")
             .register(parser, name, template)
     }
@@ -490,7 +490,7 @@ impl SmartFormatter {
     ///
     /// [`LocalizationFormatter`]: crate::extensions::LocalizationFormatter
     pub fn register_localization(&mut self, provider: Box<dyn LocalizationProvider>) {
-        if let Some(formatter) = self.formatters.localization_formatter_mut() {
+        if let Some(formatter) = self.formatters.get_mut::<LocalizationFormatter>() {
             formatter.set_provider(provider);
             return;
         }
@@ -916,49 +916,40 @@ impl<'e> Engine<'e> {
             output,
         };
 
-        // Compatibility mode bypasses every extension but DefaultFormatter,
-        // including the auto-detecting ones.
-        if self.smart.settings.string_format_compatibility {
-            let handled = match self.smart.formatters.default_formatter() {
-                Some(formatter) => formatter.try_evaluate_format(&mut info)?,
-                None => false,
-            };
-            return if handled {
-                Ok(())
-            } else {
-                Err(self.no_formatter_error(placeholder))
-            };
-        }
-
-        let name = &placeholder.formatter_name;
-        if !name.is_empty() {
-            // .NET reports a missing formatter and a formatter that declined
-            // the value the same way.
-            let handled = match self
-                .smart
-                .formatters
-                .find(name, self.smart.settings.case_sensitive)
-            {
-                Some(formatter) => formatter.try_evaluate_format(&mut info)?,
-                None => false,
-            };
-            return if handled {
-                Ok(())
-            } else {
-                Err(self.no_formatter_error(placeholder))
-            };
-        }
-
-        for formatter in &self.smart.formatters.formatters {
-            if !formatter.can_auto_detect() {
-                continue;
+        // Auto-detection is the only path that consults more than one
+        // formatter: compatibility mode bypasses every extension but
+        // DefaultFormatter, the auto-detecting ones included, and a
+        // placeholder that names a formatter reaches that one alone.
+        let picked = if self.smart.settings.string_format_compatibility {
+            self.smart.formatters.default_formatter()
+        } else if placeholder.formatter_name.is_empty() {
+            for formatter in &self.smart.formatters.formatters {
+                if !formatter.can_auto_detect() {
+                    continue;
+                }
+                if formatter.try_evaluate_format(&mut info)? {
+                    return Ok(());
+                }
             }
-            if formatter.try_evaluate_format(&mut info)? {
-                return Ok(());
-            }
-        }
+            return Err(self.no_formatter_error(placeholder));
+        } else {
+            self.smart.formatters.find(
+                &placeholder.formatter_name,
+                self.smart.settings.case_sensitive,
+            )
+        };
 
-        Err(self.no_formatter_error(placeholder))
+        // .NET reports a missing formatter, a formatter that declined the
+        // value, and no auto-detecting formatter at all with one message.
+        let handled = match picked {
+            Some(formatter) => formatter.try_evaluate_format(&mut info)?,
+            None => false,
+        };
+        if handled {
+            Ok(())
+        } else {
+            Err(self.no_formatter_error(placeholder))
+        }
     }
 
     /// .NET `Evaluator.FormatError`: the settings decide whether an error
@@ -1058,14 +1049,23 @@ impl<'e> Engine<'e> {
     /// [`FormattingInfo::formatting_error_at_utf16`].
     fn formatting_error(&self, issue: &str, index: usize) -> Error {
         Error::Format {
-            message: format!(
-                "Error parsing format string: {issue} at {index}\n{}\n{}^",
-                self.base,
-                "-".repeat(index)
-            ),
+            message: formatting_exception_message(self.base, issue, index),
             position: index,
         }
     }
+}
+
+/// .NET `FormattingException.Message`: the issue, the index it is reported at,
+/// then the template and a caret line under it.
+///
+/// [`ErrorAction::OutputErrorInResult`] writes this into the result, so it has
+/// to match .NET byte for byte — which is why the tests that pin one build it
+/// from here rather than re-spelling it.
+pub(crate) fn formatting_exception_message(base: &str, issue: &str, index: usize) -> String {
+    format!(
+        "Error parsing format string: {issue} at {index}\n{base}\n{}^",
+        "-".repeat(index)
+    )
 }
 
 /// .NET skips empty selectors (`{0..Length}`) and alignment-only selectors
@@ -1516,6 +1516,13 @@ impl<'a> FormattingInfo<'a> {
 pub struct DefaultFormatter;
 
 impl Formatter for DefaultFormatter {
+    /// Itself, so that a caller who registered it can find it again through
+    /// [`FormatterRegistry::get_mut`](crate::formatter::FormatterRegistry::get_mut)
+    /// and set its knobs.
+    fn as_any_mut(&mut self) -> Option<&mut dyn std::any::Any> {
+        Some(self)
+    }
+
     fn name(&self) -> &str {
         "d"
     }

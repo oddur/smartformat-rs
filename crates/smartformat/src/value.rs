@@ -285,6 +285,10 @@ impl From<jiff::civil::DateTime> for Value {
 /// A map has no faithful counterpart: .NET quotes the CLR type name of
 /// whatever dictionary was passed. We quote the type the goldens use,
 /// `Dictionary<string, object>`.
+///
+/// Only `plural` and `time` name the type they were handed, so a build without
+/// them has no caller.
+#[cfg(feature = "plural")]
 pub(crate) fn dotnet_type_name(value: &Value, null_name: &'static str) -> &'static str {
     match value {
         Value::Null => null_name,

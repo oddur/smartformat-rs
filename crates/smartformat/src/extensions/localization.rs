@@ -504,6 +504,14 @@ impl LocalizationFormatter {
 }
 
 impl Formatter for LocalizationFormatter {
+    /// Itself, which is what lets
+    /// [`SmartFormatter::register_localization`](crate::SmartFormatter::register_localization)
+    /// find this formatter again and replace its provider, the way .NET's one
+    /// `SmartSettings.Localization.LocalizationProvider` slot behaves.
+    fn as_any_mut(&mut self) -> Option<&mut dyn std::any::Any> {
+        Some(self)
+    }
+
     fn name(&self) -> &str {
         &self.name
     }
@@ -512,15 +520,6 @@ impl Formatter for LocalizationFormatter {
     /// ("LocalizationFormatter cannot handle auto-detection").
     fn can_auto_detect(&self) -> bool {
         false
-    }
-
-    /// Lets [`SmartFormatter::register_localization`] find this formatter again
-    /// and replace its provider, the way .NET's one
-    /// `SmartSettings.Localization.LocalizationProvider` slot behaves.
-    ///
-    /// [`SmartFormatter::register_localization`]: crate::SmartFormatter::register_localization
-    fn as_localization_formatter_mut(&mut self) -> Option<&mut LocalizationFormatter> {
-        Some(self)
     }
 
     fn try_evaluate_format(&self, info: &mut FormattingInfo<'_>) -> Result<bool, Error> {

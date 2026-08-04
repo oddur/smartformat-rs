@@ -220,6 +220,13 @@ impl TemplateFormatter {
 }
 
 impl Formatter for TemplateFormatter {
+    /// Itself, which is what lets
+    /// [`SmartFormatter::register_template`](crate::SmartFormatter::register_template)
+    /// add a template to a formatter the registry already owns.
+    fn as_any_mut(&mut self) -> Option<&mut dyn std::any::Any> {
+        Some(self)
+    }
+
     fn name(&self) -> &str {
         &self.name
     }
@@ -228,13 +235,6 @@ impl Formatter for TemplateFormatter {
     /// ("TemplateFormatter cannot handle auto-detection").
     fn can_auto_detect(&self) -> bool {
         false
-    }
-
-    /// Itself, which is what lets
-    /// [`SmartFormatter::register_template`](crate::SmartFormatter::register_template)
-    /// add a template to a formatter the registry already owns.
-    fn as_template_formatter_mut(&mut self) -> Option<&mut TemplateFormatter> {
-        Some(self)
     }
 
     fn try_evaluate_format(&self, info: &mut FormattingInfo<'_>) -> Result<bool, Error> {

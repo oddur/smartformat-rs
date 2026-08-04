@@ -195,6 +195,13 @@ impl Default for SubStringFormatter {
 }
 
 impl Formatter for SubStringFormatter {
+    /// Itself, so that a caller who registered it can find it again through
+    /// [`FormatterRegistry::get_mut`](crate::formatter::FormatterRegistry::get_mut)
+    /// and set its knobs.
+    fn as_any_mut(&mut self) -> Option<&mut dyn std::any::Any> {
+        Some(self)
+    }
+
     fn name(&self) -> &str {
         &self.name
     }
@@ -390,6 +397,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     use super::*;
+    use crate::extensions::envelope;
     use crate::extensions::null::NullFormatter;
     use crate::formatter::{DefaultFormatter, FormatterRegistry};
     use crate::settings::{ErrorAction, SmartSettings};
@@ -711,13 +719,6 @@ mod tests {
     /// .NET's `FormattingException.Message`, which
     /// `ErrorAction::OutputErrorInResult` writes into the result verbatim: the
     /// issue, the index it is reported at, then the template and a caret line.
-    fn envelope(template: &str, issue: &str, index: usize) -> String {
-        std::format!(
-            "Error parsing format string: {issue} at {index}\n{template}\n{}^",
-            "-".repeat(index)
-        )
-    }
-
     #[test]
     fn format_without_nesting_should_throw() {
         // The one error of this formatter that .NET raises as a

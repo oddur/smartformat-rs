@@ -191,6 +191,13 @@ impl fmt::Debug for PluralLocalizationFormatter {
 }
 
 impl Formatter for PluralLocalizationFormatter {
+    /// Itself, so that a caller who registered it can find it again through
+    /// [`FormatterRegistry::get_mut`](crate::formatter::FormatterRegistry::get_mut)
+    /// and set its knobs.
+    fn as_any_mut(&mut self) -> Option<&mut dyn std::any::Any> {
+        Some(self)
+    }
+
     fn name(&self) -> &str {
         &self.name
     }
@@ -367,6 +374,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     use super::*;
+    use crate::extensions::envelope;
     use crate::fmt::culture::{self, CultureData};
     use crate::formatter::{DefaultFormatter, FormatterRegistry};
     use crate::settings::{ErrorAction, SmartSettings};
@@ -423,13 +431,6 @@ mod tests {
     /// `ErrorAction::OutputErrorInResult` writes into the result verbatim:
     /// the issue, the index it is reported at, then the template and a caret
     /// line. Probed against 3.6.1.
-    fn envelope(template: &str, issue: &str, index: usize) -> String {
-        std::format!(
-            "Error parsing format string: {issue} at {index}\n{template}\n{}^",
-            "-".repeat(index)
-        )
-    }
-
     fn error_of(template: &str, value: Value) -> (String, usize) {
         match smart().format(template, &args([value])) {
             Err(Error::Format { message, position }) => (message, position),

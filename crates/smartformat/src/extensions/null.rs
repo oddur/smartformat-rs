@@ -92,6 +92,13 @@ impl Default for NullFormatter {
 }
 
 impl Formatter for NullFormatter {
+    /// Itself, so that a caller who registered it can find it again through
+    /// [`FormatterRegistry::get_mut`](crate::formatter::FormatterRegistry::get_mut)
+    /// and set its knobs.
+    fn as_any_mut(&mut self) -> Option<&mut dyn std::any::Any> {
+        Some(self)
+    }
+
     fn name(&self) -> &str {
         &self.name
     }

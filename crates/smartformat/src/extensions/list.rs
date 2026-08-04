@@ -157,6 +157,13 @@ impl Default for ListFormatter {
 }
 
 impl Formatter for ListFormatter {
+    /// Itself, so that a caller who registered it can find it again through
+    /// [`FormatterRegistry::get_mut`](crate::formatter::FormatterRegistry::get_mut)
+    /// and set its knobs.
+    fn as_any_mut(&mut self) -> Option<&mut dyn std::any::Any> {
+        Some(self)
+    }
+
     fn name(&self) -> &str {
         &self.name
     }
@@ -317,6 +324,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     use super::*;
+    use crate::extensions::envelope;
     use crate::extensions::ConditionalFormatter;
     use crate::formatter::{DefaultFormatter, FormatterRegistry};
     use crate::parsing::SplitError;
@@ -412,13 +420,6 @@ mod tests {
 
     /// .NET's `FormattingException.Message`, which
     /// [`ErrorAction::OutputErrorInResult`] writes into the result verbatim.
-    fn envelope(template: &str, issue: &str, index: usize) -> String {
-        std::format!(
-            "Error parsing format string: {issue} at {index}\n{template}\n{}^",
-            "-".repeat(index)
-        )
-    }
-
     /// What .NET throws when the formatter is named and cannot take the value.
     const NOT_A_LIST: &str =
         "Formatter named 'list' requires an IEnumerable argument and at least 2 format parameters.";

@@ -18,15 +18,14 @@
 //! assert_eq!(smart.format(template, &args).unwrap(), "two");
 //! ```
 
-#[cfg(feature = "time")]
-use crate::fmt::date;
-use crate::fmt::number::{self, Number};
+use std::borrow::Cow;
+
 use crate::formatter::{Formatter, FormattingInfo};
 use crate::settings::CaseSensitivity;
 use crate::value::Value;
 use crate::Error;
 
-use super::{split_format, split_part, InvalidSplitChar, DEFAULT_SPLIT_CHAR};
+use super::{split_format, split_part, value_text, InvalidSplitChar, DEFAULT_SPLIT_CHAR};
 
 /// The default formatter name, .NET `ChooseFormatter.Name`.
 const NAME: &str = "choose";
@@ -118,23 +117,27 @@ impl ChooseFormatter {
     /// .NET `GetChosenIndex`: the index of the first option that matches the
     /// value, plus the text the value was matched by (which the "not a valid
     /// choice" error quotes).
-    fn chosen_index(&self, info: &FormattingInfo<'_>, options: &[&str]) -> (Option<usize>, String) {
+    fn chosen_index<'v>(
+        &self,
+        info: &FormattingInfo<'v>,
+        options: &[&str],
+    ) -> (Option<usize>, Cow<'v, str>) {
         // .NET matches `null` and `bool` case-insensitively whatever the
         // formatter's own case sensitivity is.
         let (text, case_sensitivity, matchable) = match info.current() {
             Value::Null => (
-                NULL_TEXT.to_owned(),
+                Cow::Borrowed(NULL_TEXT),
                 CaseSensitivity::CaseInsensitive,
                 Matchable::Yes,
             ),
             // .NET compares against `bool.ToString()`, which is "True"/"False".
             Value::Bool(value) => (
-                bool_text(*value).to_owned(),
+                Cow::Borrowed(bool_text(*value)),
                 CaseSensitivity::CaseInsensitive,
                 Matchable::Yes,
             ),
             value => {
-                let (text, matchable) = value_text(value, info);
+                let (text, matchable) = matchable_text(value, info);
                 (text, self.case_sensitivity, matchable)
             }
         };
@@ -156,6 +159,13 @@ impl Default for ChooseFormatter {
 }
 
 impl Formatter for ChooseFormatter {
+    /// Itself, so that a caller who registered it can find it again through
+    /// [`FormatterRegistry::get_mut`](crate::formatter::FormatterRegistry::get_mut)
+    /// and set its knobs.
+    fn as_any_mut(&mut self) -> Option<&mut dyn std::any::Any> {
+        Some(self)
+    }
+
     fn name(&self) -> &str {
         &self.name
     }
@@ -239,50 +249,22 @@ enum Matchable {
     No,
 }
 
-/// The text .NET matches the options against: `CurrentValue.ToString()`.
+/// The text .NET matches the options against, [`value_text`], plus whether
+/// anything can match it at all.
 ///
-/// Two divergences:
-///
-/// * .NET converts with the *thread* culture, not with the culture passed to
-///   the format call; we use the culture of the call, which is the same thing
-///   whenever the two agree.
-/// * a list or a map has no .NET counterpart worth matching — .NET renders
-///   `System.Object[]` and the like — so nothing matches it, and the error
-///   message describes it instead.
-fn value_text(value: &Value, info: &FormattingInfo<'_>) -> (String, Matchable) {
-    let culture = info.culture();
-    match value {
-        // Handled by the caller, which matches these case-insensitively.
-        Value::Null => (NULL_TEXT.to_owned(), Matchable::Yes),
-        Value::Bool(value) => (bool_text(*value).to_owned(), Matchable::Yes),
-        Value::String(text) => (text.clone(), Matchable::Yes),
-        // The empty specifier is always valid, so these cannot fail.
-        Value::Int(value) => (
-            number::format_number(Number::Int(*value), "", culture).unwrap_or_default(),
-            Matchable::Yes,
-        ),
-        Value::UInt(value) => (
-            number::format_number(Number::UInt(*value), "", culture).unwrap_or_default(),
-            Matchable::Yes,
-        ),
-        Value::Float(value) => (
-            number::format_number(Number::Float(*value), "", culture).unwrap_or_default(),
-            Matchable::Yes,
-        ),
-        #[cfg(feature = "time")]
-        Value::DateTime(value) => (
-            date::format_datetime(value, "", culture).unwrap_or_default(),
-            Matchable::Yes,
-        ),
-        Value::List(_) => ("<list>".to_owned(), Matchable::No),
-        Value::Map(_) => ("<map>".to_owned(), Matchable::No),
-        // .NET `TimeSpan.ToString()`, which is its culture-independent
-        // constant format whatever the thread culture is.
-        #[cfg(feature = "time")]
-        Value::TimeSpan(value) => (
-            crate::extensions::time::timespan_to_string(value),
-            Matchable::Yes,
-        ),
+/// `null` never reaches here — [`ChooseFormatter::chosen_index`] matches it
+/// first, case-insensitively — so the arm that would answer for it is only
+/// there to keep the match total.
+fn matchable_text<'v>(value: &'v Value, info: &FormattingInfo<'_>) -> (Cow<'v, str>, Matchable) {
+    match value_text(value, info) {
+        Some(text) => (text, Matchable::Yes),
+        None => {
+            let sentinel = match value {
+                Value::Map(_) => "<map>",
+                _ => "<list>",
+            };
+            (Cow::Borrowed(sentinel), Matchable::No)
+        }
     }
 }
 
@@ -300,6 +282,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     use super::*;
+    use crate::extensions::envelope;
     use crate::formatter::{DefaultFormatter, FormatterRegistry};
     use crate::settings::{ErrorAction, SmartSettings};
     use crate::SmartFormatter;
@@ -351,13 +334,6 @@ mod tests {
     /// `ErrorAction::OutputErrorInResult` writes into the result verbatim:
     /// the issue, the index it is reported at, then the template and a caret
     /// line. Probed against 3.6.1.
-    fn envelope(template: &str, issue: &str, index: usize) -> String {
-        std::format!(
-            "Error parsing format string: {issue} at {index}\n{template}\n{}^",
-            "-".repeat(index)
-        )
-    }
-
     fn error_of(template: &str, value: Value) -> String {
         match smart().format(template, &args([value])) {
             Err(Error::Format { message, .. }) => message,

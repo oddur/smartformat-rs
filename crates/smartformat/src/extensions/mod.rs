@@ -28,10 +28,15 @@ pub mod template;
 #[cfg(feature = "time")]
 pub mod time;
 
+use std::borrow::Cow;
 use std::fmt;
 
+#[cfg(feature = "time")]
+use crate::fmt::date;
+use crate::fmt::number::{self, Number};
 use crate::formatter::FormattingInfo;
 use crate::parsing::{Format, SplitPiece};
+use crate::value::Value;
 use crate::Error;
 
 pub use choose::ChooseFormatter;
@@ -82,6 +87,69 @@ pub(crate) fn valid_split_char(split_char: char) -> Result<char, InvalidSplitCha
     } else {
         Err(InvalidSplitChar(split_char))
     }
+}
+
+/// The text .NET matches a value against — `CurrentValue.ToString()` — for the
+/// two formatters that match one: [`ChooseFormatter`] against its options and
+/// `IsMatchFormatter` against its pattern.
+///
+/// `None` is "there is no text to match": a null, and the two values .NET
+/// renders as a CLR type name (`System.Object[]`,
+/// `System.Collections.Generic.Dictionary\`2[…]`), which no pattern and no
+/// sensible option ever spells. Each caller decides what to do with that —
+/// `ismatch` declines the value, `choose` matches nothing and quotes a
+/// placeholder text in its error.
+///
+/// This is *not*
+/// [`DefaultFormatter`](crate::formatter::DefaultFormatter)'s table, which
+/// looks similar and is deliberately different: that one renders a value for
+/// the *output*, so it honours the placeholder's format specifier and fails
+/// loudly on a list or a map. This one is a match key, always taken with the
+/// empty specifier, and never fails. `value::dotnet_type_name` is the third
+/// value-to-text table, and names a value's *type* for an error message.
+///
+/// Two divergences, both shared by the two callers:
+///
+/// * .NET converts with the *thread* culture, not with the culture passed to
+///   the format call; we use the culture of the call, which is the same thing
+///   whenever the two agree.
+/// * a `TimeSpan` is .NET's `TimeSpan.ToString()`, which is culture-independent
+///   whatever the thread culture is.
+pub(crate) fn value_text<'v>(value: &'v Value, info: &FormattingInfo<'_>) -> Option<Cow<'v, str>> {
+    let culture = info.culture();
+    match value {
+        Value::Null | Value::List(_) | Value::Map(_) => None,
+        Value::String(text) => Some(Cow::Borrowed(text.as_str())),
+        // .NET `bool.ToString()`.
+        Value::Bool(true) => Some(Cow::Borrowed("True")),
+        Value::Bool(false) => Some(Cow::Borrowed("False")),
+        // The empty specifier is always valid, so these cannot fail.
+        Value::Int(value) => Some(Cow::Owned(
+            number::format_number(Number::Int(*value), "", culture).unwrap_or_default(),
+        )),
+        Value::UInt(value) => Some(Cow::Owned(
+            number::format_number(Number::UInt(*value), "", culture).unwrap_or_default(),
+        )),
+        Value::Float(value) => Some(Cow::Owned(
+            number::format_number(Number::Float(*value), "", culture).unwrap_or_default(),
+        )),
+        #[cfg(feature = "time")]
+        Value::DateTime(value) => Some(Cow::Owned(
+            date::format_datetime(value, "", culture).unwrap_or_default(),
+        )),
+        #[cfg(feature = "time")]
+        Value::TimeSpan(value) => Some(Cow::Owned(time::timespan_to_string(value))),
+    }
+}
+
+/// The .NET `FormattingException` message a test expects, built from the
+/// engine's own [`formatting_exception_message`] so that the two can never
+/// drift apart.
+///
+/// [`formatting_exception_message`]: crate::formatter::formatting_exception_message
+#[cfg(test)]
+pub(crate) fn envelope(template: &str, issue: &str, index: usize) -> String {
+    crate::formatter::formatting_exception_message(template, issue, index)
 }
 
 /// The parts `format` splits into, or the formatting error .NET's

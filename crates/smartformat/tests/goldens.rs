@@ -11,18 +11,15 @@ use std::collections::BTreeMap;
 
 use serde_json::{Map, Value as Json};
 use smartformat::fmt::culture;
-use smartformat::formatter::{DefaultFormatter, FormatterRegistry};
+use smartformat::formatter::FormatterRegistry;
 use smartformat::parsing::ParserSettings;
 use smartformat::sources::variables::{self, PersistentVariablesSource};
 use smartformat::HashMapLocalizationProvider;
-#[cfg(feature = "plural")]
-use smartformat::PluralLocalizationFormatter;
 #[cfg(feature = "time")]
 use smartformat::TimeFormatter;
 use smartformat::{
-    CaseSensitivity, ChooseFormatter, ConditionalFormatter, Error, ErrorAction, ListFormatter,
-    NullFormatter, SmartFormatter, SmartSettings, SubStringFormatter, SubStringOutOfRangeBehavior,
-    Value,
+    CaseSensitivity, Error, ErrorAction, ListFormatter, NullFormatter, SmartFormatter,
+    SmartSettings, SubStringFormatter, SubStringOutOfRangeBehavior, Value,
 };
 #[cfg(feature = "regex-formatters")]
 use smartformat::{IsMatchFormatter, RegexOptions};
@@ -539,13 +536,8 @@ fn formatter_for(node: &Json, now: &str) -> SmartFormatter {
 
     // The extension properties are not settings, so they cannot be passed to
     // the constructor: .NET reaches into the built registry with
-    // `GetFormatterExtension<T>()` and assigns them. There is no downcast from
-    // `dyn Formatter` here, so a case that configures one rebuilds the whole
-    // registry instead, letting `FormatterRegistry::add` put each extension at
-    // its .NET rank.
-    if extensions.needs_custom_registry() {
-        *smart.formatters_mut() = extensions.registry();
-    }
+    // `GetFormatterExtension<T>()` and assigns them, and so does this.
+    extensions.configure(smart.formatters_mut());
     if let Some(set) = &extensions.templates {
         for (name, template) in template_fixture(set) {
             smart
@@ -718,29 +710,13 @@ struct Extensions {
 }
 
 impl Extensions {
-    fn needs_custom_registry(&self) -> bool {
-        self.regex_options.is_some()
-            || self.is_match_split_char.is_some()
-            || self.is_match_placeholder_name.is_some()
-            || self.is_match_can_auto_detect.is_some()
-            || self.substring_out_of_range.is_some()
-            || self.substring_null_display.is_some()
-            || self.substring_split_char.is_some()
-            || self.substring_can_auto_detect.is_some()
-            || self.is_null_split_char.is_some()
-            || self.is_null_can_auto_detect.is_some()
-            || self.list_split_char.is_some()
-            || self.list_can_auto_detect.is_some()
-    }
-
-    /// The default registry, with the configured extensions in place of the
-    /// ones [`FormatterRegistry::new`] would have built. Every formatter here
-    /// is well known to [`FormatterRegistry::add`], so the order is the same
-    /// one `CreateDefaultSmartFormat` ends up with whatever order they are
-    /// added in.
-    fn registry(&self) -> FormatterRegistry {
-        let mut registry = FormatterRegistry::empty();
-        let mut list = ListFormatter::new();
+    /// Turns the knobs a case asks for on the formatters the default registry
+    /// already holds, which is .NET's
+    /// `smart.GetFormatterExtension<T>()!.Property = …`.
+    fn configure(&self, registry: &mut FormatterRegistry) {
+        let list = registry
+            .get_mut::<ListFormatter>()
+            .expect("the default registry holds a list formatter");
         if let Some(split_char) = self.list_split_char {
             list.set_split_char(split_char)
                 .expect("a valid split character");
@@ -748,13 +724,12 @@ impl Extensions {
         if let Some(can_auto_detect) = self.list_can_auto_detect {
             list.set_can_auto_detect(can_auto_detect);
         }
-        registry.add(Box::new(list));
-        #[cfg(feature = "plural")]
-        registry.add(Box::new(PluralLocalizationFormatter::new()));
-        registry.add(Box::new(ConditionalFormatter::new()));
+
         #[cfg(feature = "regex-formatters")]
         {
-            let mut is_match = IsMatchFormatter::new();
+            let is_match = registry
+                .get_mut::<IsMatchFormatter>()
+                .expect("the default registry holds an ismatch formatter");
             if let Some(options) = &self.regex_options {
                 is_match.set_regex_options(regex_options(options));
             }
@@ -769,9 +744,11 @@ impl Extensions {
             if let Some(can_auto_detect) = self.is_match_can_auto_detect {
                 is_match.set_can_auto_detect(can_auto_detect);
             }
-            registry.add(Box::new(is_match));
         }
-        let mut is_null = NullFormatter::new();
+
+        let is_null = registry
+            .get_mut::<NullFormatter>()
+            .expect("the default registry holds an isnull formatter");
         if let Some(split_char) = self.is_null_split_char {
             is_null
                 .set_split_char(split_char)
@@ -780,9 +757,10 @@ impl Extensions {
         if let Some(can_auto_detect) = self.is_null_can_auto_detect {
             is_null.set_can_auto_detect(can_auto_detect);
         }
-        registry.add(Box::new(is_null));
-        registry.add(Box::new(ChooseFormatter::new()));
-        let mut substring = SubStringFormatter::new();
+
+        let substring = registry
+            .get_mut::<SubStringFormatter>()
+            .expect("the default registry holds a substr formatter");
         if let Some(behavior) = self.substring_out_of_range {
             substring.set_out_of_range_behavior(behavior);
         }
@@ -797,9 +775,6 @@ impl Extensions {
         if let Some(can_auto_detect) = self.substring_can_auto_detect {
             substring.set_can_auto_detect(can_auto_detect);
         }
-        registry.add(Box::new(substring));
-        registry.add(Box::new(DefaultFormatter));
-        registry
     }
 }
 
