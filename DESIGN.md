@@ -56,6 +56,7 @@ empty.
 | Date/time | `jiff`, with a .NET-pattern → strtime translator for standard date specifiers |
 | Errors | `format() -> Result<String, Error>`; SmartFormat's `ErrorAction` settings honored (`Error` ⇒ `Err`, lenient modes recover and return `Ok`) |
 | API | Parse-once `Format` object for caching + one-shot convenience function |
+| Splitting | `plural`, `cond`, `choose`, `isnull`, `ismatch` and `list` cut their parts out of the parsed format on every render, which for a template rendered many times was over half the work. A `Format` therefore keeps the pieces of the first split it is asked for, keyed by separator and limit; a second key is cut afresh, a clone starts empty, and the pieces are outside `PartialEq` and `Debug`. That makes the tree read-only in practice — the private field also means `Format` is built with `Format::new` rather than as a struct literal — and it changes no answer: the pieces were already cut eagerly and a piece that cannot be cut is still an `Err` of its own, so .NET's per-piece laziness is where it was |
 | Localization | `LocalizationProvider` trait + built-in HashMap/JSON-loadable impl; no resx parsing |
 | Crate layout | Workspace: `smartformat` (extensions behind default-on features `plural`, `time`, `regex-formatters`) + `smartformat-derive` |
 | Crate name | `smartformat` (available on crates.io; `smart-format` is taken); publish once the API stabilizes |

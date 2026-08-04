@@ -1108,6 +1108,85 @@ fn split_keeps_empty_pieces() {
     assert_eq!(raws(&split(&format, '|')), ["", "a", "", "b", ""]);
 }
 
+/// The raw text of the pieces of the split the engine runs, which keeps them
+/// on the format. Owned, since the pieces are borrowed from the format when
+/// they were remembered and cut on the spot when they were not.
+fn split_cached(format: &Format, separator: char) -> Vec<String> {
+    format
+        .split_cached(separator, usize::MAX)
+        .expect("a split that does not fail")
+        .iter()
+        .map(|piece| {
+            piece
+                .as_ref()
+                .expect("a piece the format covers")
+                .raw
+                .clone()
+        })
+        .collect()
+}
+
+#[test]
+fn a_remembered_split_cuts_the_same_pieces_as_a_fresh_one() {
+    // A template is parsed once and rendered many times, so the pieces of the
+    // first split are kept on the format. Nothing about them may depend on
+    // whether they were cut just now.
+    let format = format_of("{0:choose(1|2):one|{1}two|three}");
+    let cut_fresh = split(&format, '|');
+    let fresh = raws(&cut_fresh);
+
+    assert_eq!(split_cached(&format, '|'), fresh);
+    assert_eq!(split_cached(&format, '|'), fresh);
+}
+
+#[test]
+fn a_split_with_another_key_is_cut_afresh() {
+    // Two formatters can read one format — an auto-detected `list` asks for
+    // four separators where a `cond` asks for all of them — so the pieces kept
+    // for one may never be handed to the other.
+    let format = format_of("{0:cond:a~b|c~d}");
+
+    assert_eq!(split_cached(&format, '|'), ["a~b", "c~d"]);
+    assert_eq!(split_cached(&format, '~'), ["a", "b|c", "d"]);
+    assert_eq!(split_cached(&format, '|'), ["a~b", "c~d"]);
+
+    // The limit is part of the key too, and `list` is the one that passes one.
+    let limited = format
+        .split_cached('~', 1)
+        .expect("a split that does not fail");
+    assert_eq!(limited.len(), 2);
+    assert_eq!(split_cached(&format, '~').len(), 3);
+}
+
+#[test]
+fn a_clone_splits_as_the_format_it_became() {
+    // `TimeFormatter` clones a format and drops its first item, .NET's
+    // `format.Items.RemoveAt(0)`, so a clone may not inherit the pieces the
+    // original was split into.
+    let format = format_of("{0:cond:a|b}");
+    assert_eq!(split_cached(&format, '|'), ["a", "b"]);
+
+    // With no items left there is no literal to find a separator in, so the
+    // clone is one piece — the two the original was cut into are gone.
+    let mut child = format.clone();
+    child.items.clear();
+    assert_eq!(split_cached(&child, '|'), ["a|b"]);
+    // And the original is untouched.
+    assert_eq!(split_cached(&format, '|'), ["a", "b"]);
+}
+
+#[test]
+fn the_remembered_pieces_are_no_part_of_the_value() {
+    // Equality and `Debug` are over what was parsed, so a format that has been
+    // rendered compares and prints as one that has not.
+    let format = format_of("{0:cond:a|b}");
+    let untouched = format.clone();
+
+    let _ = split_cached(&format, '|');
+    assert_eq!(format, untouched);
+    assert_eq!(format!("{format:?}"), format!("{untouched:?}"));
+}
+
 #[test]
 fn split_uses_the_separator_it_is_given() {
     let format = format_of("{0:choose(1~2):a|b~c}");

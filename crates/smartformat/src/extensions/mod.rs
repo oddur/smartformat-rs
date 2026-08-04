@@ -164,13 +164,24 @@ pub(crate) fn envelope(template: &str, issue: &str, index: usize) -> String {
 ///
 /// Cutting a part out of the format is deferred to [`split_part`], because .NET
 /// defers it too.
-pub(crate) fn split_format(
+pub(crate) fn split_format<'a>(
     info: &FormattingInfo<'_>,
-    format: &Format,
+    format: &'a Format,
     separator: char,
-) -> Result<Vec<SplitPiece>, Error> {
+) -> Result<Cow<'a, [SplitPiece]>, Error> {
+    split_format_max(info, format, separator, usize::MAX)
+}
+
+/// [`split_format`] with .NET's limit on the number of separators, which only
+/// `ListFormatter` passes.
+pub(crate) fn split_format_max<'a>(
+    info: &FormattingInfo<'_>,
+    format: &'a Format,
+    separator: char,
+    max_count: usize,
+) -> Result<Cow<'a, [SplitPiece]>, Error> {
     format
-        .split(separator)
+        .split_cached(separator, max_count)
         .map_err(|error| info.plain_error_here(&error.to_string()))
 }
 

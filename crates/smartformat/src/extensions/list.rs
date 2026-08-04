@@ -33,7 +33,7 @@ use crate::parsing::chars::NULLABLE_OPERATOR;
 use crate::parsing::{Format, FormatItem, Placeholder, SplitPiece};
 use crate::value::Value;
 
-use super::{split_part, InvalidSplitChar, DEFAULT_SPLIT_CHAR};
+use super::{split_format_max, split_part, InvalidSplitChar, DEFAULT_SPLIT_CHAR};
 
 /// The default formatter name, .NET `ListFormatter.Name`.
 const NAME: &str = "list";
@@ -188,11 +188,7 @@ impl Formatter for ListFormatter {
         // .NET splits before it counts the parts, so a split that fails is the
         // answer however many parts the formatter wanted.
         let parts = format
-            .map(|format| {
-                format
-                    .split_max(self.split_char, MAX_SEPARATORS)
-                    .map_err(|error| info.plain_error_here(&error.to_string()))
-            })
+            .map(|format| split_format_max(info, format, self.split_char, MAX_SEPARATORS))
             .transpose()?;
 
         // Check whether the arguments can be handled by this formatter. A
@@ -305,12 +301,12 @@ fn as_placeholder(format: &Format, alignment: i32) -> Format {
     // What .NET's `Placeholder.RawText` rebuilds for it.
     placeholder.raw = placeholder.to_string();
 
-    Format {
-        raw: format.raw.clone(),
-        items: vec![FormatItem::Placeholder(placeholder)],
-        start: format.start,
-        end: format.end,
-    }
+    Format::new(
+        vec![FormatItem::Placeholder(placeholder)],
+        format.raw.clone(),
+        format.start,
+        format.end,
+    )
 }
 
 // ---------------------------------------------------------------------------

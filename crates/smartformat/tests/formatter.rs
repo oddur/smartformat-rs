@@ -585,6 +585,10 @@ fn a_member_of_null_without_the_nullable_operator_is_an_error() {
 fn formatter_is_shareable_between_threads() {
     fn assert_send_sync<T: Send + Sync>() {}
     assert_send_sync::<SmartFormatter>();
+    // A parsed template is shared the same way — it is what a caller parses
+    // once and renders from every thread — and it now remembers the pieces it
+    // was split into, which is the part that has to stay safe to share.
+    assert_send_sync::<smartformat::parsing::Format>();
 
     let smart = SmartFormatter::default();
     std::thread::scope(|scope| {
@@ -593,6 +597,31 @@ fn formatter_is_shareable_between_threads() {
             scope.spawn(move || {
                 let rendered = smart.format("{0:D3}", &args([Value::Int(i)])).unwrap();
                 assert_eq!(rendered, format!("00{i}"));
+            });
+        }
+    });
+}
+
+/// One parsed template rendered from several threads at once, which is the
+/// shape a server uses: the pieces a split-based formatter cuts are kept on the
+/// format, so the threads race to fill them and every one of them has to come
+/// out with the same rendering.
+#[test]
+fn one_parsed_template_renders_the_same_from_every_thread() {
+    let smart = SmartFormatter::default();
+    let parsed = smart
+        .parse("{0:choose(1|2|3):one|two|many} {1:list:{}|, |, and }")
+        .expect("the template parses");
+
+    std::thread::scope(|scope| {
+        for i in 1..=8i64 {
+            let (smart, parsed) = (&smart, &parsed);
+            scope.spawn(move || {
+                let list = Value::List(vec![Value::from("a"), Value::from("b")]);
+                let args = args([Value::Int(i % 3 + 1), list]);
+                let expected = ["one", "two", "many"][usize::try_from(i % 3).unwrap()];
+                let rendered = smart.format_parsed(parsed, &args).unwrap();
+                assert_eq!(rendered, format!("{expected} a, and b"));
             });
         }
     });

@@ -195,12 +195,7 @@ impl<'a> State<'a> {
             named_formatter_start: None,
             named_formatter_options_start: None,
             named_formatter_options_end: None,
-            result: Format {
-                items: Vec::with_capacity(items),
-                raw: String::new(),
-                start: 0,
-                end: input.len(),
-            },
+            result: Format::new(Vec::with_capacity(items), String::new(), 0, input.len()),
             stack: Vec::new(),
             current_placeholder: None,
             nested_depth: 0,
@@ -499,12 +494,12 @@ impl<'a> State<'a> {
                 .current_placeholder
                 .take()
                 .expect("SelectorHeader context implies a current placeholder");
-            let new_format = Format {
-                items: Vec::new(),
-                raw: String::new(),
-                start: self.byte(self.current + 1),
-                end: self.byte(self.len),
-            };
+            let new_format = Format::new(
+                Vec::new(),
+                String::new(),
+                self.byte(self.current + 1),
+                self.byte(self.len),
+            );
             let parent = std::mem::replace(&mut self.result, new_format);
             self.stack.push((placeholder, parent));
 
@@ -840,17 +835,17 @@ impl<'a> State<'a> {
             ErrorAction::OutputErrorInResult => {
                 let message = self.error_message();
                 let end = message.len();
-                Ok(Format {
-                    items: vec![FormatItem::Literal(LiteralText::resolved(
+                Ok(Format::new(
+                    vec![FormatItem::Literal(LiteralText::resolved(
                         message.clone(),
                         0,
                         end,
                         convert,
                     ))],
-                    raw: message,
-                    start: 0,
+                    message,
+                    0,
                     end,
-                })
+                ))
             }
         }
     }

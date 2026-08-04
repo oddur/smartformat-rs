@@ -37,6 +37,7 @@
 //! evaluator adds it while rethrowing; see `Engine::handle_format_error`,
 //! which does not, for every wrapped error alike.)
 
+use std::borrow::Cow;
 use std::cmp::Ordering;
 
 use crate::dotnet_messages::{
@@ -186,7 +187,7 @@ impl Formatter for ConditionalFormatter {
             // .NET splits before it counts, so a split that throws is the
             // answer for every value, however many parts the formatter wanted.
             Some(format) => split_format(info, format, self.split_char)?,
-            None => Vec::new(),
+            None => Cow::Borrowed(&[][..]),
         };
 
         // Check whether the arguments can be handled by this formatter.
