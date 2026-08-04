@@ -2,10 +2,179 @@
 //!
 //! Ported from SmartFormat.NET `src/SmartFormat/Core/Parsing/EscapedLiteral.cs`.
 
+use std::cell::OnceCell;
+
 use super::chars::{
     CHAR_LITERAL_ESCAPE_CHAR, FORMATTER_NAME_SEPARATOR, FORMATTER_OPTIONS_BEGIN_CHAR,
     FORMATTER_OPTIONS_END_CHAR, PLACEHOLDER_BEGIN_CHAR, PLACEHOLDER_END_CHAR,
 };
+
+/// The input text, indexed by *character* — the unit the parser and .NET's
+/// `char` loops count in.
+///
+/// An all-ASCII input, which nearly every format string is, needs no index at
+/// all: a character index is a byte index, the character is the byte, and a
+/// UTF-16 offset is the same number again. Only an input that holds a
+/// non-ASCII character pays for the two tables, and even then the UTF-16
+/// offsets — read on error paths only — are counted on demand rather than
+/// tabulated up front.
+pub(crate) struct Source<'a> {
+    text: &'a str,
+    bytes: &'a [u8],
+    /// Every character of the input; empty when [`ascii`](Self::ascii).
+    chars: Vec<char>,
+    /// Byte offset of every character, plus the length of the input; empty
+    /// when [`ascii`](Self::ascii), where the two are the same number.
+    offsets: Vec<usize>,
+    /// UTF-16 offset of every character, plus the length of the input. Built
+    /// by the first [`utf16`](Self::utf16) call, since only error reporting
+    /// asks — and never at all when [`ascii`](Self::ascii).
+    utf16_offsets: OnceCell<Vec<usize>>,
+    /// The number of characters.
+    len: usize,
+    ascii: bool,
+}
+
+impl<'a> Source<'a> {
+    pub(crate) fn new(text: &'a str) -> Self {
+        let bytes = text.as_bytes();
+        if bytes.is_ascii() {
+            return Self {
+                text,
+                bytes,
+                chars: Vec::new(),
+                offsets: Vec::new(),
+                utf16_offsets: OnceCell::new(),
+                len: bytes.len(),
+                ascii: true,
+            };
+        }
+
+        let mut chars: Vec<char> = Vec::with_capacity(text.len());
+        let mut offsets: Vec<usize> = Vec::with_capacity(text.len() + 1);
+        for (index, character) in text.char_indices() {
+            chars.push(character);
+            offsets.push(index);
+        }
+        offsets.push(text.len());
+        let len = chars.len();
+
+        Self {
+            text,
+            bytes,
+            chars,
+            offsets,
+            utf16_offsets: OnceCell::new(),
+            len,
+            ascii: false,
+        }
+    }
+
+    /// The number of characters in the input.
+    #[inline]
+    pub(crate) fn len(&self) -> usize {
+        self.len
+    }
+
+    /// The character at `index`, which must be within the input.
+    #[inline]
+    pub(crate) fn char_at(&self, index: usize) -> char {
+        if self.ascii {
+            self.bytes[index] as char
+        } else {
+            self.chars[index]
+        }
+    }
+
+    /// The character at `index`, or `None` past the end of the input.
+    #[inline]
+    pub(crate) fn get(&self, index: usize) -> Option<char> {
+        if self.ascii {
+            self.bytes.get(index).map(|&byte| byte as char)
+        } else {
+            self.chars.get(index).copied()
+        }
+    }
+
+    /// The byte offset of a character index, clamped to the end of the input.
+    #[inline]
+    pub(crate) fn byte(&self, index: usize) -> usize {
+        if self.ascii {
+            index.min(self.len)
+        } else {
+            self.offsets[index.min(self.len)]
+        }
+    }
+
+    /// The UTF-16 code unit offset of a character index — what .NET, whose
+    /// strings are UTF-16, reports as the position of a parsing issue.
+    ///
+    /// Tabulated on demand: only error reporting asks.
+    pub(crate) fn utf16(&self, index: usize) -> usize {
+        let index = index.min(self.len);
+        if self.ascii {
+            return index;
+        }
+        self.utf16_offsets.get_or_init(|| {
+            let mut offsets = Vec::with_capacity(self.len + 1);
+            let mut units = 0;
+            for character in &self.chars {
+                offsets.push(units);
+                units += character.len_utf16();
+            }
+            offsets.push(units);
+            offsets
+        })[index]
+    }
+
+    /// The input between two character indices, which must be ordered and
+    /// within the input.
+    #[inline]
+    pub(crate) fn slice(&self, start: usize, end: usize) -> &'a str {
+        &self.text[self.byte(start)..self.byte(end)]
+    }
+
+    /// A view of the characters in `start..end`, indexed from zero.
+    #[inline]
+    pub(crate) fn view(&self, start: usize, end: usize) -> View<'_, 'a> {
+        View {
+            source: self,
+            start,
+            end,
+        }
+    }
+
+    /// A view of the whole input.
+    #[inline]
+    pub(crate) fn all(&self) -> View<'_, 'a> {
+        self.view(0, self.len)
+    }
+}
+
+/// A range of [`Source`] characters, indexed from zero — what .NET passes
+/// around as a `ReadOnlySpan<char>`.
+#[derive(Clone, Copy)]
+pub(crate) struct View<'s, 'a> {
+    source: &'s Source<'a>,
+    start: usize,
+    end: usize,
+}
+
+impl View<'_, '_> {
+    #[inline]
+    fn len(&self) -> usize {
+        self.end - self.start
+    }
+
+    #[inline]
+    fn get(&self, index: usize) -> Option<char> {
+        if index < self.len() {
+            self.source.get(self.start + index)
+        } else {
+            None
+        }
+    }
+}
 
 /// `\\`, `\{`, `\}` and `\:` are recognized everywhere.
 fn general(input: char) -> Option<char> {
@@ -104,9 +273,21 @@ fn parse_hex(digits: &[char]) -> Option<u16> {
 /// The UTF-16 code unit a `\uXXXX` sequence stands for. .NET casts the parsed
 /// number to `char`, so the sequence may well be one half of a surrogate pair;
 /// [`unescape`] joins the halves back together.
-fn unicode(input: &[char], start_index: usize) -> Result<u16, String> {
-    let end = (start_index + 4).min(input.len());
-    let digits = input.get(start_index..end).unwrap_or_default();
+fn unicode(input: View<'_, '_>, start_index: usize) -> Result<u16, String> {
+    // At most four characters are ever read, so they need no allocation.
+    let mut digits = ['\0'; 4];
+    let mut count = 0;
+    while count < 4 {
+        match input.get(start_index + count) {
+            Some(digit) => {
+                digits[count] = digit;
+                count += 1;
+            }
+            None => break,
+        }
+    }
+    let digits = &digits[..count];
+
     parse_hex(digits).ok_or_else(|| {
         let digits: String = digits.iter().collect();
         format!("Unrecognized escape sequence in literal: \"\\u{digits}\"")
@@ -124,8 +305,8 @@ fn is_low_surrogate(unit: u16) -> bool {
 
 /// The `\uXXXX` sequence starting at `index`, if there is one *and* it is a low
 /// surrogate — the only sequence a high surrogate joins with.
-fn low_surrogate_escape_at(input: &[char], index: usize) -> Option<u16> {
-    if input.get(index) != Some(&CHAR_LITERAL_ESCAPE_CHAR) || input.get(index + 1) != Some(&'u') {
+fn low_surrogate_escape_at(input: View<'_, '_>, index: usize) -> Option<u16> {
+    if input.get(index) != Some(CHAR_LITERAL_ESCAPE_CHAR) || input.get(index + 1) != Some('u') {
         return None;
     }
     unicode(input, index + 2)
@@ -146,7 +327,8 @@ fn low_surrogate_escape_at(input: &[char], index: usize) -> Option<u16> {
 /// [`unescape`]. That is the only place the two differ, and the parser pays
 /// for it by resuming *inside* the sequence — the way .NET does — whenever
 /// this returns 6; see `State::parse_alternative_escaping`.
-pub(crate) fn unicode_escape_len(input: &[char], index: usize) -> usize {
+pub(crate) fn unicode_escape_len(input: &Source<'_>, index: usize) -> usize {
+    let input = input.all();
     let is_pair = unicode(input, index + 2).is_ok_and(is_high_surrogate)
         && low_surrogate_escape_at(input, index + 6).is_some();
     if is_pair {
@@ -190,8 +372,8 @@ pub(crate) fn resolve_literal(raw: &str, convert: bool) -> Result<Option<String>
         // Only .NET's `span[0]` is looked at, so a sequence in the middle of a
         // literal is resolved as well — which is what `Format::split` hands
         // over when it cuts a literal the parser over-read.
-        let span: Vec<char> = raw.chars().collect();
-        return unescape(&span, false, true).map(Some);
+        let span = Source::new(raw);
+        return unescape(span.all(), false, true).map(Some);
     }
     // Special case: the escape character escaping itself, which .NET resolves
     // even with the conversion of character literals turned off.
@@ -206,7 +388,7 @@ pub(crate) fn resolve_literal(raw: &str, convert: bool) -> Result<Option<String>
 /// A trailing character that cannot start a sequence is copied verbatim, which
 /// is what the .NET implementation does as well.
 pub(crate) fn unescape(
-    input: &[char],
+    input: View<'_, '_>,
     include_formatter_option_chars: bool,
     include_character_literals: bool,
 ) -> Result<String, String> {
@@ -214,14 +396,14 @@ pub(crate) fn unescape(
     let mut result = String::with_capacity(max);
     let mut index = 0;
 
-    while index < max {
-        if index + 1 >= max {
-            result.push(input[index]);
+    while let Some(current) = input.get(index) {
+        let Some(next) = input.get(index + 1) else {
+            result.push(current);
             return Ok(result);
-        }
+        };
 
-        if input[index] == CHAR_LITERAL_ESCAPE_CHAR {
-            if input[index + 1] == 'u' {
+        if current == CHAR_LITERAL_ESCAPE_CHAR {
+            if next == 'u' {
                 let unit = unicode(input, index + 2)?;
                 index += 6;
                 // A high surrogate takes a following escaped low surrogate with
@@ -239,7 +421,7 @@ pub(crate) fn unescape(
                     None => push_code_units(&mut result, &[unit]),
                 }
             } else if let Some(real) = try_get_char(
-                input[index + 1],
+                next,
                 include_formatter_option_chars,
                 include_character_literals,
             ) {
@@ -247,13 +429,11 @@ pub(crate) fn unescape(
                 index += 2;
             } else {
                 return Err(format!(
-                    "Unrecognized escape sequence \"{}{}\" in literal.",
-                    input[index],
-                    input[index + 1]
+                    "Unrecognized escape sequence \"{current}{next}\" in literal."
                 ));
             }
         } else {
-            result.push(input[index]);
+            result.push(current);
             index += 1;
         }
     }

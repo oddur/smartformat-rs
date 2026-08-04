@@ -110,7 +110,23 @@ impl<'a> SelectorInfo<'a> {
 /// handled selector that legitimately has no value returns
 /// `Some(Cow::Owned(Value::Null))`.
 pub trait Source: Send + Sync {
-    fn try_evaluate_selector<'a>(&self, info: SelectorInfo<'a>) -> Option<Cow<'a, Value>>;
+    /// The value the selector resolves to, borrowed wherever it already
+    /// exists.
+    ///
+    /// The source is borrowed for the same `'a` as the rest of the call, which
+    /// a registered source always outlives — it is owned by the
+    /// [`SmartFormatter`](crate::SmartFormatter) doing the formatting — so a
+    /// source that *stores* values may hand out `Cow::Borrowed` into its own
+    /// storage rather than copying, as
+    /// [`PersistentVariablesSource`](variables::PersistentVariablesSource)
+    /// does with its groups. `Cow::Owned` is for a value that has to be built,
+    /// such as [`StringSource`]'s `ToUpper`.
+    ///
+    /// An implementation written `fn try_evaluate_selector<'a>(&self, …)` — the
+    /// signature before the lifetimes were tied together — still satisfies
+    /// this, since it promises more than is asked of it. Only a *caller* that
+    /// held a source shorter-lived than the [`SelectorInfo`] has to change.
+    fn try_evaluate_selector<'a>(&'a self, info: SelectorInfo<'a>) -> Option<Cow<'a, Value>>;
 
     /// The rank .NET's `WellKnownExtensionTypes.Sources` gives this source,
     /// which is where [`SourceRegistry::add`] slots it, or `None` for a source
@@ -216,7 +232,7 @@ impl SourceRegistry {
 
     /// The value of the first source that handles the selector, or `None` if
     /// none does.
-    pub fn evaluate<'a>(&self, info: SelectorInfo<'a>) -> Option<Cow<'a, Value>> {
+    pub fn evaluate<'a>(&'a self, info: SelectorInfo<'a>) -> Option<Cow<'a, Value>> {
         self.sources
             .iter()
             .find_map(|source| source.try_evaluate_selector(info))
