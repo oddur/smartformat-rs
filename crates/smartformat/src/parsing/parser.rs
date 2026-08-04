@@ -12,7 +12,7 @@ use super::chars::{
     FORMATTER_OPTIONS_BEGIN_CHAR, FORMATTER_OPTIONS_END_CHAR, FORMAT_OPTIONS_TERMINATOR_CHARS,
     LIST_INDEX_END_CHAR, NULLABLE_OPERATOR, PLACEHOLDER_BEGIN_CHAR, PLACEHOLDER_END_CHAR,
 };
-use super::escaped_literal::{self, try_get_char, unescape};
+use super::escaped_literal::{self, try_get_char, unescape, Source};
 use super::settings::{CharSet, ParserSettings};
 use super::{Format, FormatItem, LiteralText, Placeholder, Selector};
 use crate::error::{Error, ParseError};
@@ -33,6 +33,11 @@ pub struct Parser {
     settings: ParserSettings,
     selector_chars: CharSet,
     operator_chars: HashSet<char>,
+    /// The two character sets above, answered for the ASCII range — which is
+    /// the whole of nearly every format string — without hashing: one bit per
+    /// code point, so each set is a single register-sized mask.
+    ascii_operator: u128,
+    ascii_selector: u128,
 }
 
 impl Default for Parser {
@@ -46,10 +51,40 @@ impl Parser {
     pub fn new(settings: ParserSettings) -> Self {
         let selector_chars = settings.selector_chars();
         let operator_chars = settings.operator_chars();
+
+        let mut ascii_operator: u128 = 0;
+        let mut ascii_selector: u128 = 0;
+        for code in 0..128u8 {
+            // Every code point below 128 is a character.
+            let character = char::from(code);
+            ascii_operator |= u128::from(operator_chars.contains(&character)) << code;
+            ascii_selector |= u128::from(selector_chars.is_allowed(character)) << code;
+        }
+
         Self {
             settings,
             selector_chars,
             operator_chars,
+            ascii_operator,
+            ascii_selector,
+        }
+    }
+
+    /// Whether `character` separates two selectors.
+    #[inline]
+    fn is_operator(&self, character: char) -> bool {
+        match ascii_bit(self.ascii_operator, character) {
+            Some(is_operator) => is_operator,
+            None => self.operator_chars.contains(&character),
+        }
+    }
+
+    /// Whether `character` may appear inside a selector.
+    #[inline]
+    fn is_selector_char(&self, character: char) -> bool {
+        match ascii_bit(self.ascii_selector, character) {
+            Some(is_allowed) => is_allowed,
+            None => self.selector_chars.is_allowed(character),
         }
     }
 
@@ -79,6 +114,14 @@ impl Parser {
     }
 }
 
+/// The bit `character` has in an ASCII bit set, or `None` if it has none
+/// because the character is not ASCII.
+#[inline]
+fn ascii_bit(set: u128, character: char) -> Option<bool> {
+    let code = character as u32;
+    (code < 128).then(|| set >> code & 1 == 1)
+}
+
 /// Where the main loop currently is.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Context {
@@ -103,11 +146,9 @@ struct Issue {
 struct State<'a> {
     parser: &'a Parser,
     input: &'a str,
-    chars: Vec<char>,
-    /// Byte offset of every character, plus the length of the input.
-    offsets: Vec<usize>,
-    /// UTF-16 offset of every character, plus the length of the input.
-    utf16_offsets: Vec<usize>,
+    /// The input, indexed by character.
+    source: Source<'a>,
+    /// The number of characters in the input.
     len: usize,
 
     current: usize,
@@ -134,25 +175,18 @@ struct State<'a> {
 
 impl<'a> State<'a> {
     fn new(parser: &'a Parser, input: &'a str) -> Self {
-        let chars: Vec<char> = input.chars().collect();
-        let mut offsets: Vec<usize> = input.char_indices().map(|(index, _)| index).collect();
-        offsets.push(input.len());
-        let len = chars.len();
-
-        let mut utf16_offsets = Vec::with_capacity(len + 1);
-        let mut units = 0;
-        for character in &chars {
-            utf16_offsets.push(units);
-            units += character.len_utf16();
-        }
-        utf16_offsets.push(units);
+        let source = Source::new(input);
+        let len = source.len();
+        // A top-level placeholder contributes itself and the literal before it,
+        // so this is the item count of a format with no nesting — one growth of
+        // the vector instead of three for a template of a handful of
+        // placeholders, and no growth at all for the common shorter ones.
+        let items = 2 * input.as_bytes().iter().filter(|&&b| b == b'{').count() + 1;
 
         Self {
             parser,
             input,
-            chars,
-            offsets,
-            utf16_offsets,
+            source,
             len,
             current: 0,
             last_end: 0,
@@ -162,7 +196,7 @@ impl<'a> State<'a> {
             named_formatter_options_start: None,
             named_formatter_options_end: None,
             result: Format {
-                items: Vec::new(),
+                items: Vec::with_capacity(items),
                 raw: String::new(),
                 start: 0,
                 end: input.len(),
@@ -179,7 +213,7 @@ impl<'a> State<'a> {
         let mut context = Context::LiteralText;
 
         while self.current < self.len {
-            let input_char = self.chars[self.current];
+            let input_char = self.source.char_at(self.current);
             match context {
                 Context::SelectorHeader => self.process_selector(input_char, &mut context),
                 Context::LiteralText => self.process_literal_text(input_char, &mut context),
@@ -207,20 +241,21 @@ impl<'a> State<'a> {
     }
 
     /// The byte offset of a character index.
+    #[inline]
     fn byte(&self, index: usize) -> usize {
-        self.offsets[index.min(self.len)]
+        self.source.byte(index)
     }
 
     /// The UTF-16 code unit offset of a character index — what .NET, whose
     /// strings are UTF-16, reports as the position of a parsing issue.
     fn utf16(&self, index: usize) -> usize {
-        self.utf16_offsets[index.min(self.len)]
+        self.source.utf16(index)
     }
 
     fn text(&self, start: usize, end: usize) -> String {
         let start = start.min(self.len);
         let end = end.clamp(start, self.len);
-        self.chars[start..end].iter().collect()
+        self.source.slice(start, end).to_owned()
     }
 
     fn add_issue(&mut self, message: String, start: usize, end: usize) {
@@ -279,7 +314,7 @@ impl<'a> State<'a> {
         let start = start.min(self.len);
         let end = end.min(self.len);
         let raw: String = if start <= end {
-            self.chars[start..end].iter().collect()
+            self.source.slice(start, end).to_owned()
         } else {
             String::new()
         };
@@ -311,7 +346,7 @@ impl<'a> State<'a> {
             return false;
         }
 
-        if self.last_end < self.len && self.chars[self.last_end] == brace {
+        if self.last_end < self.len && self.source.char_at(self.last_end) == brace {
             self.current = self.safe_add(self.current, 1);
             return true;
         }
@@ -352,9 +387,8 @@ impl<'a> State<'a> {
             return;
         }
 
-        if self.chars[index_next_char] == PLACEHOLDER_BEGIN_CHAR
-            || self.chars[index_next_char] == PLACEHOLDER_END_CHAR
-        {
+        let next_char = self.source.char_at(index_next_char);
+        if next_char == PLACEHOLDER_BEGIN_CHAR || next_char == PLACEHOLDER_END_CHAR {
             // The brace itself starts the next run of literal text.
             if self.current != self.last_end {
                 self.push_literal(self.last_end, self.current);
@@ -369,8 +403,8 @@ impl<'a> State<'a> {
             // The escape character, the 'u' and 4 more characters — twice when
             // the sequence is the high half of a surrogate pair, so both halves
             // land in one literal and can be joined.
-            let span = if self.chars[index_next_char] == 'u' {
-                escaped_literal::unicode_escape_len(&self.chars, self.current)
+            let span = if next_char == 'u' {
+                escaped_literal::unicode_escape_len(&self.source, self.current)
             } else {
                 2
             };
@@ -448,7 +482,7 @@ impl<'a> State<'a> {
     /// Handles a character of a placeholder's header: a selector, an operator,
     /// the `:` starting the format, or the `}` ending the placeholder.
     fn process_selector(&mut self, input_char: char, context: &mut Context) {
-        if self.parser.operator_chars.contains(&input_char) {
+        if self.parser.is_operator(input_char) {
             // Close the selector before the operator.
             if self.current != self.last_end {
                 let selector = self.make_selector(self.last_end, self.current);
@@ -496,7 +530,7 @@ impl<'a> State<'a> {
             self.finish_placeholder(placeholder, end);
 
             *context = Context::LiteralText;
-        } else if !self.parser.selector_chars.is_allowed(input_char) {
+        } else if !self.parser.is_selector_char(input_char) {
             let end = self.safe_add(self.current, 1);
             self.add_issue(
                 format!(
@@ -546,8 +580,8 @@ impl<'a> State<'a> {
             .is_some_and(|last| last.end > last.start)
             && self.current == self.operator + 1
             && matches!(
-                self.chars.get(self.operator),
-                Some(&LIST_INDEX_END_CHAR) | Some(&NULLABLE_OPERATOR)
+                self.source.get(self.operator),
+                Some(LIST_INDEX_END_CHAR) | Some(NULLABLE_OPERATOR)
             );
 
         if self.current != self.last_end || ends_list_index {
@@ -557,7 +591,7 @@ impl<'a> State<'a> {
             let operator = self.operator;
             let message = format!(
                 "'0x{:X}': {}",
-                self.chars.get(operator).copied().unwrap_or_default() as u32,
+                self.source.get(operator).unwrap_or_default() as u32,
                 TRAILING_OPERATORS_IN_SELECTOR
             );
             self.add_issue(message, operator, self.current);
@@ -575,7 +609,7 @@ impl<'a> State<'a> {
         let Some(name_start) = self.named_formatter_start else {
             return;
         };
-        let input_char = self.chars[self.current];
+        let input_char = self.source.char_at(self.current);
 
         if input_char == FORMATTER_OPTIONS_BEGIN_CHAR {
             if name_start == self.current {
@@ -595,8 +629,10 @@ impl<'a> State<'a> {
             let has_opening_parenthesis = self.named_formatter_options_start.is_some();
             let next_char_index = self.safe_add(self.current, 1);
             let next_char_is_valid = next_char_index < self.len
-                && (self.chars[next_char_index] == FORMATTER_NAME_SEPARATOR
-                    || self.chars[next_char_index] == PLACEHOLDER_END_CHAR);
+                && matches!(
+                    self.source.get(next_char_index),
+                    Some(FORMATTER_NAME_SEPARATOR) | Some(PLACEHOLDER_END_CHAR)
+                );
 
             if !has_opening_parenthesis || !next_char_is_valid {
                 self.named_formatter_start = None;
@@ -605,7 +641,7 @@ impl<'a> State<'a> {
 
             self.named_formatter_options_end = Some(self.current);
 
-            if self.chars[next_char_index] == FORMATTER_NAME_SEPARATOR {
+            if self.source.char_at(next_char_index) == FORMATTER_NAME_SEPARATOR {
                 self.current += 1;
             }
         }
@@ -637,7 +673,7 @@ impl<'a> State<'a> {
                 // `FormatterOptions` getter, so the sequence stays as written
                 // and only a formatter that reads the options ever sees it.
                 let unescaped = unescape(
-                    &self.chars[start.min(self.len)..end.min(self.len)],
+                    self.source.view(start.min(self.len), end.min(self.len)),
                     true,
                     self.parser.settings.convert_character_string_literals,
                 );
@@ -678,8 +714,8 @@ impl<'a> State<'a> {
                 return;
             }
 
-            let next_char = self.chars.get(self.safe_add(self.current, 1)).copied();
-            let escapes_next = self.chars[self.current] == CHAR_LITERAL_ESCAPE_CHAR
+            let next_char = self.source.get(self.safe_add(self.current, 1));
+            let escapes_next = self.source.char_at(self.current) == CHAR_LITERAL_ESCAPE_CHAR
                 && next_char.is_some_and(|next| {
                     FORMAT_OPTIONS_TERMINATOR_CHARS.contains(&next)
                         || try_get_char(next, true, false).is_some()
@@ -701,9 +737,9 @@ impl<'a> State<'a> {
     }
 
     fn is_terminator(&self, index: usize) -> bool {
-        self.chars
+        self.source
             .get(index)
-            .is_some_and(|c| FORMAT_OPTIONS_TERMINATOR_CHARS.contains(c))
+            .is_some_and(|c| FORMAT_OPTIONS_TERMINATOR_CHARS.contains(&c))
     }
 
     // ----- finishing up --------------------------------------------------
