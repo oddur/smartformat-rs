@@ -531,7 +531,7 @@ impl Formatter for LocalizationFormatter {
         // culture, so `{:L(bad!!!):}` reports the empty format (probed).
         // `{:L:}` and `{:L()}` both carry a format of length zero.
         let format = match info.format() {
-            Some(format) if !format.raw.is_empty() => format,
+            Some(format) if !format.raw().is_empty() => format,
             // A `LocalizationFormattingException`, so the message carries the
             // full envelope — and .NET reports it at index 0, not at the
             // placeholder.

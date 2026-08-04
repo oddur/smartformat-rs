@@ -140,13 +140,13 @@ impl Formatter for NullFormatter {
 
         // Use the format for null.
         if matches!(current, Value::Null) {
-            info.format_as_child(split_part(info, &formats[0])?, current)?;
+            info.format_as_child(split_part(info, &formats, 0)?, current)?;
             return Ok(true);
         }
 
         // Use the format for a value other than null.
         if formats.len() > 1 {
-            info.format_as_child(split_part(info, &formats[1])?, current)?;
+            info.format_as_child(split_part(info, &formats, 1)?, current)?;
             return Ok(true);
         }
 

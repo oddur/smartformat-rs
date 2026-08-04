@@ -30,7 +30,7 @@ use std::borrow::Cow;
 use crate::error::Error;
 use crate::formatter::{Formatter, FormattingInfo, NO_COLLECTION_INDEX};
 use crate::parsing::chars::NULLABLE_OPERATOR;
-use crate::parsing::{Format, FormatItem, Placeholder, SplitPiece};
+use crate::parsing::{Format, FormatItem, Placeholder, SplitParts};
 use crate::value::Value;
 
 use super::{split_format_max, split_part, InvalidSplitChar, DEFAULT_SPLIT_CHAR};
@@ -102,20 +102,22 @@ impl ListFormatter {
         &self,
         info: &mut FormattingInfo<'_>,
         items: &[Value],
-        parts: &[SplitPiece],
+        parts: &SplitParts<'_>,
         item_format: &Format,
     ) -> Result<(), Error> {
         // .NET cuts all three spacers out of the format here, before it writes
         // anything, so a piece that cannot be cut fails the whole list and not
         // just the item that would have used it.
-        let spacer = split_part(info, &parts[1])?;
-        let last_spacer = match parts.get(2) {
-            Some(part) => split_part(info, part)?,
-            None => spacer,
+        let spacer = split_part(info, parts, 1)?;
+        let last_spacer = if parts.len() > 2 {
+            split_part(info, parts, 2)?
+        } else {
+            spacer
         };
-        let two_spacer = match parts.get(3) {
-            Some(part) => split_part(info, part)?,
-            None => last_spacer,
+        let two_spacer = if parts.len() > 3 {
+            split_part(info, parts, 3)?
+        } else {
+            last_spacer
         };
 
         // The spacers are formatted against the value the call was made with,
@@ -208,7 +210,7 @@ impl Formatter for ListFormatter {
         // The item format is either a nested format, evaluated against each
         // item, or a format specifier — which is the same thing once it is
         // wrapped in a placeholder of its own.
-        let item_format = split_part(info, &parts[0])?;
+        let item_format = split_part(info, &parts, 0)?;
         let wrapped;
         let item_format = if item_format.has_nested() {
             item_format
@@ -278,7 +280,7 @@ fn literal_text<'f>(info: &FormattingInfo<'_>, format: &'f Format) -> Result<Cow
     if let Some((message, _)) = format.first_escape_error() {
         return Err(info.plain_error_here(message));
     }
-    if let [FormatItem::Literal(literal)] = format.items.as_slice() {
+    if let [FormatItem::Literal(literal)] = format.items() {
         return Ok(Cow::Borrowed(&literal.text));
     }
     Ok(Cow::Owned(format.literal_text()))
@@ -294,8 +296,8 @@ fn as_placeholder(format: &Format, alignment: i32) -> Format {
         // .NET inherits the alignment of the placeholder being formatted.
         alignment,
         format: Some(format.clone()),
-        start: format.start,
-        end: format.end,
+        start: format.start(),
+        end: format.end(),
         ..Placeholder::default()
     };
     // What .NET's `Placeholder.RawText` rebuilds for it.
@@ -303,9 +305,9 @@ fn as_placeholder(format: &Format, alignment: i32) -> Format {
 
     Format::new(
         vec![FormatItem::Placeholder(placeholder)],
-        format.raw.clone(),
-        format.start,
-        format.end,
+        format.raw().to_owned(),
+        format.start(),
+        format.end(),
     )
 }
 

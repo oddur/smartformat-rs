@@ -670,7 +670,7 @@ impl SmartFormatter {
             args: arg_list,
             culture,
             culture_override: Cell::new(None),
-            base: &format.raw,
+            base: format.raw(),
             collection_index: Cell::new(NO_COLLECTION_INDEX),
         };
         // The rendered text is the template's literals plus whatever the
@@ -680,7 +680,7 @@ impl SmartFormatter {
         // have happened anyway; the floor is there because a template that is
         // nearly all placeholder — `{0:N2}` renders longer than it is written
         // — would otherwise reallocate for the sake of a few bytes.
-        let mut output = String::with_capacity(format.raw.len().max(MIN_OUTPUT));
+        let mut output = String::with_capacity(format.raw().len().max(MIN_OUTPUT));
         engine.write_format(format, &[current], 0, &mut output)?;
         Ok(output)
     }
@@ -763,7 +763,7 @@ impl<'e> Engine<'e> {
     where
         'e: 'v,
     {
-        for item in &format.items {
+        for item in format.items() {
             match item {
                 // Literals respect the alignment of the format they are in,
                 // as in .NET.
@@ -1090,7 +1090,7 @@ fn skip_selector(selector: &Selector) -> bool {
 /// The index .NET reports for an error inside a placeholder.
 fn error_position(placeholder: &Placeholder) -> usize {
     if let Some(format) = &placeholder.format {
-        return format.start;
+        return format.start();
     }
     placeholder
         .selectors
@@ -1557,7 +1557,7 @@ impl Formatter for DefaultFormatter {
 
         // .NET hands `ISpanFormattable` values the *raw* source text of the
         // format as the specifier, not the escape-resolved `Format.ToString()`.
-        let spec = format.map(|format| format.raw.as_str()).unwrap_or_default();
+        let spec = format.map(Format::raw).unwrap_or_default();
         // .NET reports the index in UTF-16 code units, as everywhere else.
         // Counting them walks the whole template ahead of the placeholder, and
         // only an error ever reads the number, so it is counted lazily.

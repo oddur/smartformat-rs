@@ -55,7 +55,7 @@ fn formatter_with_string_params() {
 fn formatter_pure_literal_no_args() {
     let smart = SmartFormatter::default();
     let parsed = smart.parse("ABC").unwrap();
-    assert_eq!(parsed.items.len(), 1);
+    assert_eq!(parsed.items().len(), 1);
     assert_eq!(smart.format_parsed(&parsed, &args([])).unwrap(), "ABC");
 }
 

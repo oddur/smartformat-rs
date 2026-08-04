@@ -223,7 +223,7 @@ impl Formatter for ChooseFormatter {
 
         // Without a match, the one extra format is the "else" branch.
         let chosen = chosen.unwrap_or(formats.len() - 1);
-        info.format_as_child(split_part(info, &formats[chosen])?, info.current())?;
+        info.format_as_child(split_part(info, &formats, chosen)?, info.current())?;
 
         Ok(true)
     }

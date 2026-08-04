@@ -35,7 +35,7 @@ use std::fmt;
 use crate::fmt::date;
 use crate::fmt::number::{self, Number};
 use crate::formatter::FormattingInfo;
-use crate::parsing::{Format, SplitPiece};
+use crate::parsing::{Format, SplitParts};
 use crate::value::Value;
 use crate::Error;
 
@@ -168,7 +168,7 @@ pub(crate) fn split_format<'a>(
     info: &FormattingInfo<'_>,
     format: &'a Format,
     separator: char,
-) -> Result<Cow<'a, [SplitPiece]>, Error> {
+) -> Result<SplitParts<'a>, Error> {
     split_format_max(info, format, separator, usize::MAX)
 }
 
@@ -179,7 +179,7 @@ pub(crate) fn split_format_max<'a>(
     format: &'a Format,
     separator: char,
     max_count: usize,
-) -> Result<Cow<'a, [SplitPiece]>, Error> {
+) -> Result<SplitParts<'a>, Error> {
     format
         .split_cached(separator, max_count)
         .map_err(|error| info.plain_error_here(&error.to_string()))
@@ -192,11 +192,18 @@ pub(crate) fn split_format_max<'a>(
 /// .NET's `SplitList` only holds the separator offsets and cuts each part when
 /// it is indexed, so a part that is never picked never throws: for
 /// `{0:choose(1|2|3):a|b|\u12}` only the argument 3 fails. Every access to a
-/// part therefore goes through here rather than through the slice directly.
+/// part therefore goes through here rather than through the parts directly.
+///
+/// Every formatter counts the parts before it picks one, so an index past the
+/// last part is a bug here rather than anything a template can reach — the
+/// panic the slice indexing this replaced would have raised.
 pub(crate) fn split_part<'a>(
     info: &FormattingInfo<'_>,
-    part: &'a SplitPiece,
+    parts: &'a SplitParts<'a>,
+    index: usize,
 ) -> Result<&'a Format, Error> {
-    part.as_ref()
+    parts
+        .get(index)
+        .expect("a formatter only picks a part it has counted")
         .map_err(|error| info.plain_error_here(&error.to_string()))
 }

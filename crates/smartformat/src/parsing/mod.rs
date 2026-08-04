@@ -94,60 +94,135 @@ pub type SplitPiece = Result<Format, SplitError>;
 /// formatter name — `one|two|three` in `{Items:choose(1|2|3):one|two|three}`.
 ///
 /// A parse tree is meant to be read, not edited: rendering a format keeps the
-/// pieces a split-based formatter cut it into, so a caller that reaches into
-/// [`items`](Self::items) or [`raw`](Self::raw) and changes them *between two
-/// renders* would be rendering the format it used to be. Build a changed tree
-/// with [`Format::new`], or [`clone`](Clone::clone) it and then edit — a clone
-/// carries no remembered pieces — rather than editing one in place.
+/// pieces a split-based formatter cut it into, which is why the parts a format
+/// is made of are readable ([`items`](Self::items), [`raw`](Self::raw),
+/// [`start`](Self::start), [`end`](Self::end)) but not reachable for editing —
+/// a caller that changed them *between two renders* would be rendering the
+/// format it used to be. Build a changed tree with [`Format::new`], from the
+/// parts of the one you have.
 #[derive(Default)]
 pub struct Format {
     /// Literal text and placeholders, in the order they appear.
-    pub items: Vec<FormatItem>,
+    items: Vec<FormatItem>,
     /// The input text this format spans, unchanged (.NET `Format.AsSpan()`).
     /// For the format returned by [`Parser::parse`] that is the whole
     /// template, which is what error messages quote.
-    pub raw: String,
+    raw: String,
     /// Byte offset of the first character of this format in the input.
-    pub start: usize,
+    start: usize,
     /// Byte offset one past the last character of this format in the input.
-    pub end: usize,
-    /// The pieces of the first [`split_cached`](Self::split_cached), which is
-    /// how a template that is parsed once and rendered many times cuts them
-    /// once. Not part of the value: it is derived from the four fields above,
-    /// so it is left out of `PartialEq` and `Debug` and starts empty in a
-    /// clone.
-    split_cache: OnceLock<Box<SplitCache>>,
+    end: usize,
+    /// The pieces of the [`split_cached`](Self::split_cached) calls this format
+    /// has served, which is how a template that is parsed once and rendered
+    /// many times cuts them once. Not part of the value: it is derived from the
+    /// four fields above, so it is left out of `PartialEq` and `Debug` and
+    /// starts empty in a clone.
+    ///
+    /// The slots sit behind the pointer rather than in the format so that the
+    /// format stays the size it was: a `Format` is embedded in every
+    /// [`FormatItem`] of every format, and a caller that parses a template and
+    /// throws it away pays for the size of the tree but never for this.
+    split_cache: OnceLock<Box<SplitCaches>>,
+}
+
+/// How many differently-shaped splits of one format are remembered.
+///
+/// Auto-detection hands a format to every auto-detecting formatter in turn, and
+/// they do not all split it alike: `ListFormatter` stops at four separators
+/// where `plural`, `cond`, `null`, `choose` and `ismatch` split without a
+/// limit. Two shapes is therefore what the built-in chain asks for, and one
+/// slot would leave every unnamed `{Count:one|many}` cutting itself afresh on
+/// every render. A third shape — which takes a formatter registered with a
+/// separator of its own — is cut afresh every time, as every split was before
+/// the cache existed.
+const SPLIT_CACHE_SLOTS: usize = 2;
+
+/// The splits one format remembers, allocated the first time it is split.
+///
+/// Each slot is filled once and never changed, which is what lets a caller
+/// borrow the pieces out of it for as long as it holds the format.
+#[derive(Debug, Default)]
+struct SplitCaches {
+    slots: [OnceLock<SplitCache>; SPLIT_CACHE_SLOTS],
 }
 
 /// The pieces one [`Format::split_cached`] cut, kept on the format itself.
 ///
 /// The separator and the limit are the key, since the same format can be split
 /// by more than one formatter — an auto-detected `cond` and a `list` differ in
-/// the limit alone. Only the first split of a format is remembered; a second
-/// one with a different key is cut afresh every time, which is what the code
-/// did for every split before.
+/// the limit alone.
 #[derive(Debug, Clone)]
 struct SplitCache {
     separator: char,
     max_count: usize,
+    /// What [`Format::cut`] found, so an empty `Ok` means the format holds no
+    /// separator and splits into itself — the one piece nothing has to store,
+    /// since it is the format the cache hangs on.
     pieces: Result<Vec<SplitPiece>, SplitError>,
 }
 
 impl SplitCache {
-    /// The pieces if they are the ones asked for, and nothing if this cache
-    /// holds another split.
-    fn borrow_pieces(
-        &self,
-        separator: char,
-        max_count: usize,
-    ) -> Option<Result<Cow<'_, [SplitPiece]>, SplitError>> {
-        if self.separator != separator || self.max_count != max_count {
-            return None;
+    /// Whether this cache holds the split that was asked for.
+    fn holds(&self, separator: char, max_count: usize) -> bool {
+        self.separator == separator && self.max_count == max_count
+    }
+}
+
+/// What a format splits into, which is either the format itself or the pieces
+/// it was cut into.
+///
+/// A format that holds no separator splits into itself in .NET, and the whole
+/// point of saying so this way is that neither cutting nor remembering that
+/// answer copies the format: `{0:N2}` is offered to three auto-detecting
+/// formatters per render, all three see one piece and decline, and none of them
+/// costs a clone of the `N2` subtree.
+pub(crate) enum SplitParts<'a> {
+    /// The format holds no separator, so its one and only piece is the format.
+    Whole(&'a Format),
+    /// The pieces the separators cut, borrowed from the format when it
+    /// remembered them and owned when it did not.
+    Cut(Cow<'a, [SplitPiece]>),
+}
+
+impl<'a> SplitParts<'a> {
+    /// The pieces `format` was cut into, where an empty `pieces` is .NET's
+    /// "no separator, so the format itself".
+    fn new(format: &'a Format, pieces: Cow<'a, [SplitPiece]>) -> Self {
+        if pieces.is_empty() {
+            SplitParts::Whole(format)
+        } else {
+            SplitParts::Cut(pieces)
         }
-        Some(match &self.pieces {
-            Ok(pieces) => Ok(Cow::Borrowed(pieces)),
-            Err(error) => Err(*error),
-        })
+    }
+
+    /// No pieces at all, which is what a placeholder that carries no format
+    /// has: a split of a format always has at least one piece, since a format
+    /// without a separator is one.
+    pub(crate) fn none() -> Self {
+        SplitParts::Cut(Cow::Borrowed(&[]))
+    }
+
+    /// How many pieces there are.
+    pub(crate) fn len(&self) -> usize {
+        match self {
+            SplitParts::Whole(_) => 1,
+            SplitParts::Cut(pieces) => pieces.len(),
+        }
+    }
+
+    /// The piece at `index`, or the [`SplitError`] .NET's `Format.Substring`
+    /// throws while cutting that one out, and nothing when there is no such
+    /// piece.
+    ///
+    /// This is where the laziness of .NET's `SplitList` shows: a piece the
+    /// format does not cover only fails the argument that asks for it.
+    pub(crate) fn get(&self, index: usize) -> Option<Result<&Format, SplitError>> {
+        match self {
+            SplitParts::Whole(format) => (index == 0).then_some(Ok(format)),
+            SplitParts::Cut(pieces) => pieces
+                .get(index)
+                .map(|piece| piece.as_ref().map_err(|error| *error)),
+        }
     }
 }
 
@@ -165,17 +240,11 @@ impl PartialEq for Format {
 impl Eq for Format {}
 
 /// A clone starts without the pieces the original was split into, so that a
-/// tree built by cloning and then editing — .NET's `format.Items.RemoveAt(0)`
-/// — splits as the tree it became.
+/// tree rebuilt from a clone's parts — .NET's `format.Items.RemoveAt(0)`, which
+/// `TimeFormatter` does — splits as the tree it became.
 impl Clone for Format {
     fn clone(&self) -> Self {
-        Format {
-            items: self.items.clone(),
-            raw: self.raw.clone(),
-            start: self.start,
-            end: self.end,
-            split_cache: OnceLock::new(),
-        }
+        Format::new(self.items.clone(), self.raw.clone(), self.start, self.end)
     }
 }
 
@@ -195,17 +264,41 @@ impl fmt::Debug for Format {
 impl Format {
     /// A format spanning `start..end` of the input.
     ///
-    /// The fields are public and can be read directly; this is how a caller
-    /// *builds* one, since the struct also carries the private pieces of the
-    /// last [`split`](Self::split).
+    /// This is the only way to build one: the parts are readable through
+    /// [`items`](Self::items), [`raw`](Self::raw), [`start`](Self::start) and
+    /// [`end`](Self::end) but cannot be edited in place, since the struct also
+    /// carries the pieces the format was split into and those are cut from the
+    /// parts as they were.
     pub fn new(items: Vec<FormatItem>, raw: String, start: usize, end: usize) -> Self {
         Format {
             items,
             raw,
             start,
             end,
-            split_cache: OnceLock::new(),
+            split_cache: Default::default(),
         }
+    }
+
+    /// Literal text and placeholders, in the order they appear.
+    pub fn items(&self) -> &[FormatItem] {
+        &self.items
+    }
+
+    /// The input text this format spans, unchanged (.NET `Format.AsSpan()`).
+    /// For the format returned by [`Parser::parse`] that is the whole
+    /// template, which is what error messages quote.
+    pub fn raw(&self) -> &str {
+        &self.raw
+    }
+
+    /// Byte offset of the first character of this format in the input.
+    pub fn start(&self) -> usize {
+        self.start
+    }
+
+    /// Byte offset one past the last character of this format in the input.
+    pub fn end(&self) -> usize {
+        self.end
     }
 
     /// Whether this format contains at least one nested [`Placeholder`].
@@ -297,10 +390,27 @@ impl Format {
         separator: char,
         max_count: usize,
     ) -> Result<Vec<SplitPiece>, SplitError> {
-        let positions = self.find_all(separator, max_count)?;
-        // .NET returns the format itself when it holds no separator.
-        if positions.is_empty() {
+        let pieces = self.cut(separator, max_count)?;
+        // .NET returns the format itself when it holds no separator, which is
+        // the one piece `cut` leaves to the caller rather than copying.
+        if pieces.is_empty() {
             return Ok(vec![Ok(self.clone())]);
+        }
+        Ok(pieces)
+    }
+
+    /// The pieces the separators cut this format into, and *no* piece at all
+    /// when it holds no separator — where [`split_max`](Self::split_max) hands
+    /// back a copy of the format.
+    ///
+    /// Saying "no separator" as an empty result is what lets the whole engine
+    /// split a format that has none without copying it: a real split always
+    /// yields at least two pieces, since whatever follows the last separator is
+    /// one of them, so an empty result cannot mean anything else.
+    fn cut(&self, separator: char, max_count: usize) -> Result<Vec<SplitPiece>, SplitError> {
+        let positions = self.find_all(separator, max_count)?;
+        if positions.is_empty() {
+            return Ok(Vec::new());
         }
 
         let mut pieces = Vec::with_capacity(positions.len() + 1);
@@ -318,38 +428,47 @@ impl Format {
     /// [`split_max`](Self::split_max) without the pieces being cut again every
     /// time, which is what the engine splits with.
     ///
-    /// The pieces of the first split of a format are kept on it, so a template
-    /// parsed once and rendered many times pays for cutting them once. The
-    /// answer is the same either way: the pieces are cut eagerly here as they
-    /// were before, and a piece that cannot be cut is still an `Err` of its
-    /// own, so nothing about *when* a piece fails moves.
+    /// The pieces are kept on the format, so a template parsed once and
+    /// rendered many times pays for cutting them once. The answer is the same
+    /// either way: the pieces are cut eagerly here as they were before, and a
+    /// piece that cannot be cut is still an `Err` of its own, so nothing about
+    /// *when* a piece fails moves.
     ///
-    /// A second split of the same format with another separator or another
-    /// limit is cut afresh and borrows nothing, hence the [`Cow`]. That takes
-    /// two formatters reading one format, which is what auto-detection does.
+    /// [`SPLIT_CACHE_SLOTS`] differently-shaped splits of one format are
+    /// remembered, because auto-detection hands one format to several
+    /// formatters and they do not all split it alike. A shape past that is cut
+    /// here and thrown away, which is why the pieces come back owned or
+    /// borrowed rather than always borrowed.
     pub(crate) fn split_cached(
         &self,
         separator: char,
         max_count: usize,
-    ) -> Result<Cow<'_, [SplitPiece]>, SplitError> {
-        if let Some(cached) = self.split_cache.get() {
-            return cached
-                .borrow_pieces(separator, max_count)
-                .unwrap_or_else(|| self.split_max(separator, max_count).map(Cow::Owned));
+    ) -> Result<SplitParts<'_>, SplitError> {
+        let caches = self.split_cache.get_or_init(Box::default);
+        for slot in &caches.slots {
+            // A slot that is still empty is this split's to fill — unless
+            // another thread fills it first, with a shape of its own, which
+            // leaves this one looking at the next slot.
+            let cached = match slot.get() {
+                Some(cached) => cached,
+                None => slot.get_or_init(|| SplitCache {
+                    separator,
+                    max_count,
+                    pieces: self.cut(separator, max_count),
+                }),
+            };
+            if cached.holds(separator, max_count) {
+                return match &cached.pieces {
+                    Ok(pieces) => Ok(SplitParts::new(self, Cow::Borrowed(pieces))),
+                    Err(error) => Err(*error),
+                };
+            }
         }
 
-        let cached = self.split_cache.get_or_init(|| {
-            Box::new(SplitCache {
-                separator,
-                max_count,
-                pieces: self.split_max(separator, max_count),
-            })
-        });
-        // Another thread can have filled the cache with a different split
-        // between the two calls above, which leaves this one to cut its own.
-        cached
-            .borrow_pieces(separator, max_count)
-            .unwrap_or_else(|| self.split_max(separator, max_count).map(Cow::Owned))
+        // Every slot holds a split of another shape, so this one is cut here
+        // and thrown away, as every split was before the cache existed.
+        self.cut(separator, max_count)
+            .map(|pieces| SplitParts::new(self, Cow::Owned(pieces)))
     }
 
     /// The first `max_count` offsets of `separator` in the literal text of this

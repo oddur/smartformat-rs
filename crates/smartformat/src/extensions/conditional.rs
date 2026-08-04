@@ -37,14 +37,13 @@
 //! evaluator adds it while rethrowing; see `Engine::handle_format_error`,
 //! which does not, for every wrapped error alike.)
 
-use std::borrow::Cow;
 use std::cmp::Ordering;
 
 use crate::dotnet_messages::{
     not_in_a_correct_format, INT32_OVERFLOW, OUT_OF_RANGE_INDEX as INDEX_OUT_OF_RANGE,
 };
 use crate::formatter::{Formatter, FormattingInfo};
-use crate::parsing::Format;
+use crate::parsing::{Format, SplitParts};
 use crate::value::Value;
 use crate::Error;
 
@@ -187,7 +186,7 @@ impl Formatter for ConditionalFormatter {
             // .NET splits before it counts, so a split that throws is the
             // answer for every value, however many parts the formatter wanted.
             Some(format) => split_format(info, format, self.split_char)?,
-            None => Cow::Borrowed(&[][..]),
+            None => SplitParts::none(),
         };
 
         // Check whether the arguments can be handled by this formatter.
@@ -226,7 +225,7 @@ impl Formatter for ConditionalFormatter {
                     return Err(info.plain_error_here(INDEX_OUT_OF_RANGE));
                 }
 
-                match try_evaluate_condition(split_part(info, &parameters[index])?, &number)
+                match try_evaluate_condition(split_part(info, &parameters, index)?, &number)
                     .map_err(|issue| info.plain_error_here(&issue))?
                 {
                     Some((condition_was_true, output)) => {
@@ -246,7 +245,7 @@ impl Formatter for ConditionalFormatter {
                             break;
                         }
                         // Otherwise, output the "else" section.
-                        info.format_as_child(split_part(info, &parameters[index])?, current)?;
+                        info.format_as_child(split_part(info, &parameters, index)?, current)?;
                         return Ok(true);
                     }
                 }
@@ -290,7 +289,7 @@ impl Formatter for ConditionalFormatter {
         };
 
         // Now, output the selected parameter.
-        info.format_as_child(split_part(info, &parameters[param_index])?, current)?;
+        info.format_as_child(split_part(info, &parameters, param_index)?, current)?;
         Ok(true)
     }
 }
@@ -318,7 +317,7 @@ fn try_evaluate_condition(
     parameter: &Format,
     value: &Decimal,
 ) -> Result<Option<(bool, Format)>, String> {
-    let Some(conditions) = match_conditions(&parameter.raw) else {
+    let Some(conditions) = match_conditions(parameter.raw()) else {
         // Could not parse the "complex condition".
         return Ok(None);
     };
@@ -355,7 +354,7 @@ fn try_evaluate_condition(
     // this formatter reports every one of those without an envelope, so the
     // message travels the same road as the rest.
     let output = parameter
-        .substring(parameter.start + conditions.length, parameter.end)
+        .substring(parameter.start() + conditions.length, parameter.end())
         .map_err(|error| error.to_string())?;
     Ok(Some((result, output)))
 }

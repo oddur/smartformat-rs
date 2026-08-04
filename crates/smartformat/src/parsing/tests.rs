@@ -1112,16 +1112,22 @@ fn split_keeps_empty_pieces() {
 /// on the format. Owned, since the pieces are borrowed from the format when
 /// they were remembered and cut on the spot when they were not.
 fn split_cached(format: &Format, separator: char) -> Vec<String> {
-    format
-        .split_cached(separator, usize::MAX)
-        .expect("a split that does not fail")
-        .iter()
-        .map(|piece| {
-            piece
-                .as_ref()
+    split_cached_max(format, separator, usize::MAX)
+}
+
+/// [`split_cached`] with `ListFormatter`'s limit on the number of separators.
+fn split_cached_max(format: &Format, separator: char, max_count: usize) -> Vec<String> {
+    let parts = format
+        .split_cached(separator, max_count)
+        .expect("a split that does not fail");
+    (0..parts.len())
+        .map(|index| {
+            parts
+                .get(index)
+                .expect("a piece the split has")
                 .expect("a piece the format covers")
-                .raw
-                .clone()
+                .raw()
+                .to_owned()
         })
         .collect()
 }
@@ -1151,11 +1157,60 @@ fn a_split_with_another_key_is_cut_afresh() {
     assert_eq!(split_cached(&format, '|'), ["a~b", "c~d"]);
 
     // The limit is part of the key too, and `list` is the one that passes one.
-    let limited = format
-        .split_cached('~', 1)
-        .expect("a split that does not fail");
-    assert_eq!(limited.len(), 2);
+    assert_eq!(split_cached_max(&format, '~', 1), ["a", "b|c~d"]);
     assert_eq!(split_cached(&format, '~').len(), 3);
+}
+
+#[test]
+fn one_format_remembers_the_two_splits_auto_detection_asks_it_for() {
+    // Auto-detection walks the formatters in order, and `ListFormatter` — the
+    // first of them — splits with a limit of four where `plural` and `cond`
+    // split without one. Both shapes have to be remembered, or every unnamed
+    // `{Count:one|many}` cuts itself afresh on every render for good.
+    let format = format_of("{0:one|{} many}");
+
+    // The order the engine reaches them in: the limited split first.
+    assert_eq!(split_cached_max(&format, '|', 4), ["one", "{} many"]);
+    assert_eq!(split_cached(&format, '|'), ["one", "{} many"]);
+
+    // Both are borrowed from the format now rather than cut again. A cut piece
+    // is a fresh allocation every time, so pieces that keep their address are
+    // pieces that were remembered.
+    let limited = format.split_cached('|', 4).expect("a split that holds");
+    let unlimited = format.split_cached('|', usize::MAX).expect("a split");
+    let limited_again = format.split_cached('|', 4).expect("a split that holds");
+    let unlimited_again = format.split_cached('|', usize::MAX).expect("a split");
+    assert!(std::ptr::eq(
+        limited.get(0).unwrap().unwrap(),
+        limited_again.get(0).unwrap().unwrap()
+    ));
+    assert!(std::ptr::eq(
+        unlimited.get(0).unwrap().unwrap(),
+        unlimited_again.get(0).unwrap().unwrap()
+    ));
+    // And the two shapes are two caches, not one overwriting the other.
+    assert!(!std::ptr::eq(
+        limited.get(0).unwrap().unwrap(),
+        unlimited.get(0).unwrap().unwrap()
+    ));
+}
+
+#[test]
+fn a_format_without_the_separator_is_lent_rather_than_copied() {
+    // `{0:N2}` is offered to every auto-detecting formatter, all of which split
+    // it and find nothing. .NET's answer is "the format itself", and saying so
+    // by lending the format keeps a placeholder from carrying a second copy of
+    // its own subtree for the rest of its life.
+    let format = format_of("{0:N2}");
+
+    for (separator, max_count) in [('|', 4), ('|', usize::MAX), ('~', usize::MAX)] {
+        let parts = format
+            .split_cached(separator, max_count)
+            .expect("a split that does not fail");
+        assert_eq!(parts.len(), 1);
+        assert!(std::ptr::eq(parts.get(0).unwrap().unwrap(), &format));
+        assert!(parts.get(1).is_none());
+    }
 }
 
 #[test]
@@ -1168,10 +1223,38 @@ fn a_clone_splits_as_the_format_it_became() {
 
     // With no items left there is no literal to find a separator in, so the
     // clone is one piece — the two the original was cut into are gone.
-    let mut child = format.clone();
-    child.items.clear();
+    let child = Format::new(
+        Vec::new(),
+        format.raw().to_owned(),
+        format.start(),
+        format.end(),
+    );
     assert_eq!(split_cached(&child, '|'), ["a|b"]);
     // And the original is untouched.
+    assert_eq!(split_cached(&format, '|'), ["a", "b"]);
+}
+
+#[test]
+fn a_format_is_read_through_its_parts_and_changed_by_rebuilding() {
+    // The parts a format is made of are readable but not reachable for
+    // editing, because the pieces it was split into are cut from the parts as
+    // they were: a caller that could drop an item between two renders would be
+    // rendering the format it used to be. `Format::new` is the way to a
+    // changed tree, and what it builds carries no pieces of the old one.
+    let format = format_of("{0:cond:a|b}");
+    assert_eq!(split_cached(&format, '|'), ["a", "b"]);
+
+    let mut items = format.items().to_vec();
+    items.pop();
+    let changed = Format::new(items, format.raw().to_owned(), format.start(), format.end());
+
+    // The parts came through unchanged but for the one that was dropped, and
+    // the shortened format splits as itself.
+    assert_eq!(changed.raw(), format.raw());
+    assert_eq!(changed.start(), format.start());
+    assert_eq!(changed.end(), format.end());
+    assert_eq!(changed.items().len(), format.items().len() - 1);
+    assert_eq!(split_cached(&changed, '|'), ["a|b"]);
     assert_eq!(split_cached(&format, '|'), ["a", "b"]);
 }
 

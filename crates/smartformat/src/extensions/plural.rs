@@ -267,7 +267,7 @@ impl Formatter for PluralLocalizationFormatter {
         }
 
         // Output the selected word (allowing for nested formats).
-        let plural_form = split_part(info, &plural_words[plural_index as usize])?;
+        let plural_form = split_part(info, &plural_words, plural_index as usize)?;
         info.format_as_child(plural_form, current)?;
         Ok(true)
     }

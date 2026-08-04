@@ -410,11 +410,11 @@ fn raw_text(format: &Format, info: &FormattingInfo<'_>) -> Result<String, Error>
 /// an error inside it is reported at — stays as it was, exactly as it does
 /// there.
 fn without_first_item(format: &Format) -> Format {
-    let mut child = format.clone();
-    if !child.items.is_empty() {
-        child.items.remove(0);
+    let mut items = format.items().to_vec();
+    if !items.is_empty() {
+        items.remove(0);
     }
-    child
+    Format::new(items, format.raw().to_owned(), format.start(), format.end())
 }
 
 /// .NET's `FormattingException` for a value the formatter cannot process.
@@ -426,7 +426,7 @@ fn without_first_item(format: &Format) -> Format {
 /// literal 0 either way.
 fn unsupported_type(info: &FormattingInfo<'_>, value: &Value) -> Error {
     let base = match info.format() {
-        Some(format) if !format.items.is_empty() => info.base_string(),
+        Some(format) if !format.items().is_empty() => info.base_string(),
         _ => "",
     };
     let issue = format!(

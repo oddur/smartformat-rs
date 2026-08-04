@@ -264,9 +264,15 @@ fn int_to_radix_str(
     } else {
         b"0123456789abcdef"
     };
-    debug_assert!(radix == 16 || radix == 2, "only hex and binary have a spec");
-    let shift = radix.trailing_zeros();
-    let mask = u64::from(radix - 1);
+    // Both call sites pass a literal, so this is a `match` over the two specs
+    // that have a radix rather than a check — but it stays in a release build,
+    // since the arithmetic below reads the radix as a power of two and a third
+    // one would silently write the wrong digits.
+    let (shift, mask) = match radix {
+        16 => (4, 0xf),
+        2 => (1, 0x1),
+        _ => unreachable!("only hex and binary have a radix specifier"),
+    };
     let mut scratch = [0u8; 64];
     let mut at = scratch.len();
     loop {

@@ -578,7 +578,7 @@ impl IsMatchFormatter {
             groups,
         )]));
 
-        for item in &matched.items {
+        for item in matched.items() {
             let child = parent
                 .substring(item.start(), item.end())
                 .map_err(|error| info.plain_error_here(&error.to_string()))?;
@@ -684,7 +684,7 @@ impl Formatter for IsMatchFormatter {
 
         let Some(captures) = captures else {
             // Output the "no match" part of the format.
-            let no_match = split_part(info, &formats[1])?;
+            let no_match = split_part(info, &formats, 1)?;
             info.format_as_child(no_match, info.current())?;
             return Ok(true);
         };
@@ -707,7 +707,7 @@ impl Formatter for IsMatchFormatter {
 
         // `info.format()` is `Some`, or the split above would not have run.
         let parent = info.format().expect("the format that was split");
-        let matched = split_part(info, &formats[0])?;
+        let matched = split_part(info, &formats, 0)?;
         self.write_match(info, parent, matched, groups)?;
 
         Ok(true)

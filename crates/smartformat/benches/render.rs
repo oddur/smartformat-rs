@@ -74,6 +74,27 @@ fn benches(c: &mut Criterion) {
         b.iter(|| smart.format_parsed(black_box(&list), &args))
     });
 
+    // The same three formats with the formatter name left out, so the engine
+    // walks the auto-detecting formatters in order and more than one of them
+    // splits the format. `list` splits with a limit where the others split
+    // without one, so these measure a format that is cut two ways — the shape
+    // a single-slot split cache cannot serve.
+    let plural_auto = cached(&smart, "{Count:one item|{} items}");
+    c.bench_function("render_plural_autodetect", |b| {
+        b.iter(|| smart.format_parsed(black_box(&plural_auto), &args))
+    });
+
+    let cond_auto = cached(&smart, "{0:yes|no}");
+    let one_bool = Value::List(vec![Value::Bool(true)]);
+    c.bench_function("render_cond_autodetect", |b| {
+        b.iter(|| smart.format_parsed(black_box(&cond_auto), &one_bool))
+    });
+
+    let list_auto = cached(&smart, "{Items:{}|, |, and }");
+    c.bench_function("render_list_autodetect", |b| {
+        b.iter(|| smart.format_parsed(black_box(&list_auto), &args))
+    });
+
     // A registered variables source, which resolves `{group.variable}` without
     // the group being passed as an argument.
     let mut with_variables = SmartFormatter::default();

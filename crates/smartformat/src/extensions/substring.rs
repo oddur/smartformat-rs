@@ -242,12 +242,12 @@ impl Formatter for SubStringFormatter {
 
         // A format was supplied, so use it if valid.
         if let Some(format) = info.format() {
-            if format.end > format.start {
+            if format.end() > format.start() {
                 if !format.has_nested() {
                     // The one error .NET raises as a `FormattingException`, so
                     // this message does carry the envelope. .NET reports it at
                     // the start of the format.
-                    return Err(info.formatting_error(NEEDS_NESTED, format.start));
+                    return Err(info.formatting_error(NEEDS_NESTED, format.start()));
                 }
                 // The child sees the substring — or the null value, which it
                 // then has to handle itself.

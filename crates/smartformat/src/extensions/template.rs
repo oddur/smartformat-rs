@@ -703,7 +703,7 @@ mod tests {
         templates.register(smart.parser(), "tab", r"a\tb").unwrap();
         // The parsed template is kept, not the string it came from.
         assert_eq!(templates.len(), 1);
-        assert_eq!(templates.get("tab").unwrap().raw, r"a\tb");
+        assert_eq!(templates.get("tab").unwrap().raw(), r"a\tb");
         smart.formatters_mut().push(Box::new(templates));
 
         assert_eq!(format(&smart, "{:t:tab}"), r"a\tb");
@@ -724,7 +724,7 @@ mod tests {
             "An item with the same key has already been added. Key: dup"
         );
         // The first registration stands.
-        assert_eq!(templates.get("dup").unwrap().raw, "one");
+        assert_eq!(templates.get("dup").unwrap().raw(), "one");
 
         // A name that differs only in case collides when names are matched
         // case-insensitively, as .NET's comparer does.
@@ -778,7 +778,7 @@ mod tests {
         );
         // Neither check changed the registry.
         assert_eq!(templates.len(), 1);
-        assert_eq!(templates.get("dup").unwrap().raw, "one");
+        assert_eq!(templates.get("dup").unwrap().raw(), "one");
     }
 
     #[test]
@@ -794,7 +794,7 @@ mod tests {
         templates
             .register(smart.parser(), "firstLast", "AGAIN")
             .unwrap();
-        assert_eq!(templates.get("firstLast").unwrap().raw, "AGAIN");
+        assert_eq!(templates.get("firstLast").unwrap().raw(), "AGAIN");
 
         templates.clear();
         assert!(templates.is_empty());

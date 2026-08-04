@@ -10,7 +10,7 @@ use std::sync::OnceLock;
 /// allocates it and so do we (see DESIGN.md, "Non-goals") — so cap it here
 /// to keep the fuzzer hunting logic panics instead of by-design allocation.
 fn alignment_is_sane(format: &Format) -> bool {
-    format.items.iter().all(|item| match item {
+    format.items().iter().all(|item| match item {
         FormatItem::Literal(_) => true,
         FormatItem::Placeholder(p) => {
             p.alignment.unsigned_abs() <= 4096
