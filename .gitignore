@@ -6,3 +6,9 @@ obj/
 
 # Claude Code session files
 .claude/
+
+# cargo-fuzz
+fuzz/target/
+fuzz/corpus/
+fuzz/artifacts/
+fuzz/Cargo.lock

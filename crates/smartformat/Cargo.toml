@@ -33,8 +33,13 @@ fancy-regex = { version = "0.14", optional = true }
 jiff = { version = "0.2", optional = true }
 
 [dev-dependencies]
+criterion = { version = "0.5", default-features = false }
 # Test-only: the golden file is JSON. Normal builds stay serde-free (DESIGN.md).
 # `arbitrary_precision` keeps each number's literal text, so a golden double is
 # parsed by the standard library rather than serde_json's own float parser,
 # which is off by an ulp for some inputs.
 serde_json = { version = "1", features = ["arbitrary_precision"] }
+
+[[bench]]
+name = "render"
+harness = false

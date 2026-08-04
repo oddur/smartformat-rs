@@ -67,6 +67,11 @@ empty.
   combinations beyond the standard specifiers' output)
 - resx parsing
 - XML/JSON source extensions (`SmartFormat.Extensions.Xml` / `*.Json`)
+- Guarding against adversarial templates. Templates are trusted input, as
+  they are in .NET: `{0,777777776}` demands a ~740 MB alignment pad and both
+  sides allocate it. The fuzz targets under `fuzz/` therefore cap alignment
+  when hunting panics; they assert the parser and renderer never panic, not
+  that memory is bounded.
 - Cultures outside the generated list. `fmt::culture::get` answers `None` rather
   than resolving a parent the way .NET's CLDR tree would; the caller decides
   whether to error or fall back. Adding one is a line in `tools/culturegen` plus
