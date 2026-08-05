@@ -1,0 +1,31 @@
+[package]
+name = "difffuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+# `cargo run` in here means the fuzzer, not the stand-in harness beside it.
+default-run = "difffuzz"
+description = "Differential fuzzer: generates SmartFormat templates, renders them with SmartFormat.NET and with this port, and diffs the two byte for byte."
+
+# Detached from the main workspace, like `fuzz/Cargo.toml`: this tool pulls in
+# dependencies the library does not have and is built by hand, so it must never
+# touch the workspace build, its lockfile or its MSRV.
+[workspace]
+
+[dependencies]
+# `arbitrary_precision` keeps each number's literal text, exactly as the golden
+# runner asks for it: a double is then parsed by the standard library rather
+# than serde_json's own float parser, which is off by an ulp for some inputs.
+jiff = "0.2"
+serde_json = { version = "1", features = ["arbitrary_precision"] }
+smartformat = { path = "../../crates/smartformat" }
+
+[[bin]]
+name = "difffuzz"
+path = "src/main.rs"
+
+# A stand-in for `tools/goldens` in case-file mode, so the driver's own tests
+# can exercise a harness that dies, hangs or answers half a batch.
+[[bin]]
+name = "fake-harness"
+path = "src/bin/fake_harness.rs"

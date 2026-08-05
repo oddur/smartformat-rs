@@ -1,0 +1,6 @@
+target/
+Cargo.lock
+
+# The repository root ignores `bin/`, for the dotnet harness's build output.
+# This crate's `src/bin/` is source.
+!/src/bin/
