@@ -31,8 +31,12 @@ documentation."
 //! Compatibility scope and every known divergence from .NET live in
 //! `DESIGN.md` in the repository.
 
-#[cfg(doctest)]
+// The guides under `docs/` are compiled and run as doctests. They use the
+// derive, plural and time features, so a build without them skips the module
+// rather than failing on examples it cannot compile.
+#[cfg(all(doctest, feature = "derive", feature = "plural", feature = "time"))]
 mod docs;
+
 pub(crate) mod dotnet_messages;
 
 pub mod error;
