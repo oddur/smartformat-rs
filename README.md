@@ -171,5 +171,7 @@ not on crates.io yet; the API may still move.
 ## License
 
 MIT. Ported from [SmartFormat](https://github.com/axuno/SmartFormat),
-© axuno gGmbH, Scott Rippey, Bernhard Millauer and contributors, also MIT.
+© 2011-2022 SmartFormat Project maintainers and contributors, also MIT.
+The shipped locale data comes from .NET rather than from SmartFormat, and
+carries its own provenance.
 See [LICENSE](https://github.com/oddur/smartformat-rs/blob/main/LICENSE).
