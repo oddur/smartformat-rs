@@ -31,7 +31,10 @@ documentation."
 //! Compatibility scope and every known divergence from .NET live in
 //! `DESIGN.md` in the repository.
 
+#[cfg(doctest)]
+mod docs;
 pub(crate) mod dotnet_messages;
+
 pub mod error;
 pub mod extensions;
 pub mod fmt;
