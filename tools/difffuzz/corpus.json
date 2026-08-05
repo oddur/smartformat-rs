@@ -1,0 +1,935 @@
+{
+  "cases": [
+    {
+      "id": "esc-window-0",
+      "note": "(a) alternative escaping: a `\\` inside the four characters `\\uXXXX` spans makes .NET throw ArgumentOutOfRangeException; the port re-reads the window and duplicates the text",
+      "template": "\\u\\-",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "convertCharacterStringLiterals": false
+      }
+    },
+    {
+      "id": "esc-window-1",
+      "note": "(a) alternative escaping: a `\\` inside the four characters `\\uXXXX` spans makes .NET throw ArgumentOutOfRangeException; the port re-reads the window and duplicates the text",
+      "template": "\\u\\\\",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "convertCharacterStringLiterals": false
+      }
+    },
+    {
+      "id": "esc-window-2",
+      "note": "(a) alternative escaping: a `\\` inside the four characters `\\uXXXX` spans makes .NET throw ArgumentOutOfRangeException; the port re-reads the window and duplicates the text",
+      "template": "\\u\\{",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "convertCharacterStringLiterals": false
+      }
+    },
+    {
+      "id": "esc-window-3",
+      "note": "(a) alternative escaping: a `\\` inside the four characters `\\uXXXX` spans makes .NET throw ArgumentOutOfRangeException; the port re-reads the window and duplicates the text",
+      "template": "\\u\\}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "convertCharacterStringLiterals": false
+      }
+    },
+    {
+      "id": "esc-window-4",
+      "note": "(a) alternative escaping: a `\\` inside the four characters `\\uXXXX` spans makes .NET throw ArgumentOutOfRangeException; the port re-reads the window and duplicates the text",
+      "template": "\\u\\t",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "convertCharacterStringLiterals": false
+      }
+    },
+    {
+      "id": "esc-window-5",
+      "note": "(a) alternative escaping: a `\\` inside the four characters `\\uXXXX` spans makes .NET throw ArgumentOutOfRangeException; the port re-reads the window and duplicates the text",
+      "template": "x\\u}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "convertCharacterStringLiterals": false
+      }
+    },
+    {
+      "id": "esc-window-6",
+      "note": "(a) alternative escaping: a `\\` inside the four characters `\\uXXXX` spans makes .NET throw ArgumentOutOfRangeException; the port re-reads the window and duplicates the text",
+      "template": "\\u{}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "convertCharacterStringLiterals": false
+      }
+    },
+    {
+      "id": "esc-window-7",
+      "note": "(a) alternative escaping: a `\\` inside the four characters `\\uXXXX` spans makes .NET throw ArgumentOutOfRangeException; the port re-reads the window and duplicates the text",
+      "template": "\\u{Name}-",
+      "args": {
+        "Qty": 1
+      },
+      "culture": "",
+      "settings": {
+        "convertCharacterStringLiterals": false
+      }
+    },
+    {
+      "id": "esc-window-8",
+      "note": "(a) alternative escaping: a `\\` inside the four characters `\\uXXXX` spans makes .NET throw ArgumentOutOfRangeException; the port re-reads the window and duplicates the text",
+      "template": "\\u---\\-",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "convertCharacterStringLiterals": false
+      }
+    },
+    {
+      "id": "esc-window-9",
+      "note": "(a) alternative escaping: a `\\` inside the four characters `\\uXXXX` spans makes .NET throw ArgumentOutOfRangeException; the port re-reads the window and duplicates the text",
+      "template": "\\uabc\\-",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "convertCharacterStringLiterals": false
+      }
+    },
+    {
+      "id": "esc-window-convert",
+      "note": "(a) alternative escaping: a `\\` inside the four characters `\\uXXXX` spans makes .NET throw ArgumentOutOfRangeException; the port re-reads the window and duplicates the text",
+      "template": "\\u\\-",
+      "args": [],
+      "culture": ""
+    },
+    {
+      "id": "neg-index-zero",
+      "note": "(a) a positional selector with a `-`: .NET's int.TryParse accepts it and indexes directly, the port parses usize and declines",
+      "template": "{-0}",
+      "args": [
+        "A",
+        "B"
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult",
+        "parseErrorAction": "OutputErrorInResult"
+      }
+    },
+    {
+      "id": "neg-index-one",
+      "note": "(a) a positional selector with a `-`: .NET's int.TryParse accepts it and indexes directly, the port parses usize and declines",
+      "template": "{-1}",
+      "args": [
+        "A",
+        "B"
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult",
+        "parseErrorAction": "OutputErrorInResult"
+      }
+    },
+    {
+      "id": "neg-index-member",
+      "note": "(a) a positional selector with a `-`: .NET's int.TryParse accepts it and indexes directly, the port parses usize and declines",
+      "template": "{-0.Length}",
+      "args": [
+        "A",
+        "B"
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult",
+        "parseErrorAction": "OutputErrorInResult"
+      }
+    },
+    {
+      "id": "neg-index-min",
+      "note": "(a) a positional selector with a `-`: .NET's int.TryParse accepts it and indexes directly, the port parses usize and declines",
+      "template": "{-2147483648}",
+      "args": [
+        "A",
+        "B"
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult",
+        "parseErrorAction": "OutputErrorInResult"
+      }
+    },
+    {
+      "id": "nullable-nested-miss",
+      "note": "(a) the nullable operator and a nested placeholder in the format: the two disagree about whether the nested format is evaluated",
+      "template": "{Nothing?.Anything:d:{Nope}}",
+      "args": {
+        "Nothing": null
+      },
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult",
+        "parseErrorAction": "OutputErrorInResult"
+      }
+    },
+    {
+      "id": "nullable-nested-align",
+      "note": "(a) the nullable operator and a nested placeholder in the format: the two disagree about whether the nested format is evaluated",
+      "template": "{Nothing?,1:substr(a):{Nope}}",
+      "args": {
+        "Nothing": null
+      },
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult",
+        "parseErrorAction": "OutputErrorInResult"
+      }
+    },
+    {
+      "id": "nullable-nested-member",
+      "note": "(a) the nullable operator and a nested placeholder in the format: the two disagree about whether the nested format is evaluated",
+      "template": "{Nothing?.Anything:d:{City.ToLower}}",
+      "args": {
+        "City": "",
+        "Nothing": null
+      },
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult",
+        "parseErrorAction": "OutputErrorInResult"
+      }
+    },
+    {
+      "id": "nullable-nested-single",
+      "note": "(a) the nullable operator and a nested placeholder in the format: the two disagree about whether the nested format is evaluated",
+      "template": "{Nothing?:d:{Nope}}",
+      "args": {
+        "Nothing": null
+      },
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult",
+        "parseErrorAction": "OutputErrorInResult"
+      }
+    },
+    {
+      "id": "nullable-nested-plain",
+      "note": "(a) the nullable operator and a nested placeholder in the format: the two disagree about whether the nested format is evaluated",
+      "template": "{Nothing?:{Nope}}",
+      "args": {
+        "Nothing": null
+      },
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult",
+        "parseErrorAction": "OutputErrorInResult"
+      }
+    },
+    {
+      "id": "astral-selector",
+      "note": "(a) an astral character in a selector: .NET reports one parse issue per UTF-16 code unit, the port one per scalar",
+      "template": "{-🙂",
+      "args": {},
+      "culture": "",
+      "settings": {
+        "parseErrorAction": "OutputErrorInResult"
+      }
+    },
+    {
+      "id": "map-enumerable-bare",
+      "note": "(b) DESIGN.md \"A map is not list-formattable\": a .NET Dictionary is IEnumerable, so ListFormatter claims it",
+      "template": "{:|}",
+      "args": {
+        "Qty": 1
+      },
+      "culture": ""
+    },
+    {
+      "id": "map-enumerable-spacer",
+      "note": "(b) DESIGN.md \"A map is not list-formattable\": a .NET Dictionary is IEnumerable, so ListFormatter claims it",
+      "template": "{:|x}",
+      "args": {
+        "City": "-7.5",
+        "Price": 1.5
+      },
+      "culture": ""
+    },
+    {
+      "id": "map-enumerable-item",
+      "note": "(b) DESIGN.md \"A map is not list-formattable\": a .NET Dictionary is IEnumerable, so ListFormatter claims it",
+      "template": "{:x|}",
+      "args": {
+        "Flag": false,
+        "Text": ""
+      },
+      "culture": ""
+    },
+    {
+      "id": "map-enumerable-nested",
+      "note": "(b) DESIGN.md \"A map is not list-formattable\": a .NET Dictionary is IEnumerable, so ListFormatter claims it",
+      "template": "{Nested:|}",
+      "args": {
+        "Nested": {
+          "Inner": 8
+        }
+      },
+      "culture": ""
+    },
+    {
+      "id": "map-enumerable-empty",
+      "note": "(b) DESIGN.md \"A map is not list-formattable\": a .NET Dictionary is IEnumerable, so ListFormatter claims it",
+      "template": "{When:\r|}",
+      "args": {
+        "When": {}
+      },
+      "culture": ""
+    },
+    {
+      "id": "list-spacer-over-map",
+      "note": "(b) DESIGN.md \"A map is not list-formattable\", reached through a list spacer",
+      "template": "{0.Items:|{:{0.Qty}|Z}}",
+      "args": [
+        {
+          "Qty": 2,
+          "Items": [
+            "a",
+            "b"
+          ]
+        }
+      ],
+      "culture": ""
+    },
+    {
+      "id": "custom-pattern-ignore",
+      "note": "(b) DESIGN.md \"A format no formatter claims is a custom pattern in .NET\" / the custom-pattern non-goal",
+      "template": "{0.Name.Length:0}",
+      "args": [
+        {
+          "Name": "  padded  "
+        }
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "Ignore"
+      }
+    },
+    {
+      "id": "custom-pattern-tokens",
+      "note": "(b) DESIGN.md \"A format no formatter claims is a custom pattern in .NET\" / the custom-pattern non-goal",
+      "template": "{0.Name.Length:#}",
+      "args": [
+        {
+          "Name": "  padded  "
+        }
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "MaintainTokens"
+      }
+    },
+    {
+      "id": "custom-pattern-behind-parse-error",
+      "note": "(b) DESIGN.md \"A format no formatter claims is a custom pattern in .NET\" / the custom-pattern non-goal",
+      "template": " }{0.Name.Length:0}",
+      "args": [
+        {
+          "Name": "  padded  "
+        }
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "Ignore",
+        "parseErrorAction": "Ignore"
+      }
+    },
+    {
+      "id": "custom-pattern-astral",
+      "note": "(b) DESIGN.md \"A format no formatter claims is a custom pattern in .NET\" / the custom-pattern non-goal",
+      "template": "{0:🙂}",
+      "args": [
+        1000000
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult",
+        "parseErrorAction": "OutputErrorInResult"
+      }
+    },
+    {
+      "id": "u-specifier",
+      "note": "(b) DESIGN.md \"The `U` date specifier\"",
+      "template": "{0.When:U}",
+      "args": [
+        {
+          "When": {
+            "$dt": "2026-07-31T14:30:45.1234567"
+          }
+        }
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "MaintainTokens"
+      }
+    },
+    {
+      "id": "ismatch-too-few-on-map",
+      "note": "(b) DESIGN.md \"`ismatch` refuses a list or a map\": .NET counts the options first, the port looks at the value first",
+      "template": "{:ismatch:}",
+      "args": {
+        "Name": "42"
+      },
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult",
+        "parseErrorAction": "OutputErrorInResult"
+      }
+    },
+    {
+      "id": "localization-unknown-culture",
+      "note": "(b) DESIGN.md \"A localization culture name we ship no data for\"",
+      "template": "{:L(zz):, }",
+      "args": {
+        "Qty": 1
+      },
+      "culture": "",
+      "settings": {
+        "localization": "ReturnName"
+      }
+    },
+    {
+      "id": "fz-101-1452",
+      "note": "(b) recognised as `map-is-not-list-formattable`",
+      "template": "{:x|}",
+      "args": {
+        "Flag": false,
+        "Text": ""
+      },
+      "culture": "de-CH"
+    },
+    {
+      "id": "fz-101-1472",
+      "note": "(a)/(b) found by the campaign, kept for its shape",
+      "template": "\\u\\t",
+      "args": {},
+      "culture": "",
+      "settings": {
+        "convertCharacterStringLiterals": false
+      }
+    },
+    {
+      "id": "fz-101-1597",
+      "note": "(a)/(b) found by the campaign, kept for its shape",
+      "template": "\\u{Name}-",
+      "args": {
+        "Count": 1
+      },
+      "culture": "",
+      "settings": {
+        "convertCharacterStringLiterals": false
+      }
+    },
+    {
+      "id": "fz-101-1839",
+      "note": "(b) recognised as `map-is-not-list-formattable`",
+      "template": "{:x|}",
+      "args": [
+        {
+          "Count": 1,
+          "Flag": true,
+          "Nothing": null,
+          "Price": -2.25
+        },
+        2,
+        "line\nbreak",
+        [
+          1,
+          "日本語のテキスト"
+        ]
+      ],
+      "culture": "ja",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult",
+        "localization": "ReturnName",
+        "subStringOutOfRangeBehavior": "ThrowException"
+      }
+    },
+    {
+      "id": "fz-101-2333",
+      "note": "(b) recognised as `custom-pattern`",
+      "template": " }{0.Name.Length:0}é",
+      "args": [
+        {
+          "Name": "  padded  "
+        },
+        0,
+        []
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "Ignore",
+        "parseErrorAction": "Ignore"
+      }
+    },
+    {
+      "id": "fz-101-2386",
+      "note": "(b) recognised as `map-is-not-list-formattable`",
+      "template": "{:|}",
+      "args": {
+        "Count": 1
+      },
+      "culture": ""
+    },
+    {
+      "id": "fz-101-3141",
+      "note": "(b) recognised as `map-is-not-list-formattable`",
+      "template": "{Nested:|}",
+      "args": {
+        "Count": 1,
+        "Flag": false,
+        "Nested": {
+          "Inner": 8
+        },
+        "Nothing": null,
+        "Price": 0.0
+      },
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult",
+        "templates": "Standard"
+      }
+    },
+    {
+      "id": "fz-101-3568",
+      "note": "(a)/(b) found by the campaign, kept for its shape",
+      "template": "\\u\\n",
+      "args": {},
+      "culture": "",
+      "settings": {
+        "convertCharacterStringLiterals": false
+      }
+    },
+    {
+      "id": "fz-101-3588",
+      "note": "(a)/(b) found by the campaign, kept for its shape",
+      "template": "{When:\\r|}",
+      "args": {
+        "Count": 1,
+        "Price": 0.0,
+        "When": {}
+      },
+      "culture": ""
+    },
+    {
+      "id": "fz-202-22",
+      "note": "(a)/(b) found by the campaign, kept for its shape",
+      "template": "x\\u}",
+      "args": {
+        "Count": 1,
+        "Items": [],
+        "Price": 0.0
+      },
+      "culture": "",
+      "settings": {
+        "convertCharacterStringLiterals": false,
+        "parseErrorAction": "MaintainTokens"
+      }
+    },
+    {
+      "id": "fz-202-352",
+      "note": "(a)/(b) found by the campaign, kept for its shape",
+      "template": "{-🙂",
+      "args": {},
+      "culture": "is-IS",
+      "settings": {
+        "parseErrorAction": "OutputErrorInResult"
+      }
+    },
+    {
+      "id": "fz-202-1195",
+      "note": "(a)/(b) found by the campaign, kept for its shape",
+      "template": "{:ismatch:}",
+      "args": [
+        {},
+        1,
+        []
+      ],
+      "culture": "de",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      }
+    },
+    {
+      "id": "fz-202-1916",
+      "note": "(a)/(b) found by the campaign, kept for its shape",
+      "template": "{-1}",
+      "args": {},
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      }
+    },
+    {
+      "id": "fz-202-2080",
+      "note": "(a)/(b) found by the campaign, kept for its shape",
+      "template": "{0:A|{:x: }}",
+      "args": [
+        {
+          "Count": 2,
+          "Flag": true,
+          "Items": [
+            1,
+            2
+          ],
+          "Nothing": null,
+          "Price": 1.5
+        },
+        2,
+        "line\nbreak",
+        [
+          "ǆungla"
+        ]
+      ],
+      "culture": "",
+      "settings": {
+        "parseErrorAction": "MaintainTokens"
+      }
+    },
+    {
+      "id": "fz-202-2309",
+      "note": "(a)/(b) found by the campaign, kept for its shape",
+      "template": "{Count:#}",
+      "args": {},
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "MaintainTokens"
+      }
+    },
+    {
+      "id": "fz-202-2812",
+      "note": "(b) recognised as `map-is-not-list-formattable`",
+      "template": "{0: |}",
+      "args": {
+        "Count": 0,
+        "Nothing": null,
+        "Price": 1.5
+      },
+      "culture": "ja",
+      "settings": {
+        "alignmentFillCharacter": "0",
+        "parseErrorAction": "MaintainTokens"
+      }
+    },
+    {
+      "id": "fz-202-3667",
+      "note": "(a)/(b) found by the campaign, kept for its shape",
+      "template": "{Nothing?.Anything:d:{City.ToLower}}",
+      "args": {
+        "City": "",
+        "Nothing": null
+      },
+      "culture": ""
+    },
+    {
+      "id": "fz-202-3790",
+      "note": "(b) recognised as `map-is-not-list-formattable`",
+      "template": "{:| }",
+      "args": {
+        "Flag": true
+      },
+      "culture": "nl"
+    },
+    {
+      "id": "fz-303-336",
+      "note": "(a)/(b) found by the campaign, kept for its shape",
+      "template": "{:ismatch:}",
+      "args": {
+        "Name": "42"
+      },
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "OutputErrorInResult"
+      }
+    },
+    {
+      "id": "fz-303-407",
+      "note": "(a)/(b) found by the campaign, kept for its shape",
+      "template": "{Nothing?,1:substr(a):{99}}",
+      "args": {
+        "Nothing": null
+      },
+      "culture": ""
+    },
+    {
+      "id": "fz-303-783",
+      "note": "(b) recognised as `map-is-not-list-formattable`",
+      "template": "{:|}",
+      "args": {
+        "Price": 1.5
+      },
+      "culture": ""
+    },
+    {
+      "id": "fz-303-928",
+      "note": "(a)/(b) found by the campaign, kept for its shape",
+      "template": "\\u{}",
+      "args": [
+        1000000
+      ],
+      "culture": "",
+      "settings": {
+        "convertCharacterStringLiterals": false
+      }
+    },
+    {
+      "id": "fz-303-1114",
+      "note": "(b) recognised as `map-is-not-list-formattable`",
+      "template": "{0.Nested:|}",
+      "args": [
+        {
+          "Nested": {
+            "Inner": 5
+          }
+        }
+      ],
+      "culture": ""
+    },
+    {
+      "id": "fz-303-1177",
+      "note": "(a)/(b) found by the campaign, kept for its shape",
+      "template": "{v.dt:time:}",
+      "args": [],
+      "culture": "",
+      "settings": {
+        "variables": "Standard"
+      }
+    },
+    {
+      "id": "fz-303-3357",
+      "note": "(b) recognised as `map-is-not-list-formattable`",
+      "template": "{Nested:|}",
+      "args": {
+        "Nested": {
+          "Inner": 0
+        }
+      },
+      "culture": ""
+    },
+    {
+      "id": "fz-404-974",
+      "note": "(a)/(b) found by the campaign, kept for its shape",
+      "template": "{When:time:}",
+      "args": {
+        "Name": "",
+        "When": {
+          "$dt": "2024-02-29T00:00:00.0000000"
+        }
+      },
+      "culture": ""
+    },
+    {
+      "id": "fz-404-3016",
+      "note": "(a)/(b) found by the campaign, kept for its shape",
+      "template": "\\u{:isnull:}",
+      "args": {},
+      "culture": "",
+      "settings": {
+        "convertCharacterStringLiterals": false
+      }
+    },
+    {
+      "id": "fz-505-557",
+      "note": "(a)/(b) found by the campaign, kept for its shape",
+      "template": "{:{v.i}|}",
+      "args": [
+        {
+          "Items": [
+            1,
+            2,
+            3
+          ],
+          "Text": "İstanbul"
+        },
+        1000000,
+        []
+      ],
+      "culture": "",
+      "settings": {
+        "variables": "Standard"
+      }
+    },
+    {
+      "id": "fz-505-1885",
+      "note": "(b) recognised as `map-is-not-list-formattable`",
+      "template": "{:|x}",
+      "args": {
+        "City": "-7.5",
+        "Price": 1.5,
+        "Text": "-7.5"
+      },
+      "culture": ""
+    },
+    {
+      "id": "fz-505-3135",
+      "note": "(a)/(b) found by the campaign, kept for its shape",
+      "template": "{When:{:||日本}}",
+      "args": {
+        "City": "-7.5",
+        "Flag": false,
+        "Nothing": null,
+        "Text": "a|b",
+        "When": {
+          "$dt": "2026-08-01T00:00:00.0000000"
+        }
+      },
+      "culture": "nl",
+      "settings": {
+        "parseErrorAction": "Ignore",
+        "templates": "Standard"
+      }
+    },
+    {
+      "id": "fz-505-3358",
+      "note": "(b) recognised as `custom-pattern`",
+      "template": "{:List: } {Text.Length:\\{}",
+      "args": {
+        "Count": 2,
+        "Flag": true,
+        "Nothing": null,
+        "Price": 1e-09,
+        "Text": "ÅNGSTRÖM"
+      },
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "Ignore",
+        "variables": "Standard"
+      }
+    },
+    {
+      "id": "fz-606-9",
+      "note": "(b) recognised as `custom-pattern`",
+      "template": "{:plural:}x{0.Nested?.Inner:\\\\, }",
+      "args": [
+        {
+          "Items": [
+            1
+          ],
+          "Nested": {
+            "Inner": 7
+          },
+          "Nothing": null
+        },
+        0,
+        "line\nbreak",
+        [
+          "  padded  "
+        ]
+      ],
+      "culture": "fr-FR",
+      "settings": {
+        "formatErrorAction": "Ignore",
+        "parseErrorAction": "OutputErrorInResult",
+        "templates": "Standard",
+        "variables": "Standard"
+      }
+    },
+    {
+      "id": "fz-606-778",
+      "note": "(b) recognised as `custom-pattern`",
+      "template": "xx{-1}{0.Count:0}",
+      "args": [
+        {
+          "Count": 1,
+          "Name": "İstanbul",
+          "Nothing": null,
+          "Text": ""
+        },
+        "hello world"
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "Ignore",
+        "parseErrorAction": "MaintainTokens",
+        "regexOptions": "Multiline"
+      }
+    },
+    {
+      "id": "fz-606-960",
+      "note": "(b) recognised as `custom-pattern`",
+      "template": "{Price:cond:{:L:}{:zz}|}",
+      "args": {
+        "City": "",
+        "Count": 1,
+        "Price": 0.0
+      },
+      "culture": "ru",
+      "settings": {
+        "formatErrorAction": "Ignore"
+      }
+    },
+    {
+      "id": "fz-606-2588",
+      "note": "(a)/(b) found by the campaign, kept for its shape",
+      "template": "{:L(zz):, }",
+      "args": {
+        "Count": 1
+      },
+      "culture": "",
+      "settings": {
+        "localization": "ReturnName"
+      }
+    },
+    {
+      "id": "fz-606-2957",
+      "note": "(a)/(b) found by the campaign, kept for its shape",
+      "template": "{:{When}|x}",
+      "args": {
+        "Count": 0,
+        "Items": []
+      },
+      "culture": "pt-BR",
+      "settings": {
+        "formatErrorAction": "Ignore"
+      }
+    },
+    {
+      "id": "fz-606-3036",
+      "note": "(a)/(b) found by the campaign, kept for its shape",
+      "template": "{:é|\\q}",
+      "args": {
+        "Count": 0,
+        "Flag": true,
+        "Items": [
+          1,
+          ""
+        ],
+        "Nothing": null
+      },
+      "culture": "",
+      "settings": {
+        "subStringNullDisplayString": "(none)"
+      }
+    },
+    {
+      "id": "fz-606-3689",
+      "note": "(b) recognised as `custom-pattern`",
+      "template": "{0.Text}{0.When:U}",
+      "args": [
+        {
+          "When": {
+            "$dt": "2024-03-05T14:30:45.1234567"
+          }
+        }
+      ],
+      "culture": "",
+      "settings": {
+        "formatErrorAction": "MaintainTokens"
+      }
+    }
+  ]
+}

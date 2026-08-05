@@ -98,23 +98,34 @@ pub fn known_divergence(case: &Case, net: &NetOutcome, rust: &RustOutcome) -> Op
         RustOutcome::Error { message, .. } => Some(message.as_str()),
         _ => None,
     };
+    // The reason the case's error action threw away, if it threw one away.
+    let hidden = hidden_reason(case);
+
     // What the port said, whichever way it said it: with
-    // `OutputErrorInResult` an error becomes part of the rendered text, so a
-    // rule that reads only the error message would miss the same divergence
-    // under a different setting.
+    // `OutputErrorInResult` an error becomes part of the rendered text, with
+    // `Ignore` and `MaintainTokens` it is swallowed entirely, so a rule that
+    // read only the error message would recognise a divergence under one
+    // setting and miss the very same one under another.
     let rust_says = |needle: &str| {
         rust_message.is_some_and(|message| message.contains(needle))
             || rust_text.is_some_and(|text| text.contains(needle))
+            || hidden.as_deref().is_some_and(|why| why.contains(needle))
     };
 
     // .NET falls back to `ToString()` for a value no formatter claims, and a
-    // collection's `ToString()` is its CLR type name.
+    // collection's `ToString()` is its CLR type name. Read from either side:
+    // .NET's type name is the giveaway when it renders, and the port's own
+    // refusal is the giveaway when .NET goes on to throw for another reason
+    // (`{}\q` on a map: .NET writes the type name and then fails on the
+    // escape, where the port never gets past the map).
     if net_text.is_some_and(|text| {
         text.contains("System.Object[]")
             || text.contains("System.Collections.Generic.Dictionary`2")
             || text.contains("System.Collections.Generic.List`1")
             || text.contains("SmartFormat.Extensions.PersistentVariables.VariablesGroup")
-    }) {
+    }) || rust_says("Default formatting of a list is not supported")
+        || rust_says("Default formatting of a map is not supported")
+    {
         return Some(Known {
             rule: "collection-type-name",
             reason: "default formatting of a collection renders the CLR type name in .NET; we fail loudly instead (DESIGN.md, \"Default formatting of lists and maps\")",
@@ -205,7 +216,17 @@ pub fn known_divergence(case: &Case, net: &NetOutcome, rust: &RustOutcome) -> Op
 
     // A `Dictionary` is `IEnumerable` in .NET, so `list` iterates it as pairs;
     // a `Value::Map` is not a list here.
-    if rust_says("requires an IEnumerable argument") && net_text.is_some() {
+    //
+    // Naming the formatter makes the port say so ("requires an IEnumerable
+    // argument"). Letting it auto-detect — `{:a|b}`, which is by far the
+    // commoner shape — makes it say nothing at all: `list` simply declines and
+    // some other formatter renders the format. What gives .NET away then is its
+    // side of it, `KeyValuePair.ToString()`, which writes `[key, value]` for
+    // every entry. Matching that against the case's *own* map keys keeps the
+    // rule from catching a template that merely writes a bracket.
+    if net_text.is_some() && rust_says("requires an IEnumerable argument")
+        || net_text.is_some_and(|text| pairs_of_a_map_in(&case.args, text))
+    {
         return Some(Known {
             rule: "map-is-not-list-formattable",
             reason: "a .NET Dictionary is IEnumerable and `list` iterates its pairs; a map is not list-formattable here (DESIGN.md, \"A map is not list-formattable\")",
@@ -336,6 +357,71 @@ pub fn known_divergence(case: &Case, net: &NetOutcome, rust: &RustOutcome) -> Op
     }
 
     None
+}
+
+/// Whether `text` holds `[key, ` for a key of a map somewhere in `args` — the
+/// `KeyValuePair.ToString()` .NET writes when its `ListFormatter` iterates a
+/// `Dictionary`. Keyed on the case's own maps, so a template that writes a
+/// bracket of its own does not answer yes.
+fn pairs_of_a_map_in(args: &Json, text: &str) -> bool {
+    let mut found = false;
+    walk(args, &mut |node| {
+        if let Json::Object(map) = node {
+            // The markers are scalars in disguise, not maps.
+            if map.len() == 1
+                && ["$dt", "$ts", "$f", "$i32", "$u64"]
+                    .iter()
+                    .any(|marker| map.contains_key(*marker))
+            {
+                return;
+            }
+            found |= map.keys().any(|key| text.contains(&format!("[{key}, ")));
+        }
+    });
+    found
+}
+
+/// What the port would have *said* had the case's error action not thrown it
+/// away.
+///
+/// `Ignore` renders the empty string and `MaintainTokens` renders the token
+/// back, so under either the port's reason never reaches the report and every
+/// rule that reads it goes quiet — the same divergence, recognised under
+/// `Throw` and missed under `Ignore`. Re-rendering with the actions cleared
+/// asks the port directly. It costs one in-process render and is only reached
+/// for a case that both disagrees and hides errors.
+///
+/// The pinned clock is good enough here: it decides what a date renders as, and
+/// nothing that reads this reads a date.
+fn hidden_reason(case: &Case) -> Option<String> {
+    let hides = |key: &str| {
+        matches!(
+            case.settings.get(key).and_then(Json::as_str),
+            Some("Ignore" | "MaintainTokens")
+        )
+    };
+    if !hides("formatErrorAction") && !hides("parseErrorAction") {
+        return None;
+    }
+    // `OutputErrorInResult` rather than "no setting at all", and parse errors
+    // left quiet: a template that also has a parse error in it would otherwise
+    // stop at that one and never reach the formatting reason the rules are
+    // after — which is how `" }{0.Name.Length:0}"` hid a custom pattern behind
+    // a stray closing brace. `OutputErrorInResult` writes every formatting
+    // error it meets into the text and carries on.
+    let mut probe = case.clone();
+    probe.settings.insert(
+        "formatErrorAction".into(),
+        Json::String("OutputErrorInResult".into()),
+    );
+    probe
+        .settings
+        .insert("parseErrorAction".into(), Json::String("Ignore".into()));
+    match crate::rustside::render(&probe, crate::rustside::PINNED_NOW) {
+        RustOutcome::Result(text) => Some(text),
+        RustOutcome::Error { message, .. } => Some(message),
+        RustOutcome::Panic(_) => None,
+    }
 }
 
 /// A three-letter alphabetic culture name in the options of a formatter that

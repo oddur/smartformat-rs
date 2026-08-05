@@ -68,6 +68,61 @@ pub fn cases_document(cases: &[Case]) -> Json {
     json!({ "cases": cases.iter().map(Case::to_json).collect::<Vec<_>>() })
 }
 
+/// Reads back a document in that shape — a corpus file, or a report's `case`
+/// objects lifted out of it.
+///
+/// The tree such a case carries is the template as one literal node, because
+/// the text is all there is to go on. It renders verbatim, so both engines see
+/// exactly what the file says; only the shrinker is weaker on it, and a corpus
+/// case has already been shrunk.
+pub fn read_cases(document: &Json) -> Result<Vec<Case>, String> {
+    let array = match document {
+        Json::Array(array) => array,
+        Json::Object(object) => match object.get("cases") {
+            Some(Json::Array(array)) => array,
+            _ => return Err("no \"cases\" array".to_string()),
+        },
+        _ => return Err("the top level is neither an object nor an array".to_string()),
+    };
+
+    array
+        .iter()
+        .enumerate()
+        .map(|(index, node)| read_case(node, index))
+        .collect()
+}
+
+fn read_case(node: &Json, index: usize) -> Result<Case, String> {
+    let object = node
+        .as_object()
+        .ok_or_else(|| format!("case {index} is not an object"))?;
+    let template = object
+        .get("template")
+        .and_then(Json::as_str)
+        .ok_or_else(|| format!("case {index} has no string \"template\""))?;
+    let settings = match object.get("settings") {
+        None | Some(Json::Null) => Map::new(),
+        Some(Json::Object(settings)) => settings.clone(),
+        Some(_) => return Err(format!("case {index}: \"settings\" is not an object")),
+    };
+    Ok(Case {
+        id: object
+            .get("id")
+            .and_then(Json::as_str)
+            .map_or_else(|| format!("case-{index}"), str::to_string),
+        tree: Template {
+            nodes: vec![crate::gen::Node::Literal(template.to_string())],
+        },
+        args: object.get("args").cloned().unwrap_or_else(|| json!([])),
+        culture: object
+            .get("culture")
+            .and_then(Json::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        settings,
+    })
+}
+
 /// What SmartFormat.NET answered. `Died` is not an answer: the harness process
 /// stopped before it produced one (a stack overflow takes the runtime with it).
 #[derive(Clone, Debug, PartialEq, Eq)]

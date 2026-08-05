@@ -214,11 +214,20 @@ fn text(rng: &mut Rng) -> Json {
 }
 
 /// One entry of the map the argument tree is built around. Kinds are fixed per
-/// key so a template that reads `Count` always reads a number.
+/// key so a template that reads `Qty` always reads a number.
+///
+/// No name here may be a member of the CLR type the harness maps a JSON object
+/// to. `args` becomes a `Dictionary<string, object>`, whose `Count`, `Keys`,
+/// `Values` and `Comparer` .NET's `ReflectionSource` will happily resolve when
+/// the map has no such key — so `{Count}` on a map without one answers the
+/// dictionary's *entry count* in .NET and nothing at all here, where a
+/// `Value::Map` has no members beyond its keys. That is the harness's choice of
+/// representation showing through, not a difference in the port, so the field
+/// is `Qty` rather than `Count`.
 const FIELDS: [(&str, Kind); 11] = [
     ("Name", Kind::Text),
     ("City", Kind::Text),
-    ("Count", Kind::Integer),
+    ("Qty", Kind::Integer),
     ("Price", Kind::Float),
     ("Items", Kind::List),
     ("When", Kind::Date),
@@ -813,7 +822,18 @@ fn placeholder(rng: &mut Rng, ctx: &Ctx<'_>, depth: u32, inside_part: bool) -> P
         "choose" => &[Kind::Integer, Kind::Text, Kind::Bool, Kind::Null],
         "isnull" => &[Kind::Null, Kind::Text, Kind::Integer],
         "ismatch" | "substr" => &[Kind::Text],
-        "time" => &[Kind::Span, Kind::Date],
+        // A `TimeSpan` only, never a `DateTime`. `TimeFormatter` on a
+        // `DateTime` subtracts it from the clock, and .NET subtracts the two
+        // *UTC* moments where a zone-less `jiff::civil::DateTime` has nothing
+        // to convert with — so the answers differ by exactly the daylight-saving
+        // offset between the two moments, and only on a machine whose zone has
+        // a transition between them. `tools/goldens/README.md` states the rule
+        // ("keep `now` and any nearby value on the same side of a daylight-saving
+        // transition, which is why `now` is in July") and nothing checks it; a
+        // generator that broke it would report the same finding on one machine
+        // and not on the next, which is worse than not generating it. A
+        // `TimeSpan` reads no clock, so it is safe everywhere.
+        "time" => &[Kind::Span],
         // A bare format, or none at all. Default-formatting a list or a map is
         // a divergence `DESIGN.md` already records — .NET writes the CLR type
         // name — so leaning away from those keeps the campaign's output from

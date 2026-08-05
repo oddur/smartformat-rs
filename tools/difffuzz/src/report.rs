@@ -13,7 +13,6 @@ use std::path::Path;
 use serde_json::{json, Map, Value as Json};
 
 use crate::campaign::{Judged, Options, Summary};
-use crate::case::Case;
 use crate::classify::Class;
 
 pub fn document(options: &Options, summary: &Summary, findings: &[Judged]) -> Json {
@@ -80,17 +79,24 @@ fn entry(finding: &Judged) -> Json {
         node.insert(
             "minimal".into(),
             json!({
-                "template": minimal.template(),
-                "args": minimal.args.clone(),
-                "culture": minimal.culture.clone(),
-                "settings": crate::case::settings_json(&minimal.settings),
+                "template": minimal.case.template(),
+                "args": minimal.case.args.clone(),
+                "culture": minimal.case.culture.clone(),
+                "settings": crate::case::settings_json(&minimal.case.settings),
+                // The shrunk case's *own* answers. The `dotnet` and `rust`
+                // above belong to the template above them.
+                "dotnet": minimal.net.to_json(),
+                "rust": minimal.rust.to_json(),
             }),
         );
     }
     // Ready to paste into the golden table once it has been triaged.
     node.insert(
         "case".into(),
-        finding.minimal.as_ref().unwrap_or(&finding.case).to_json(),
+        match &finding.minimal {
+            Some(minimal) => minimal.case.to_json(),
+            None => finding.case.to_json(),
+        },
     );
     Json::Object(node)
 }
@@ -128,18 +134,23 @@ pub fn print_summary(summary: &Summary, findings: &[Judged], report: &Path) {
         println!();
         println!("new disagreements, smallest form:");
         for finding in &new {
-            let minimal: &Case = finding.minimal.as_ref().unwrap_or(&finding.case);
+            // Inputs and answers have to come from the same rendering, or the
+            // line reads as a disagreement nobody can reproduce.
+            let (case, net, rust) = match &finding.minimal {
+                Some(minimal) => (&minimal.case, &minimal.net, &minimal.rust),
+                None => (&finding.case, &finding.net, &finding.rust),
+            };
             println!("  {}", finding.case.id);
-            println!("    template  {:?}", minimal.template());
-            println!("    args      {}", minimal.args);
-            if !minimal.culture.is_empty() {
-                println!("    culture   {}", minimal.culture);
+            println!("    template  {:?}", case.template());
+            println!("    args      {}", case.args);
+            if !case.culture.is_empty() {
+                println!("    culture   {}", case.culture);
             }
-            if !minimal.settings.is_empty() {
-                println!("    settings  {}", Json::Object(minimal.settings.clone()));
+            if !case.settings.is_empty() {
+                println!("    settings  {}", Json::Object(case.settings.clone()));
             }
-            println!("    .NET      {}", finding.net);
-            println!("    rust      {}", finding.rust);
+            println!("    .NET      {net}");
+            println!("    rust      {rust}");
         }
     }
     println!();
@@ -149,13 +160,14 @@ pub fn print_summary(summary: &Summary, findings: &[Judged], report: &Path) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::campaign::Verdict;
+    use crate::campaign::{Minimal, Verdict};
     use crate::case::{NetOutcome, RustOutcome};
     use crate::gen;
 
     #[test]
     fn a_report_carries_every_input_and_both_answers() {
         let case = gen::generate(1, 1);
+        let smaller = gen::generate(1, 2);
         let finding = Judged {
             case: case.clone(),
             net: NetOutcome::Result("a".into()),
@@ -164,7 +176,11 @@ mod tests {
                 class: Class::New,
                 known: None,
             },
-            minimal: Some(case.clone()),
+            minimal: Some(Minimal {
+                case: smaller.clone(),
+                net: NetOutcome::Result("c".into()),
+                rust: RustOutcome::Result("d".into()),
+            }),
         };
         let options = Options {
             seed: 1,
@@ -187,8 +203,11 @@ mod tests {
         assert_eq!(entry["args"], case.args);
         assert_eq!(entry["dotnet"]["result"], "a");
         assert_eq!(entry["rust"]["result"], "b");
-        assert!(entry["minimal"].is_object());
-        assert_eq!(entry["case"]["id"], case.id);
+        // The minimal case reports the answers *it* got, not the original's.
+        assert_eq!(entry["minimal"]["template"], smaller.template());
+        assert_eq!(entry["minimal"]["dotnet"]["result"], "c");
+        assert_eq!(entry["minimal"]["rust"]["result"], "d");
+        assert_eq!(entry["case"]["id"], smaller.id);
         assert_eq!(document["summary"]["disagreements"]["new"], 1);
     }
 }

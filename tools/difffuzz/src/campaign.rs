@@ -54,8 +54,18 @@ pub struct Judged {
     pub net: NetOutcome,
     pub rust: RustOutcome,
     pub verdict: Verdict,
-    /// The smallest case still showing the same kind of disagreement.
-    pub minimal: Option<Case>,
+    /// The smallest case still showing the same kind of disagreement, with the
+    /// answers *it* got. Reporting the shrunk inputs beside the original
+    /// outputs would describe a rendering that never happened, and the minimal
+    /// case is the one a person reads.
+    pub minimal: Option<Minimal>,
+}
+
+/// The result of shrinking: a case and what each engine said about it.
+pub struct Minimal {
+    pub case: Case,
+    pub net: NetOutcome,
+    pub rust: RustOutcome,
 }
 
 #[derive(Default)]
@@ -152,11 +162,8 @@ fn judge_one(case: &Case, net: &NetOutcome, rust: &RustOutcome) -> Verdict {
     }
 }
 
-/// Runs a whole campaign.
+/// Runs a whole campaign over the cases the seed generates.
 pub fn run(options: &Options, harness: Option<&Harness>) -> (Summary, Vec<Judged>) {
-    let started = Instant::now();
-    let runner = Runner::new(harness);
-
     let indices: Vec<usize> = match options.only {
         Some(index) => vec![index],
         None => (0..options.count).collect(),
@@ -165,6 +172,19 @@ pub fn run(options: &Options, harness: Option<&Harness>) -> (Summary, Vec<Judged
         .iter()
         .map(|index| gen::generate(options.seed, *index))
         .collect();
+    run_cases(&cases, options, harness)
+}
+
+/// Runs a campaign over cases somebody else chose — a corpus file, or one case
+/// being triaged by hand. Everything downstream of generating is the same, so
+/// a corpus replay is judged, confirmed and shrunk exactly as a campaign is.
+pub fn run_cases(
+    cases: &[Case],
+    options: &Options,
+    harness: Option<&Harness>,
+) -> (Summary, Vec<Judged>) {
+    let started = Instant::now();
+    let runner = Runner::new(harness);
 
     let mut summary = Summary {
         cases: cases.len(),
@@ -232,7 +252,7 @@ pub fn run(options: &Options, harness: Option<&Harness>) -> (Summary, Vec<Judged
             }
 
             if judgement.verdict.class() == Some(Class::New) && harness.is_some() {
-                judgement.minimal = Some(minimise(&runner, &judgement.case, options));
+                judgement.minimal = Some(minimise(&runner, &judgement, options));
             }
             findings.push(judgement);
         }
@@ -251,11 +271,16 @@ pub fn run(options: &Options, harness: Option<&Harness>) -> (Summary, Vec<Judged
 /// the shrink at the first reduction that changes a padding width, and
 /// requiring only "still disagrees" would let it wander into a divergence
 /// `DESIGN.md` already covers.
-pub fn minimise(runner: &Runner<'_>, case: &Case, options: &Options) -> Case {
-    let mut current = case.clone();
+pub fn minimise(runner: &Runner<'_>, judged: &Judged, options: &Options) -> Minimal {
+    let case = &judged.case;
+    let mut current = Minimal {
+        case: case.clone(),
+        net: judged.net.clone(),
+        rust: judged.rust.clone(),
+    };
 
     for round in 0..options.shrink_rounds {
-        let candidates = sample(shrink::reductions(&current), options.shrink_batch);
+        let candidates = sample(shrink::reductions(&current.case), options.shrink_batch);
         if candidates.is_empty() {
             break;
         }
@@ -276,16 +301,20 @@ pub fn minimise(runner: &Runner<'_>, case: &Case, options: &Options) -> Case {
         let best = judged
             .into_iter()
             .filter(|judgement| judgement.verdict.class() == Some(Class::New))
-            .map(|judgement| judgement.case)
-            .min_by_key(Case::size);
+            .map(|judgement| Minimal {
+                case: judgement.case,
+                net: judgement.net,
+                rust: judgement.rust,
+            })
+            .min_by_key(|minimal| minimal.case.size());
 
         match best {
-            Some(smaller) if smaller.size() < current.size() => current = smaller,
+            Some(smaller) if smaller.case.size() < current.case.size() => current = smaller,
             _ => break,
         }
     }
 
-    current.id = format!("{}-min", case.id);
+    current.case.id = format!("{}-min", case.id);
     current
 }
 

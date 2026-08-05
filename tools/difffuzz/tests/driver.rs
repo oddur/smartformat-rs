@@ -204,7 +204,7 @@ fn a_disagreement_shrinks_to_the_part_that_disagrees() {
         "the stand-in and the port must disagree for this test to mean anything"
     );
 
-    let minimal = campaign::minimise(&runner, &start, &options);
+    let minimal = campaign::minimise(&runner, &judged[0], &options).case;
     assert!(
         minimal.size() < start.size(),
         "shrinking got nowhere: {:?}",

@@ -21,6 +21,11 @@ Options
     --count N           how many cases to generate            (default: 200)
     --index N           run only case N of the campaign, for reproducing one
                         finding without re-running everything before it
+    --cases PATH        run the cases in PATH instead of generating any. The
+                        file is a `{\"cases\": [...]}` document (or a bare
+                        array) of case objects — the corpus beside this tool,
+                        the `case` objects of an earlier report, or a template
+                        typed out by hand while triaging.
     --batch-size N      cases per `dotnet run`                (default: 100)
     --shrink-batch N    candidate reductions per shrinking round  (default: 120)
     --shrink-rounds N   how many rounds one finding is shrunk for (default: 12)
@@ -84,18 +89,37 @@ fn main() -> ExitCode {
         None
     };
 
-    match settings.options.only {
-        Some(index) => println!(
+    let supplied = match &settings.cases {
+        Some(path) => match read_cases(path) {
+            Ok(cases) => Some(cases),
+            Err(error) => {
+                eprintln!("difffuzz: {error}");
+                return ExitCode::from(2);
+            }
+        },
+        None => None,
+    };
+
+    match (&supplied, settings.options.only) {
+        (Some(cases), _) => println!(
+            "difffuzz: {} cases from {}",
+            cases.len(),
+            settings.cases.as_ref().expect("a path was read").display()
+        ),
+        (None, Some(index)) => println!(
             "difffuzz: seed {} — case {index} only",
             settings.options.seed
         ),
-        None => println!(
+        (None, None) => println!(
             "difffuzz: seed {} — {} cases",
             settings.options.seed, settings.options.count
         ),
     }
 
-    let (summary, findings) = campaign::run(&settings.options, harness.as_ref());
+    let (summary, findings) = match &supplied {
+        Some(cases) => campaign::run_cases(cases, &settings.options, harness.as_ref()),
+        None => campaign::run(&settings.options, harness.as_ref()),
+    };
     let document = report::document(&settings.options, &summary, &findings);
     if let Err(error) = report::write(&settings.report, &document) {
         eprintln!("difffuzz: could not write {:?}: {error}", settings.report);
@@ -110,8 +134,19 @@ fn main() -> ExitCode {
     }
 }
 
+/// Reads a corpus or triage file into cases.
+fn read_cases(path: &PathBuf) -> Result<Vec<difffuzz::case::Case>, String> {
+    let text = std::fs::read_to_string(path)
+        .map_err(|error| format!("could not read {}: {error}", path.display()))?;
+    let document: serde_json::Value = serde_json::from_str(&text)
+        .map_err(|error| format!("{} is not JSON: {error}", path.display()))?;
+    difffuzz::case::read_cases(&document).map_err(|error| format!("{}: {error}", path.display()))
+}
+
 struct Settings {
     options: Options,
+    /// Cases to run instead of generating any.
+    cases: Option<PathBuf>,
     report: PathBuf,
     use_dotnet: bool,
     dotnet: String,
@@ -131,6 +166,7 @@ fn parse(arguments: &[String]) -> Result<Option<Settings>, String> {
             confirm_alone: true,
             only: None,
         },
+        cases: None,
         report: PathBuf::from("difffuzz-report.json"),
         use_dotnet: true,
         dotnet: "dotnet".to_string(),
@@ -157,6 +193,7 @@ fn parse(arguments: &[String]) -> Result<Option<Settings>, String> {
             "--shrink-rounds" => {
                 settings.options.shrink_rounds = number(&value()?, argument)? as usize;
             }
+            "--cases" => settings.cases = Some(PathBuf::from(value()?)),
             "--report" => settings.report = PathBuf::from(value()?),
             "--no-dotnet" => settings.use_dotnet = false,
             "--no-confirm-alone" => settings.options.confirm_alone = false,
