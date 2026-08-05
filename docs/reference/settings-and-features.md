@@ -17,7 +17,7 @@ Passed to `SmartFormatter::new`, readable through `SmartFormatter::settings`.
 | `format_error_action` | `ErrorAction` | `Error` | `SmartSettings.Formatter.FormatErrorAction` | how errors raised while rendering a placeholder are handled |
 | `case_sensitive` | `CaseSensitivity` | `CaseSensitive` | `SmartSettings.CaseSensitivity` | how selector names, formatter names and template names are matched |
 | `string_format_compatibility` | `bool` | `false` | `SmartSettings.StringFormatCompatibility` | braces are escaped by doubling, formatter names are not parsed, and only `DefaultFormatter` runs |
-| `now` | `Option<jiff::civil::DateTime>` | `None` | `SystemTime.SetDateTimeNow` | what "now" means to the `time` formatter and to date conditions in `cond`; `None` reads the system clock per placeholder. Requires the `time` feature |
+| `now` | `Option<jiff::civil::DateTime>` | `None` | `SystemTime.Now`, which `SystemTime.SetDateTime` pins | what "now" means to the `time` formatter and to date conditions in `cond`; `None` reads the system clock per placeholder. Requires the `time` feature |
 | `alignment_fill_character` | `char` | `' '` | `FormatterSettings.AlignmentFillCharacter` | the character alignment pads with |
 
 ```rust
@@ -125,17 +125,16 @@ assert_eq!(smart.format("{naïve}", &args).unwrap(), "1");
 
 | Feature | Gates | Pulls in | Implies |
 | --- | --- | --- | --- |
-| `derive` | the `ToSmartValue` derive macro re-export | `smartformat-derive` | — |
-| `plural` | `PluralLocalizationFormatter`, `extensions::plural_rules` | nothing | — |
+| `derive` | the `ToSmartValue` derive macro re-export | `smartformat-derive` | none |
+| `plural` | `PluralLocalizationFormatter`, `extensions::plural_rules` | nothing | none |
 | `time` | `Value::DateTime`, `Value::TimeSpan`, `TimeFormatter`, `fmt::date`, `SmartSettings::now`, the date arms of `cond` | `jiff` | `plural` |
-| `regex-formatters` | `IsMatchFormatter`, `RegexOptions` | `fancy-regex` | — |
+| `regex-formatters` | `IsMatchFormatter`, `RegexOptions` | `fancy-regex` | none |
 
 `time` implies `plural` because a `TimeTextInfo` picks its unit words with the
 plural rules, exactly as .NET's does; there is no second copy of the table.
 
 The pluralization rules are a port of SmartFormat.NET's own table, so `plural`
-adds no dependency and no CLDR data. The point is to agree with .NET, not with
-CLDR.
+adds no dependency and no CLDR data.
 
 Without a feature, the corresponding formatter is simply absent from the
 default registry, and a template that names it fails with

@@ -40,7 +40,7 @@ Order does not matter. The generator sorts by ASCII-lowercase name, because the 
 
 [`tools/culturegen/README.md`](../../tools/culturegen/README.md) has the commands. Run both of them, in one commit, with the same SDK on the same machine.
 
-The reason is in that README and it is not optional: .NET's culture data is ICU-backed, so on Linux and macOS it comes from whatever ICU the machine carries. Group separators have moved from `U+00A0` to `U+202F`, month abbreviations have gained and lost trailing dots, and default decimal digits have changed, all between ICU releases with no change to any of this code. `crates/smartformat/src/fmt/culture/generated.rs` and `goldens/m1.json` are one artifact in two files. Regenerate one without the other and you get a port whose culture data and whose expected output come from different ICU versions; the failures look like port bugs and are not.
+The pairing is not optional. `crates/smartformat/src/fmt/culture/generated.rs` and `goldens/m1.json` are one artifact in two files, both read out of whatever ICU the generating machine carries. Regenerate one without the other and the port's culture data and its expected output come from different ICU versions; the failures look like port bugs and are not. That README lists which fields have drifted between ICU releases.
 
 Run `cargo fmt --all` afterwards. The generator emits each array on one line and rustfmt decides how to wrap it, so the checked-in file is the formatted one and CI's `--check` fails without this step.
 
@@ -77,12 +77,6 @@ The golden harness generates these combinatorially: every culture in the table c
 
 `CultureData` is not a description of a culture. It is a verbatim copy of .NET's `CultureInfo.NumberFormat` and `CultureInfo.DateTimeFormat`, field for field, read out of a running .NET process. The whole compatibility claim rests on that: for a listed culture the port matches .NET **by construction**, because it is formatting from .NET's own numbers.
 
-Typing the fields by hand replaces "by construction" with "by inspection", and inspection fails on this data. Three examples out of the table as it stands:
-
-- `fr` groups digits with `U+202F` NARROW NO-BREAK SPACE while `pt-PT` and `ru` use `U+00A0`. On screen they are the same blank.
-- `sv` and `fi` negate with `U+2212` MINUS SIGN, not a hyphen.
-- `ar-SA` hides `U+061C` ARABIC LETTER MARK inside its signs and `U+200F` inside its currency symbol.
-
-And the shape of the data is not obvious either. `ru`, `pl`, `cs`, `uk` and `fi` inflect the month name next to a day number (`март` alone, `5 марта`), and `de`, `da` and `nb` do it in the abbreviated form only. There are 17 currency-pattern arms. Getting a culture right means getting all of that right, and getting it wrong means a port that is subtly, permanently different from the library it claims to match.
+Typing the fields by hand replaces "by construction" with "by inspection", and inspection fails on this data. `ar-SA` hides `U+061C` ARABIC LETTER MARK inside its signs and `U+200F` inside its currency symbol; several cultures group or negate with a character that looks identical to the one beside it in the table; five inflect the month name next to a day number and three more do it only in the abbreviated form; there are 17 currency-pattern arms to land on. [Why byte-identical output is the goal](../explanation/byte-compatibility.md) works through what a near-miss in those fields costs.
 
 Adding a name to `Program.cs` and rerunning the generator is the whole cost, which is why that is the supported path.

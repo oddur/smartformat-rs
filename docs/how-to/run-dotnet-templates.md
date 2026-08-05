@@ -17,7 +17,7 @@ Look up the grammar in [Template syntax](../reference/template-syntax.md) and ev
 | `SmartSettings.CaseSensitivity` | `SmartSettings::case_sensitive` |
 | `SmartSettings.StringFormatCompatibility` | `SmartSettings::string_format_compatibility` |
 | `SmartSettings.Formatter.AlignmentFillCharacter` | `SmartSettings::alignment_fill_character` |
-| `SystemTime.SetDateTimeNow(...)` | `SmartSettings::now` (needs the `time` feature) |
+| `SystemTime.SetDateTime(...)` | `SmartSettings::now` (needs the `time` feature) |
 
 ```rust
 use smartformat::{CaseSensitivity, ErrorAction, SmartFormatter, SmartSettings, Value};

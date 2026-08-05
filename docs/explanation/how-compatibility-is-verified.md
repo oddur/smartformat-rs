@@ -11,12 +11,12 @@ A hand-written expectation records what the person writing the test believed .NE
 the cases that matter, nobody knows.
 
 `{0:F}` on 2.675 is `2.67`, because the nearest double to 2.675 is slightly below it and
-.NET rounds the exact decimal expansion. French groups digits with U+202F and Russian with
-U+00A0. Swedish and Finnish negate with U+2212 rather than a hyphen. Polish, Czech, Russian,
-Ukrainian and Finnish inflect the month name next to a day number; German, Danish and
-Norwegian do it only in the abbreviated form. A `FormattingException` message quotes the
-template and points a caret at a specific index, in a specific layout. Each of those is a
-coin flip for a human and a fact for the library.
+.NET rounds the exact decimal expansion. A `FormattingException` message quotes the template
+and points a caret at a specific index, in a specific layout. The invisible culture
+differences catalogued under
+[why "close enough" is the wrong target](byte-compatibility.md#why-close-enough-is-the-wrong-target)
+are the same problem again: each of them is a coin flip for a human and a fact for the
+library.
 
 Generating the answers also makes an upgrade legible. Bumping the pinned SmartFormat.NET
 version and regenerating produces a diff that shows exactly which behaviors changed, rather

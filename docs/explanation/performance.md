@@ -113,7 +113,7 @@ and `format_oneshot` is the one bench that measures parse plus render together.
 | `parse_simple` | parsing `Hello {Name}, you have {Count} items` | ~271 ns |
 | `format_oneshot` | the same template parsed *and* rendered | ~364 ns |
 
-The file carries five more: `render_number_spec_de` (the same number under a culture with a
+The file carries six more: `render_number_spec_de` (the same number under a culture with a
 different separator), `render_variables` (a `{group.variable}` answered by a registered
 source), `parse_nested`, and three `*_autodetect` twins of the plural, conditional and list
 benches. The twins earn their place: they render the same formats with the formatter name

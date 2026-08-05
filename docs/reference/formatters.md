@@ -18,11 +18,11 @@ rank.
 | 0 | `list` | `ListFormatter` | yes | yes | 1000 |
 | 1 | `plural` | `PluralLocalizationFormatter` | yes | yes, with the `plural` feature | 2000 |
 | 2 | `cond` | `ConditionalFormatter` | yes | yes | 3000 |
-| — | `time` | `TimeFormatter` | no | no, register by hand | 4000 |
+| n/a | `time` | `TimeFormatter` | no | no, register by hand | 4000 |
 | 3 | `ismatch` | `IsMatchFormatter` | no | yes, with the `regex-formatters` feature | 6000 |
 | 4 | `isnull` | `NullFormatter` | no | yes | 7000 |
-| — | `L` | `LocalizationFormatter` | no | no, `register_localization` | 8000 |
-| — | `t` | `TemplateFormatter` | no | no, `register_template` | 9000 |
+| n/a | `L` | `LocalizationFormatter` | no | no, `register_localization` | 8000 |
+| n/a | `t` | `TemplateFormatter` | no | no, `register_template` | 9000 |
 | 5 | `choose` | `ChooseFormatter` | no | yes | 10000 |
 | 6 | `substr` | `SubStringFormatter` | no | yes | 11000 |
 | 7 | `d` | `DefaultFormatter` | yes | yes | 12000 |
@@ -259,7 +259,7 @@ group are written `\(` and `\)`, and a regex backslash is written `\\`.
 
 The engine is fancy-regex, not .NET's. `set_regex_options` takes
 `RegexOptions` flags with .NET's names and bit values: `IGNORE_CASE`,
-`MULTILINE`, `SINGLELINE` and `IGNORE_PATTERN_WHITESPACE` are honoured,
+`MULTILINE`, `SINGLELINE` and `IGNORE_PATTERN_WHITESPACE` are honored,
 `COMPILED` and `CULTURE_INVARIANT` are accepted and ignored, and
 `EXPLICIT_CAPTURE`, `RIGHT_TO_LEFT`, `ECMA_SCRIPT` and `NON_BACKTRACKING` are
 rejected. `set_backtrack_limit` stands in for .NET's 500 ms match timeout and
@@ -490,7 +490,7 @@ placeholders of its own. When the raw key misses and the format has nested
 placeholders, the format is rendered and the result is looked up instead.
 
 A culture named in the options switches the culture for the **rest of the
-format call**, not just for the translation. That is .NET's behaviour, kept on
+format call**, not just for the translation. That is .NET's behavior, kept on
 purpose.
 
 | Error | Raised when |
@@ -591,10 +591,11 @@ specifier; see [format-specifiers.md](format-specifiers.md).
 | `Input string was not in a correct format.` | a date/time or duration specifier .NET rejects |
 | `unsupported format spec: <spec>` | valid .NET, outside the supported subset (custom patterns) |
 
-The list, map and `unsupported format spec` rows are deliberate divergences.
-.NET renders a list or a map as a CLR type name and a custom pattern as text;
-this crate fails loudly instead, so a compatibility gap cannot pass unnoticed.
-See [DESIGN.md](../../DESIGN.md).
+The list, map and `unsupported format spec` rows are deliberate divergences:
+.NET renders a list or a map as a CLR type name and a custom pattern as text.
+See [DESIGN.md](../../DESIGN.md) for the ledger entry on each, and
+[Why byte-identical output is the goal](../explanation/byte-compatibility.md)
+for the reasoning.
 
 ## Related
 

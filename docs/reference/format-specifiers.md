@@ -36,7 +36,7 @@ precision). Case matters only where the table says so. The empty specifier is
 | `G` | general | significant digits | shortest round-trippable | all numbers |
 | `N` | number, grouped | decimal places | culture's `number_decimal_digits` | all numbers |
 | `P` | percent (value × 100) | decimal places | culture's `percent_decimal_digits` | all numbers |
-| `R` | round-trip | ignored for floats; same as `G<n>` for integers | — | all numbers |
+| `R` | round-trip | ignored for floats; same as `G<n>` for integers | n/a | all numbers |
 | `X` | hexadecimal | minimum digits | 0 | integers only |
 
 Case rules:
@@ -127,7 +127,7 @@ Rendered under the invariant culture for `2024-03-05T14:07:09.1234567`:
 | `T` | long time | `long_time_pattern` | `14:07:09` |
 | `u` | universal sortable | fixed, culture-invariant | `2024-03-05 14:07:09Z` |
 | `y`, `Y` | year/month | `year_month_pattern` | `2024 March` |
-| `U` | universal full | — | **unsupported**: it needs a timezone conversion |
+| `U` | universal full | n/a | **unsupported**: it needs a timezone conversion |
 
 `o O r R s u` ignore the culture, as they do in .NET. Every other specifier
 takes its pattern from the culture of the call, including month, day and era
@@ -188,12 +188,10 @@ Custom .NET patterns are **rejected**, not rendered. `{0:#,##0.00}`,
 `{0:yyyy-MM-dd}`, `{0:00}` and every other multi-character pattern fail with
 `Error::UnsupportedSpec` and the message `unsupported format spec: <spec>`.
 
-This is deliberate: an unimplemented pattern that rendered *something* would be
-a silent compatibility gap, and the point of the crate is byte-identical
-output. [DESIGN.md](../../DESIGN.md) lists custom patterns under "Non-goals (for
-now)" and records the cases where a template that works in .NET therefore fails
-here; [Why byte-identical output is the goal](../explanation/byte-compatibility.md)
-gives the reasoning.
+[DESIGN.md](../../DESIGN.md) lists custom patterns under "Non-goals (for now)"
+and records the cases where a template that works in .NET therefore fails here.
+[Why byte-identical output is the goal](../explanation/byte-compatibility.md)
+gives the reasoning for rejecting rather than approximating them.
 
 ```rust
 use smartformat::{Error, SmartFormatter, Value};

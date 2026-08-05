@@ -81,7 +81,7 @@ Contiguous operator characters form one operator. The operator characters are
 
 The nullable operator is read from the whole selector chain, not just the
 selectors before the null: `{City.Length?.Nope}` renders empty when `City` is
-null. That is SmartFormat.NET 3.6.1 behaviour, pinned by the goldens.
+null. That is SmartFormat.NET 3.6.1 behavior, pinned by the goldens.
 
 An empty selector is skipped rather than resolved, so `{0..Length}` behaves as
 `{0.Length}` and `{}` resolves to the current scope value.

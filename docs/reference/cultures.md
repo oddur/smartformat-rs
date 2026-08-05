@@ -73,8 +73,8 @@ Name validation, matching `CultureInfo.GetCultureInfo` plus ICU:
 | a character other than ASCII letters, digits, `-` and `_` | `zz!` |
 | more than one `_` | `en_US_x` |
 | an empty subtag | `en-`, `en--US`, `_en` |
-| a name longer than 85 characters | — |
-| a language subtag longer than 11 characters | — |
+| a name longer than 85 characters | n/a |
+| a language subtag longer than 11 characters | n/a |
 | a one-character name with no subtag after it | `a`, though `a-b` is accepted |
 
 ```rust
@@ -178,8 +178,8 @@ culture formats byte-identically to the .NET that produced it by construction.
 The invariant culture is hand-written in `culture/mod.rs`; a unit test asserts
 it agrees with the generated entry.
 
-Where .NET disagrees with CLDR for a culture in the list, .NET is what this
-crate follows. There is nothing to reconcile: the data came from .NET.
+Where .NET disagrees with CLDR for a listed culture, the table holds .NET's
+values.
 
 ## Related
 
