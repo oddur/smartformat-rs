@@ -158,3 +158,6 @@ One thing is checked automatically, and it is the one that matters most: the 2,7
 in CI on every change. Every optimization in this history left `goldens/m1.json` untouched,
 and a faster path that changed an answer is not a trade this project makes. See
 [how compatibility is verified](how-compatibility-is-verified.md).
+
+These figures measure this port against its own history. For the same shapes measured against
+SmartFormat.NET itself, see [how the port compares to SmartFormat.NET](dotnet-comparison.md).

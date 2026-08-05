@@ -63,3 +63,6 @@ divergence from SmartFormat.NET.
 - [The performance model, and its evidence](explanation/performance.md): the
   parse-once shape, the allocation-free paths, the benchmark figures and their
   limits.
+- [How the port compares to SmartFormat.NET](explanation/dotnet-comparison.md):
+  the same templates measured on both runtimes, and what makes that comparison
+  imperfect.

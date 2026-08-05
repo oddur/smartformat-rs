@@ -74,6 +74,17 @@ fn benches(c: &mut Criterion) {
         b.iter(|| smart.format_parsed(black_box(&list), &args))
     });
 
+    // The same template `parse_nested` parses, rendered: three placeholders,
+    // two of which reach a formatter that splits the format. The .NET
+    // comparison wants a compound shape as well as the single-formatter ones.
+    let nested = cached(
+        &smart,
+        "{Name} has {Count:plural:one item|{} items} in {Gender:choose(m|f):his|her} cart",
+    );
+    c.bench_function("render_nested", |b| {
+        b.iter(|| smart.format_parsed(black_box(&nested), &args))
+    });
+
     // The same three formats with the formatter name left out, so the engine
     // walks the auto-detecting formatters in order and more than one of them
     // splits the format. `list` splits with a limit where the others split

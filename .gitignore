@@ -12,3 +12,8 @@ fuzz/target/
 fuzz/corpus/
 fuzz/artifacts/
 fuzz/Cargo.lock
+
+# BenchmarkDotNet
+BenchmarkDotNet.Artifacts/
+tools/benchmark/bin/
+tools/benchmark/obj/
