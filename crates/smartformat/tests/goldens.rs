@@ -67,6 +67,14 @@ const SKIPPED: &[(&str, &str)] = &[
         "integer width: .NET formats the boxed int's own 32 bits, where every signed integer is an i64 here",
     ),
     (
+        "list-index-outside-hex",
+        "integer width: .NET's CollectionIndex is an int, so its -1 sentinel is 32 bits wide, where every signed integer is an i64 here",
+    ),
+    (
+        "list-index-outside-binary",
+        "integer width: .NET's CollectionIndex is an int, so its -1 sentinel is 32 bits wide, where every signed integer is an i64 here",
+    ),
+    (
         "sel-default-format-empty-args",
         COLLECTION_TYPE_NAME,
     ),

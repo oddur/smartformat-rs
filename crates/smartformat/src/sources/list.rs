@@ -49,6 +49,11 @@ impl Source for ListSource {
 
         // As the first selector of a placeholder, `Index` is the ambient index
         // itself — `{Index}` — rather than an index into the current value.
+        //
+        // .NET boxes an `int` here, so `{Index:X}` on the -1 sentinel renders
+        // 32 bits where this `Value::Int` renders 64 — the integer width
+        // divergence in DESIGN.md, which this widening is the only port-made
+        // way into.
         if selector_is_index && info.index() == 0 {
             return Some(Cow::Owned(Value::Int(info.collection_index.into())));
         }

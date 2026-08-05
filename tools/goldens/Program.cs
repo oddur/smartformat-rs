@@ -2436,6 +2436,15 @@ static void ListFormatterCases(List<GoldenCase> cases)
     Add("index-outside-map", "{Index}", """{"a":1}""");
     Add("index-outside-int", "{Index}", "[42]");
     Add("index-as-member", "{Items.Index}", """{"Items":[1,2]}""");
+    // How *wide* the -1 sentinel is. `ListFormatter.CollectionIndex` is an
+    // `int`, so `X` and `B` render its 32-bit two's complement; the port's
+    // one signed integer type is 64 bits wide, so these two are the integer
+    // width divergence in DESIGN.md reached without a `$i32` argument.
+    Add("index-outside-hex", "{Index:X}", "[[1,2,3]]");
+    Add("index-outside-binary", "{Index:B}", "[[1,2,3]]");
+    // Inside an iteration the index is non-negative, where the two widths
+    // agree digit for digit — the divergence above is the sentinel alone.
+    Add("index-in-item-hex", "{0:list:{Index:X}|,}", atoE);
     Add("index-after-list", "{0:list:{}|,}-{Index}", abc);
     Add("index-nested", "{0:list:{Index}: {:list:{} = {Index}|, }|; }",
         """[[["O","n","e"],["T","w","o"]]]""");

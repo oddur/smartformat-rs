@@ -24300,6 +24300,53 @@
       }
     },
     {
+      "id": "list-index-outside-hex",
+      "template": "{Index:X}",
+      "args": [
+        [
+          1,
+          2,
+          3
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "result": "FFFFFFFF"
+      }
+    },
+    {
+      "id": "list-index-outside-binary",
+      "template": "{Index:B}",
+      "args": [
+        [
+          1,
+          2,
+          3
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "result": "11111111111111111111111111111111"
+      }
+    },
+    {
+      "id": "list-index-in-item-hex",
+      "template": "{0:list:{Index:X}|,}",
+      "args": [
+        [
+          "A",
+          "B",
+          "C",
+          "D",
+          "E"
+        ]
+      ],
+      "culture": "",
+      "expected": {
+        "result": "0,1,2,3,4"
+      }
+    },
+    {
       "id": "list-index-after-list",
       "template": "{0:list:{}|,}-{Index}",
       "args": [

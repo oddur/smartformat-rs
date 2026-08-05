@@ -92,7 +92,15 @@ answer is not reproducible.
   type. `X` and `B` therefore always render a 64-bit two's complement:
   `{0:X}` on `(int)-255` is `FFFFFF01` in .NET and `FFFFFFFFFFFFFF01` here.
   Positive values, `long` and `ulong` are unaffected.
-  *Pins:* `num-int32-X-neg`, `num-int32-B-neg`.
+  The one value the port itself makes rather than takes is caught by the same
+  rule: `ListFormatter.CollectionIndex` is an `int`, so `{Index:X}` outside any
+  list is `FFFFFFFF` in .NET and `FFFFFFFFFFFFFFFF` here. Narrowing just that
+  one would mean a 32-bit arm on `Value`, which is the model this entry is
+  about; the divergence is the -1 sentinel under `X` and `B` alone, since an
+  index inside an iteration is non-negative and the two widths then agree.
+  *Pins:* `num-int32-X-neg`, `num-int32-B-neg`, `list-index-outside-hex`,
+  `list-index-outside-binary`, and `list-index-in-item-hex` for the agreeing
+  half.
 - **Shortest round-trip digits for exact powers of two.** .NET normalizes the
   significand before deriving `Grisu3`'s rounding boundaries, which loses the
   wider lower boundary a power of two has, so for `2^-25` and `2^-958` (and
