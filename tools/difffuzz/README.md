@@ -4,7 +4,7 @@ A differential fuzzer for this port. It invents SmartFormat templates, renders
 each one with the real SmartFormat.NET and with the port, and diffs the two byte
 for byte.
 
-The golden corpus in `goldens/m1.json` pins 2,764 cases somebody thought of.
+The golden corpus in `goldens/m1.json` pins 2,765 cases somebody thought of.
 This tool is for the ones nobody thought of.
 
 ## What it does
@@ -145,7 +145,7 @@ a suppressed `ismatch` finding deserves more suspicion than any other.
 
 `cargo test --manifest-path tools/difffuzz/Cargo.toml`.
 
-`tests/goldens_replay.rs` runs all 2,833 golden cases back through
+`tests/goldens_replay.rs` runs all 2,836 golden cases back through
 `src/rustside.rs` and compares them with the same rules a campaign uses. It is
 what catches the mirror drifting from `crates/smartformat/tests/goldens.rs`, and
 it holds the classifier to recognising *every* divergence the corpus records —

@@ -40,7 +40,7 @@ Everything in SmartFormat's core plus the built-in extensions, in this order:
   at .NET's rank.
 
 **The port's original scope is now complete.** Everything M1–M4 lists is
-implemented and pinned against SmartFormat.NET 3.6.1 by 2833 golden cases and
+implemented and pinned against SmartFormat.NET 3.6.1 by 2836 golden cases and
 the ported NUnit tests. What is left is written down: the entries under "Known
 divergences" below, and the non-goals above — "Deferred, not divergent" is
 empty.

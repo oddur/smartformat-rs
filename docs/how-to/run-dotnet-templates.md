@@ -196,4 +196,4 @@ Three checks, in increasing order of cost and confidence.
 
 [Test your templates](test-your-templates.md) walks all three, with the code.
 
-When an output does differ, read the "Known divergences" section of [DESIGN.md](../../DESIGN.md) before you file a bug. Every known gap is listed there with the test that pins it, and most are edges: UTF-16 surrogate halves, regex dialect corners, the `ar-SA` calendar. The everyday formatting is covered by 2,764 golden cases generated from SmartFormat.NET 3.6.1.
+When an output does differ, read the "Known divergences" section of [DESIGN.md](../../DESIGN.md) before you file a bug. Every known gap is listed there with the test that pins it, and most are edges: UTF-16 surrogate halves, regex dialect corners, the `ar-SA` calendar. The everyday formatting is covered by 2,765 golden cases generated from SmartFormat.NET 3.6.1.

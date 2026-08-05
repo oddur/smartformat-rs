@@ -8,6 +8,8 @@
 //! the corresponding error kind.
 
 use std::collections::BTreeMap;
+use std::fs;
+use std::path::{Path, PathBuf};
 
 use serde_json::{Map, Value as Json};
 use smartformat::fmt::culture;
@@ -395,6 +397,107 @@ fn goldens_match_smartformat_net() {
         failures.len(),
         failures.join("\n")
     );
+
+    the_counts_quoted_in_prose_are_true(cases.len(), passed, skipped);
+}
+
+/// Several documents state how many golden cases there are, how many pass and
+/// how many are skipped. Those numbers move whenever a case is added, and
+/// nothing about adding one reminds an author to update the prose, so they
+/// drift silently and the documentation starts overstating what is tested.
+///
+/// The check lives here because this is where the real numbers are: derived
+/// from the corpus that just ran, not parsed back out of the source that
+/// produces them. It looks at four-digit numbers on lines that talk about
+/// goldens, and requires each to be one of the three. A number near those
+/// words that means something else is written another way: a code point keeps
+/// its `U+` prefix and an approximation keeps its `+` suffix, both of which
+/// are skipped.
+fn the_counts_quoted_in_prose_are_true(total: usize, passed: usize, skipped: usize) {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let allowed = [total, passed, skipped];
+
+    let mut documents: Vec<PathBuf> = ["README.md", "DESIGN.md"]
+        .iter()
+        .map(|name| root.join(name))
+        .collect();
+    let mut directories = vec![root.join("docs"), root.join("tools")];
+    while let Some(directory) = directories.pop() {
+        let Ok(entries) = fs::read_dir(&directory) else {
+            continue;
+        };
+        for path in entries.flatten().map(|entry| entry.path()) {
+            if path.is_dir() {
+                directories.push(path);
+            } else if path.extension().is_some_and(|extension| extension == "md") {
+                documents.push(path);
+            }
+        }
+    }
+    documents.sort();
+
+    let mut wrong = Vec::new();
+    for path in documents {
+        let Ok(text) = fs::read_to_string(&path) else {
+            continue;
+        };
+        for (number, line) in text.lines().enumerate() {
+            let lowered = line.to_ascii_lowercase();
+            if !lowered.contains("golden") && !lowered.contains("skipped") {
+                continue;
+            }
+            for claimed in corpus_claims(line) {
+                if !allowed.contains(&claimed) {
+                    let shown = path.strip_prefix(&root).unwrap_or(&path).display();
+                    wrong.push(format!("{shown}:{}: {claimed}", number + 1));
+                }
+            }
+        }
+    }
+
+    assert!(
+        wrong.is_empty(),
+        "prose quotes golden counts that are no longer true. The corpus holds \
+         {total} cases: {passed} pass, {skipped} are skipped. Update:\n{}",
+        wrong.join("\n")
+    );
+}
+
+/// The four-digit numbers on a line that are claims about the corpus. Group
+/// separators are tolerated, so `2,836` and `2836` both count. A `U+` prefix
+/// (a code point), a `+` suffix (an approximation) and a neighbouring `.` (a
+/// version or a decimal) all disqualify one.
+fn corpus_claims(line: &str) -> Vec<usize> {
+    let characters: Vec<char> = line.chars().collect();
+    let mut claims = Vec::new();
+    let mut index = 0;
+    while index < characters.len() {
+        if !characters[index].is_ascii_digit() {
+            index += 1;
+            continue;
+        }
+        let start = index;
+        let mut digits = String::new();
+        while index < characters.len()
+            && (characters[index].is_ascii_digit() || characters[index] == ',')
+        {
+            if characters[index].is_ascii_digit() {
+                digits.push(characters[index]);
+            }
+            index += 1;
+        }
+        let before = start.checked_sub(1).map(|i| characters[i]);
+        let after = characters.get(index).copied();
+        let is_code_point = start >= 2 && characters[start - 2..start] == ['U', '+'];
+        let is_approximate = after == Some('+');
+        let is_decimal = before == Some('.') || after == Some('.');
+        if digits.len() == 4 && !is_code_point && !is_approximate && !is_decimal {
+            if let Ok(value) = digits.parse() {
+                claims.push(value);
+            }
+        }
+    }
+    claims
 }
 
 /// A skip list entry that no longer matches a case would hide a case silently,

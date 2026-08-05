@@ -154,7 +154,7 @@ build and an MSRV check. No benchmark and no regression gate runs there, so a pe
 regression is invisible until someone measures. The benches are the tool for that, and the
 practice is to run them back to back against a stashed baseline in the same session.
 
-One thing is checked automatically, and it is the one that matters most: the 2,764 goldens run
+One thing is checked automatically, and it is the one that matters most: the 2,765 goldens run
 in CI on every change. Every optimization in this history left `goldens/m1.json` untouched,
 and a faster path that changed an answer is not a trade this project makes. See
 [how compatibility is verified](how-compatibility-is-verified.md).
