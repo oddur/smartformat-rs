@@ -46,7 +46,7 @@ pub struct SmartSettings {
     ///
     /// `None` reads the system's local time when a template needs it, which is
     /// what .NET's `SystemTime.Now` does by default; `Some` pins it, like
-    /// .NET's `SystemTime.SetDateTimeNow` (used by every golden so output is
+    /// .NET's `SystemTime.SetDateTime` (used by every golden so output is
     /// deterministic).
     #[cfg(feature = "time")]
     pub now: Option<jiff::civil::DateTime>,
@@ -61,7 +61,7 @@ impl SmartSettings {
     /// pinned, the system's local time otherwise.
     ///
     /// This is .NET `SystemTime.Now()`, whose default reads `DateTime.Now` and
-    /// which `SystemTime.SetDateTimeNow` pins. Reading the clock here rather
+    /// which `SystemTime.SetDateTime` pins. Reading the clock here rather
     /// than at construction is what makes an unpinned formatter behave like
     /// .NET's, which reads it once per placeholder that needs it.
     pub fn now_or_system_clock(&self) -> jiff::civil::DateTime {
