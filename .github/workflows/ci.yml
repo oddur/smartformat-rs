@@ -28,6 +28,28 @@ jobs:
         env:
           RUSTDOCFLAGS: -D warnings
 
+  # `fuzz/` and `tools/difffuzz/` declare their own `[workspace]`, so they are
+  # invisible to every `--workspace` command above. Without this job a change
+  # to a public API breaks them and nothing says so until someone runs a
+  # campaign months later.
+  detached-crates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+      - name: The differential fuzzer
+        working-directory: tools/difffuzz
+        run: cargo clippy --all-targets -- -D warnings
+      # cargo-fuzz targets need nightly for the sanitizer flags; `cargo check`
+      # on the crate is enough to catch an API that moved under them.
+      - name: The fuzz targets
+        working-directory: fuzz
+        run: cargo +nightly check --all-targets
+
   msrv:
     runs-on: ubuntu-latest
     steps:
