@@ -51,8 +51,8 @@ lists every page. It is organized by what you came for:
   has the grammar, every formatter, every specifier, every setting and every
   shipped culture, in tables.
 - **Understanding why**: the [explanation](https://github.com/oddur/smartformat-rs/blob/main/docs/index.md#explanation)
-  covers byte compatibility, how it is verified, the architecture and the
-  performance model.
+  covers byte compatibility, how it is verified, the architecture, the
+  performance model and how the port compares to SmartFormat.NET.
 
 The API itself is the rustdoc: `cargo doc -p smartformat --all-features --open`.
 The crate is not on crates.io, so depend on it by git or path.
@@ -160,6 +160,28 @@ the test that pins each one.
 describes what the harness pins and what the method cannot prove. The big
 divergences to know about are custom .NET patterns (rejected, not imitated), the
 UTF-8 against UTF-16 boundary, and the regex dialect `ismatch` runs on.
+
+## Performance
+
+The port renders every shape measured faster than SmartFormat.NET, by between
+1.6 and 12.6 times, on identical templates and data. Both halves are asserted
+to produce the same bytes, because a benchmark between two implementations that
+disagree measures nothing.
+
+| Shape | SmartFormat.NET | This port |
+|---|---:|---:|
+| `{Items:list:{}\|, \|, and }` | 1588 ns | 126 ns |
+| `{0:N2}` | 799 ns | 95 ns |
+| `Hello {Name}, you have {Count} items` | 311 ns | 86 ns |
+| the same, parsed and rendered in one call | 659 ns | 372 ns |
+
+The gap tracks allocation: .NET allocates 2104 bytes to render a three-item
+list, and the port allocates the output string. Read
+[how the port compares to SmartFormat.NET](https://github.com/oddur/smartformat-rs/blob/main/docs/explanation/dotnet-comparison.md)
+before quoting these, because the comparison has real limits: the port is
+handed a value tree it did not pay to build, two rows are noisy enough on the
+.NET side that their ratio is soft, and these are microbenchmarks of one call
+on one machine.
 
 ## Status
 
