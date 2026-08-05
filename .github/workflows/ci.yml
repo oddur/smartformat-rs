@@ -41,9 +41,11 @@ jobs:
           components: clippy
       - uses: dtolnay/rust-toolchain@nightly
       - uses: Swatinem/rust-cache@v2
+      # Both toolchains are installed, so name the one each step wants rather
+      # than depending on which was installed last.
       - name: The differential fuzzer
         working-directory: tools/difffuzz
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo +stable clippy --all-targets -- -D warnings
       # cargo-fuzz targets need nightly for the sanitizer flags; `cargo check`
       # on the crate is enough to catch an API that moved under them.
       - name: The fuzz targets
