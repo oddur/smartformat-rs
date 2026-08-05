@@ -15,6 +15,9 @@ The output is deterministic, so an unexpected diff means either the case table o
 pinned library version changed. Commit the regenerated file together with the change that
 caused it.
 
+It also renders cases it did not write, which is how the fuzzer asks .NET what a generated
+template renders to: see "Rendering cases from a file" below.
+
 ## Pinned version
 
 SmartFormat.NET **3.6.1** and SmartFormat.Extensions.Time **3.6.1**, from
@@ -59,6 +62,61 @@ the `IFormatProvider` of the `Format` call; `""` means `CultureInfo.InvariantCul
 Rust runner resolves the same name through `fmt::culture::get`, and **fails** if the
 generated table does not carry it — a missing culture must never look like a pass. The
 document-level `default_culture` field names what a case without one uses.
+
+## Rendering cases from a file
+
+The harness also renders cases it did not write, which is how a fuzzer asks .NET what a
+generated template renders to:
+
+```sh
+dotnet run --project tools/goldens -- --cases batch.json > rendered.json
+dotnet run --project tools/goldens -- --cases -  < batch.json > rendered.json
+```
+
+The input is a document of the shape above with each case's `expected` left off, and the
+output is that same document with `expected` filled in. Everything else is what a case of
+the built-in table gets: the same `SmartFormatter` construction, the same per-case
+settings, culture and fixture registration (templates, localization provider, variable
+groups), the same pinned clock and invariant thread culture, and the same argument
+mapping.
+
+Only `template` is required of a case. `args` defaults to no arguments and an explicit
+`null` is one null argument; `culture` defaults to `""`; `id` defaults to `case-<position>`
+and need not be unique. An `expected` that is already there is ignored and overwritten,
+which makes `--cases goldens/m1.json` re-render the golden file — it writes it back byte
+for byte, and that is the check that this mode is the same renderer. The document's own
+header fields are ignored on input; the output always carries the harness's own.
+
+A case that fails is that one case's failure: whatever the render throws — including a
+culture name that does not resolve, a `SplitChar` the library rejects, or a regex that
+times out — becomes its `{"error": …}`, and the rest of the batch renders. Between cases
+the harness also puts `ListFormatter.CollectionIndex` back to -1, so a case whose list
+iteration failed part-way cannot leak its index into the cases after it (see the last
+section for what that leak is; the built-in table keeps such a case last instead, so its
+output does not change).
+
+Anything wrong with the *document* is not: an unreadable file, invalid JSON, no `cases`
+array, a case without a `template`, an unknown field, an unknown settings key or an
+unknown settings value writes a message to stderr, writes nothing to stdout, and exits
+**2**.
+
+Three things can still take the whole run down, so a caller has to handle a batch that
+never arrives:
+
+- a template nested deeply enough to overflow the stack. `StackOverflowException` cannot
+  be caught in .NET: the process dies on the spot and stdout holds nothing. Rendering runs
+  on a thread with a 64 MB stack, which only moves the cliff — it sits somewhere between
+  30,000 and 50,000 levels of `{0:{0:…}}` on the machine this was measured on.
+- an endless loop inside the library. A runaway regex is covered — the process sets the
+  default `Regex` match timeout to two seconds, so a catastrophic `ismatch` pattern reports
+  a timeout instead of never returning — but nothing else is, so put a wall-clock timeout
+  on the process.
+- `args` nested deeper than 64 levels, which is System.Text.Json's default reader limit:
+  the document is rejected as a whole (exit 2) rather than the case.
+
+`dotnet run` writes build output to stdout, which would corrupt the JSON, so a caller that
+runs the harness repeatedly should build once and execute
+`tools/goldens/bin/<configuration>/net10.0/goldens` directly, or pass `--no-build`.
 
 ## The pinned clock
 

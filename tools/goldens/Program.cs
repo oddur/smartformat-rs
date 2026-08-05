@@ -1,9 +1,24 @@
-// Golden-output harness: renders a hardcoded case table with the real
-// SmartFormat.NET library and writes the results as JSON to stdout.
+// Golden-output harness: renders a case table with the real SmartFormat.NET
+// library and writes the results as JSON to stdout.
 //
-// Regenerate with:  dotnet run --project tools/goldens > goldens/m1.json
+// With no arguments it renders the hardcoded table, which is how the goldens
+// are regenerated:
+//
+//     dotnet run --project tools/goldens > goldens/m1.json
+//
+// With `--cases <path>` it renders the cases in a JSON document instead — the
+// same document shape, with the `expected` object left off each case — and
+// writes that document back with every `expected` filled in. `-` reads the
+// document from stdin. That is how the fuzzer asks .NET what a generated
+// template renders to:
+//
+//     dotnet run --project tools/goldens -- --cases batch.json > rendered.json
 
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
+using System.Reflection;
+using System.Runtime.ExceptionServices;
+using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -16,6 +31,50 @@ using SmartFormat.Utilities;
 
 const string smartFormatVersion = "3.6.1";
 
+const string usage = """
+    usage: dotnet run --project tools/goldens [-- --cases <path>]
+
+      (no arguments)   render the built-in case table (regenerates goldens/m1.json)
+      --cases <path>   render the cases of a JSON document that has the shape this
+                       harness writes, minus each case's "expected"; `-` reads stdin
+    """;
+
+string? casesPath = null;
+for (var argIndex = 0; argIndex < args.Length; argIndex++)
+{
+    var arg = args[argIndex];
+    if (arg is "--help" or "-h")
+    {
+        Console.Error.WriteLine(usage);
+        return 0;
+    }
+
+    if (arg == "--cases")
+    {
+        if (argIndex + 1 == args.Length) throw Fail("--cases needs a path ('-' reads stdin)");
+        casesPath = args[++argIndex];
+    }
+    else if (arg.StartsWith("--cases=", StringComparison.Ordinal))
+    {
+        casesPath = arg["--cases=".Length..];
+    }
+    else
+    {
+        throw Fail($"unknown argument '{arg}'\n{usage}");
+    }
+}
+
+if (casesPath is { Length: 0 }) throw Fail("--cases needs a path ('-' reads stdin)");
+
+// A generated `{…:ismatch(…):…}` pattern can backtrack for longer than anyone
+// wants to wait, and `IsMatchFormatter` builds its `Regex` without a timeout of
+// its own — so it inherits this one, and a pathological pattern reports
+// `RegexMatchTimeoutException` instead of hanging the batch. `Regex` reads the
+// value when it is first constructed, so this has to run before any rendering.
+// No case in the built-in table comes anywhere near two seconds, which the
+// unchanged `goldens/m1.json` proves.
+AppDomain.CurrentDomain.SetData("REGEX_DEFAULT_MATCH_TIMEOUT", TimeSpan.FromSeconds(2));
+
 // The wall clock every case that reads one reads. `TimeFormatter` on a
 // `DateTime` and `ConditionalFormatter`'s date branch both go through
 // `SystemTime.Now()`, which is a settable `Func<DateTime>`; the Rust port's
@@ -23,7 +82,7 @@ const string smartFormatVersion = "3.6.1";
 // the document's `now` field. Kind is Unspecified, like every `$dt` argument,
 // so .NET's `ToUniversalTime()` shifts a value and the clock by the same
 // offset.
-var pinnedNow = new DateTime(2026, 7, 31, 12, 0, 0, DateTimeKind.Unspecified);
+var pinnedNow = PinnedNow();
 SystemTime.SetDateTime(pinnedNow);
 
 // Four renders read the *thread* culture rather than the provider of the call:
@@ -39,61 +98,152 @@ SystemTime.SetDateTime(pinnedNow);
 CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
 CultureInfo.CurrentUICulture = CultureInfo.InvariantCulture;
 
-var cases = new List<GoldenCase>();
-
-Literals(cases);
-Selectors(cases);
-Alignment(cases);
-Nesting(cases);
-Numbers(cases);
-Dates(cases);
-Errors(cases);
-StringMethods(cases);
-FormatterOptions(cases);
-ListIndex(cases);
-SettingsCases(cases);
-LazyEscapeCases(cases);
-UnicodeEscapeSliceCases(cases);
-PluralCases(cases);
-ChooseCases(cases);
-ConditionalCases(cases);
-AutoDetectCases(cases);
-CultureNumberCases(cases);
-CultureDateCases(cases);
-CultureNameCases(cases);
-CultureFormatterCases(cases);
-FormatterErrorTextCases(cases);
-ListFormatterCases(cases);
-SubStringCases(cases);
-IsNullCases(cases);
-IsMatchCases(cases);
-TemplateCases(cases);
-TimeCases(cases);
-TimeSpanDefaultCases(cases);
-LocalizationCases(cases);
-VariablesCases(cases);
-ClockConditionCases(cases);
-// Must stay last: see the comment on the method.
-CollectionIndexPoisoningCases(cases);
-
-var duplicates = cases.GroupBy(c => c.Id).Where(g => g.Count() > 1).Select(g => g.Key).ToList();
-if (duplicates.Count > 0)
-    throw new InvalidOperationException("duplicate case ids: " + string.Join(", ", duplicates));
-
+// One formatter per distinct settings record, shared by both modes.
 var formatters = new Dictionary<CaseSettings, SmartFormatter>();
 
-// `ListFormatter.CollectionIndex` is a static, so a case that fails part-way
-// through an iteration leaves it set for the *rest of the process* — every
-// later case, whatever its settings and whatever formatter instance renders
-// it, then sees that index instead of -1. The canary turns that silent
-// corruption into a build failure: only the very last case may poison it.
-var canary = Smart.CreateDefaultSmartFormat(new SmartSettings());
-object?[] canaryArgs = [Array.Empty<object?>()];
-
-var caseArray = new JsonArray();
-for (var caseIndex = 0; caseIndex < cases.Count; caseIndex++)
+JsonArray caseArray;
+try
 {
-    var c = cases[caseIndex];
+    // Rendering runs on a thread of its own, for its stack: a deeply nested
+    // template recurses through the parser and the evaluator, and a
+    // `StackOverflowException` cannot be caught in .NET — it takes the process
+    // down and the whole batch with it. A big stack only moves that cliff, it
+    // does not remove it; see the README.
+    caseArray = RenderOnItsOwnThread(() => casesPath is null
+        ? RenderBuiltInTable(formatters)
+        : RenderDocument(ReadDocument(casesPath), formatters));
+}
+catch (InputException ex)
+{
+    throw Fail(ex.Message);
+}
+catch (JsonException ex) when (casesPath is not null)
+{
+    throw Fail($"{casesPath}: not a JSON document: {ex.Message}");
+}
+catch (IOException ex) when (casesPath is not null)
+{
+    throw Fail($"{casesPath}: {ex.Message}");
+}
+// Nothing else is expected, but a batch is worth more than a stack trace: a
+// document that trips the harness up in some way not thought of here still ends
+// as a message on stderr and a non-zero exit, which is what a caller reads.
+// The built-in table keeps its stack trace, because there it is a bug.
+catch (Exception ex) when (casesPath is not null)
+{
+    throw Fail($"{casesPath}: {ex.GetType().Name}: {ex.Message}");
+}
+
+var document = new JsonObject
+{
+    ["smartformat_net_version"] = smartFormatVersion,
+    ["default_culture"] = "InvariantCulture",
+    ["now"] = pinnedNow.ToString("O", CultureInfo.InvariantCulture),
+    ["cases"] = caseArray,
+};
+
+using var stdout = Console.OpenStandardOutput();
+using (var writer = new Utf8JsonWriter(stdout, new JsonWriterOptions
+       {
+           Indented = true,
+           Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+       }))
+{
+    document.WriteTo(writer);
+}
+
+stdout.Write("\n"u8);
+stdout.Flush();
+return 0;
+
+// ---------------------------------------------------------------------------
+// The two modes
+// ---------------------------------------------------------------------------
+
+/// <summary>
+/// The hardcoded table, rendered in order. This is the mode that regenerates
+/// <c>goldens/m1.json</c>, so nothing here may depend on the arguments.
+/// </summary>
+static JsonArray RenderBuiltInTable(Dictionary<CaseSettings, SmartFormatter> formatters)
+{
+    var cases = BuiltInCases();
+
+    // `ListFormatter.CollectionIndex` is a static, so a case that fails part-way
+    // through an iteration leaves it set for the *rest of the process* — every
+    // later case, whatever its settings and whatever formatter instance renders
+    // it, then sees that index instead of -1. The canary turns that silent
+    // corruption into a build failure: only the very last case may poison it.
+    var canary = Smart.CreateDefaultSmartFormat(new SmartSettings());
+    object?[] canaryArgs = [Array.Empty<object?>()];
+
+    var caseArray = new JsonArray();
+    for (var caseIndex = 0; caseIndex < cases.Count; caseIndex++)
+    {
+        var c = cases[caseIndex];
+        caseArray.Add(CaseNode(c, RenderExpected(c, formatters)));
+
+        if (canary.Format(CultureInfo.InvariantCulture, "{Index}", canaryArgs) != "-1"
+            && caseIndex != cases.Count - 1)
+            throw new InvalidOperationException(
+                $"case {c.Id} left ListFormatter.CollectionIndex set, which poisons every case " +
+                "after it; move it into CollectionIndexPoisoningCases at the end of the table");
+    }
+
+    return caseArray;
+}
+
+/// <summary>
+/// The cases of a document handed to <c>--cases</c>, rendered in order and
+/// written back with their <c>expected</c> filled in. Every case produces an
+/// entry: whatever a case throws is its entry's error, so one case that the
+/// harness has no expectation of cannot lose the batch.
+/// </summary>
+static JsonArray RenderDocument(JsonNode? root, Dictionary<CaseSettings, SmartFormatter> formatters)
+{
+    if (root is not JsonObject document)
+        throw new InputException("the document must be a JSON object");
+    if (!document.TryGetPropertyValue("cases", out var casesNode) || casesNode is not JsonArray inputCases)
+        throw new InputException("""the document must have a "cases" array""");
+
+    var caseArray = new JsonArray();
+    for (var caseIndex = 0; caseIndex < inputCases.Count; caseIndex++)
+    {
+        var c = ReadCase(inputCases[caseIndex], caseIndex);
+
+        JsonObject expected;
+        try
+        {
+            expected = RenderExpected(c, formatters);
+        }
+        catch (Exception ex)
+        {
+            // Everything the built-in table's loop is allowed to abort on —
+            // building the formatter, resolving the culture — is an error of
+            // this one case here.
+            expected = new JsonObject { ["error"] = ex.GetType().Name };
+        }
+
+        caseArray.Add(CaseNode(c, expected));
+
+        // A case whose list iteration failed part-way leaves the static index
+        // set, and .NET would then answer `{Index}` with it for every later
+        // case in the batch while the port, whose index is per call, would not.
+        // The built-in table keeps such a case last instead; a generated batch
+        // cannot, so undo the leak between cases.
+        ListCollectionIndex.Reset();
+    }
+
+    return caseArray;
+}
+
+/// <summary>
+/// Renders one case: the rendered text, or the name of the exception type the
+/// render threw. Everything outside the <c>try</c> is what the built-in table
+/// is allowed to abort the run on, and is exactly what it aborted on before
+/// <c>--cases</c> existed.
+/// </summary>
+static JsonObject RenderExpected(GoldenCase c, Dictionary<CaseSettings, SmartFormatter> formatters)
+{
     var settings = c.Settings ?? CaseSettings.Default;
     if (!formatters.TryGetValue(settings, out var smart))
         formatters[settings] = smart = BuildFormatter(settings);
@@ -116,6 +266,12 @@ for (var caseIndex = 0; caseIndex < cases.Count; caseIndex++)
         expected["error"] = ex.GetType().Name;
     }
 
+    return expected;
+}
+
+/// <summary>A case as the document carries it, expectation and all.</summary>
+static JsonObject CaseNode(GoldenCase c, JsonObject expected)
+{
     var node = new JsonObject
     {
         ["id"] = c.Id,
@@ -125,34 +281,256 @@ for (var caseIndex = 0; caseIndex < cases.Count; caseIndex++)
     };
     if (c.Settings is { } custom) node["settings"] = custom.ToJson();
     node["expected"] = expected;
-    caseArray.Add(node);
-
-    if (canary.Format(CultureInfo.InvariantCulture, "{Index}", canaryArgs) != "-1"
-        && caseIndex != cases.Count - 1)
-        throw new InvalidOperationException(
-            $"case {c.Id} left ListFormatter.CollectionIndex set, which poisons every case " +
-            "after it; move it into CollectionIndexPoisoningCases at the end of the table");
+    return node;
 }
 
-var document = new JsonObject
+/// <summary>
+/// Runs the render on a thread with a stack far larger than the default, and
+/// with the same pins the harness sets on the main thread — a culture and a
+/// clock are per thread and per process respectively, and only the process gets
+/// them for free.
+/// </summary>
+static JsonArray RenderOnItsOwnThread(Func<JsonArray> render)
 {
-    ["smartformat_net_version"] = smartFormatVersion,
-    ["default_culture"] = "InvariantCulture",
-    ["now"] = pinnedNow.ToString("O", CultureInfo.InvariantCulture),
-    ["cases"] = caseArray,
-};
+    JsonArray? rendered = null;
+    ExceptionDispatchInfo? failure = null;
 
-using var stdout = Console.OpenStandardOutput();
-using (var writer = new Utf8JsonWriter(stdout, new JsonWriterOptions
-       {
-           Indented = true,
-           Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-       }))
-{
-    document.WriteTo(writer);
+    var thread = new Thread(() =>
+    {
+        CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
+        CultureInfo.CurrentUICulture = CultureInfo.InvariantCulture;
+        SystemTime.SetDateTime(PinnedNow());
+        try
+        {
+            rendered = render();
+        }
+        catch (Exception ex)
+        {
+            failure = ExceptionDispatchInfo.Capture(ex);
+        }
+    }, maxStackSize: 64 * 1024 * 1024);
+
+    thread.Start();
+    thread.Join();
+    failure?.Throw();
+    return rendered!;
 }
 
-stdout.Write("\n"u8);
+// ---------------------------------------------------------------------------
+// Reading a case document
+// ---------------------------------------------------------------------------
+
+/// <summary>The document <c>--cases</c> names, or stdin for <c>-</c>.</summary>
+static JsonNode? ReadDocument(string path)
+{
+    string text;
+    if (path == "-")
+    {
+        using var stdin = Console.OpenStandardInput();
+        using var reader = new StreamReader(stdin, new UTF8Encoding(false));
+        text = reader.ReadToEnd();
+    }
+    else
+    {
+        text = File.ReadAllText(path, new UTF8Encoding(false));
+    }
+
+    return JsonNode.Parse(text);
+}
+
+/// <summary>
+/// One case of the document, read into the same record the built-in table is
+/// written in. Only <c>template</c> is required: <c>args</c> defaults to no
+/// arguments, <c>culture</c> to the invariant culture, <c>id</c> to the case's
+/// position, and a case that carries an <c>expected</c> has it overwritten,
+/// so a document this harness wrote can be handed straight back to it.
+/// </summary>
+static GoldenCase ReadCase(JsonNode? node, int index)
+{
+    if (node is not JsonObject obj)
+        throw new InputException($"case {index} is not a JSON object");
+
+    var id = obj.TryGetPropertyValue("id", out var idNode) && idNode is not null
+        ? ReadString(idNode, $"case {index}: \"id\"")
+        : "case-" + index.ToString(CultureInfo.InvariantCulture);
+
+    foreach (var (key, _) in obj)
+        if (key is not ("id" or "template" or "args" or "culture" or "settings" or "expected"))
+            throw new InputException($"case {id}: unknown field \"{key}\"");
+
+    if (!obj.TryGetPropertyValue("template", out var templateNode) || templateNode is null)
+        throw new InputException($"case {id}: no \"template\"");
+    var template = ReadString(templateNode, $"case {id}: \"template\"");
+
+    // An absent `args` is no arguments at all; an explicit null is one null
+    // argument, which is a case the table has.
+    var argsJson = obj.TryGetPropertyValue("args", out var argsNode)
+        ? argsNode?.ToJsonString() ?? "null"
+        : "[]";
+
+    var culture = obj.TryGetPropertyValue("culture", out var cultureNode) && cultureNode is not null
+        ? ReadString(cultureNode, $"case {id}: \"culture\"")
+        : "";
+
+    CaseSettings? settings = null;
+    if (obj.TryGetPropertyValue("settings", out var settingsNode) && settingsNode is not null)
+    {
+        if (settingsNode is not JsonObject settingsObject)
+            throw new InputException($"case {id}: \"settings\" is not a JSON object");
+        // A settings object that spells out nothing but defaults is kept as
+        // one, empty, so that a document written by this harness — which has
+        // such cases — comes back out of it unchanged.
+        settings = ReadSettings(settingsObject, id);
+    }
+
+    return new GoldenCase(id, template, argsJson, settings, culture);
+}
+
+/// <summary>
+/// The reverse of <see cref="CaseSettings.ToJson"/>: every key it writes, read
+/// back. An unknown key or an unknown value is an error in the document rather
+/// than an error of the case, because a fuzzer that misspells one would
+/// otherwise see a batch of cases quietly rendered with the wrong settings.
+/// </summary>
+static CaseSettings ReadSettings(JsonObject json, string caseId)
+{
+    var settings = CaseSettings.Default;
+    foreach (var (key, value) in json)
+    {
+        var where = $"case {caseId}: settings.{key}";
+        settings = key switch
+        {
+            "formatErrorAction" => settings with { FormatErrorAction = ReadEnum<FormatErrorAction>(value, where) },
+            "parseErrorAction" => settings with { ParseErrorAction = ReadEnum<ParseErrorAction>(value, where) },
+            "caseSensitivity" => settings with { CaseSensitivity = ReadEnum<CaseSensitivityType>(value, where) },
+            "stringFormatCompatibility" => settings with { StringFormatCompatibility = ReadBool(value, where) },
+            "alignmentFillCharacter" => settings with { AlignmentFillCharacter = ReadChar(value, where) },
+            "customSelectorChars" => settings with { CustomSelectorChars = ReadString(value, where) },
+            "convertCharacterStringLiterals" => settings with
+            {
+                ConvertCharacterStringLiterals = ReadBool(value, where),
+            },
+            "regexOptions" => settings with { RegexOptions = ReadRegexOptions(value, where) },
+            "isMatchSplitChar" => settings with { IsMatchSplitChar = ReadChar(value, where) },
+            "isMatchPlaceholderName" => settings with { IsMatchPlaceholderName = ReadString(value, where) },
+            "isMatchCanAutoDetect" => settings with { IsMatchCanAutoDetect = ReadBool(value, where) },
+            "subStringOutOfRangeBehavior" => settings with
+            {
+                SubStringOutOfRangeBehavior =
+                    ReadEnum<SubStringFormatter.SubStringOutOfRangeBehavior>(value, where),
+            },
+            "subStringNullDisplayString" => settings with { SubStringNullDisplayString = ReadString(value, where) },
+            "subStringSplitChar" => settings with { SubStringSplitChar = ReadChar(value, where) },
+            "subStringCanAutoDetect" => settings with { SubStringCanAutoDetect = ReadBool(value, where) },
+            "isNullSplitChar" => settings with { IsNullSplitChar = ReadChar(value, where) },
+            "isNullCanAutoDetect" => settings with { IsNullCanAutoDetect = ReadBool(value, where) },
+            "listSplitChar" => settings with { ListSplitChar = ReadChar(value, where) },
+            "listCanAutoDetect" => settings with { ListCanAutoDetect = ReadBool(value, where) },
+            "templates" => settings with { Templates = ReadEnum<TemplateSet>(value, where) },
+            "variables" => settings with { Variables = ReadEnum<VariableSet>(value, where) },
+            "localization" => settings with { Localization = ReadEnum<LocalizationSet>(value, where) },
+            _ => throw new InputException($"case {caseId}: unknown settings key \"{key}\""),
+        };
+    }
+
+    return settings;
+}
+
+static string ReadString(JsonNode? node, string where) =>
+    node is JsonValue value && value.TryGetValue<string>(out var text)
+        ? text
+        : throw new InputException($"{where} must be a string");
+
+static bool ReadBool(JsonNode? node, string where) =>
+    node is JsonValue value && value.TryGetValue<bool>(out var flag)
+        ? flag
+        : throw new InputException($"{where} must be true or false");
+
+static char ReadChar(JsonNode? node, string where)
+{
+    var text = ReadString(node, where);
+    return text.Length == 1 ? text[0] : throw new InputException($"{where} must be a one-character string");
+}
+
+static TEnum ReadEnum<TEnum>(JsonNode? node, string where) where TEnum : struct, Enum
+{
+    var text = ReadString(node, where);
+    return Enum.TryParse<TEnum>(text, ignoreCase: false, out var value) && Enum.IsDefined(value)
+        ? value
+        : throw new InputException($"{where}: '{text}' is not one of {string.Join(", ", Enum.GetNames<TEnum>())}");
+}
+
+// `RegexOptions` is a [Flags] enum, so a value may name several options at
+// once and `Enum.IsDefined` would reject the combination.
+static RegexOptions ReadRegexOptions(JsonNode? node, string where)
+{
+    var text = ReadString(node, where);
+    if (!Enum.TryParse<RegexOptions>(text, ignoreCase: false, out var options))
+        throw new InputException(
+            $"{where}: '{text}' is not a RegexOptions name, or several separated by ', '");
+    return options;
+}
+
+/// <summary>Something is wrong with the document, not with a case in it.</summary>
+[DoesNotReturn]
+static Exception Fail(string message)
+{
+    Console.Error.WriteLine("goldens: " + message);
+    Console.Error.Flush();
+    Environment.Exit(2);
+    return new InvalidOperationException("unreachable");
+}
+
+// ---------------------------------------------------------------------------
+// Case table
+// ---------------------------------------------------------------------------
+
+/// <summary>The hardcoded table, in the order it is rendered and written in.</summary>
+static List<GoldenCase> BuiltInCases()
+{
+    var cases = new List<GoldenCase>();
+
+    Literals(cases);
+    Selectors(cases);
+    Alignment(cases);
+    Nesting(cases);
+    Numbers(cases);
+    Dates(cases);
+    Errors(cases);
+    StringMethods(cases);
+    FormatterOptions(cases);
+    ListIndex(cases);
+    SettingsCases(cases);
+    LazyEscapeCases(cases);
+    UnicodeEscapeSliceCases(cases);
+    PluralCases(cases);
+    ChooseCases(cases);
+    ConditionalCases(cases);
+    AutoDetectCases(cases);
+    CultureNumberCases(cases);
+    CultureDateCases(cases);
+    CultureNameCases(cases);
+    CultureFormatterCases(cases);
+    FormatterErrorTextCases(cases);
+    ListFormatterCases(cases);
+    SubStringCases(cases);
+    IsNullCases(cases);
+    IsMatchCases(cases);
+    TemplateCases(cases);
+    TimeCases(cases);
+    TimeSpanDefaultCases(cases);
+    LocalizationCases(cases);
+    VariablesCases(cases);
+    ClockConditionCases(cases);
+    // Must stay last: see the comment on the method.
+    CollectionIndexPoisoningCases(cases);
+
+    var duplicates = cases.GroupBy(c => c.Id).Where(g => g.Count() > 1).Select(g => g.Key).ToList();
+    if (duplicates.Count > 0)
+        throw new InvalidOperationException("duplicate case ids: " + string.Join(", ", duplicates));
+
+    return cases;
+}
 
 // ---------------------------------------------------------------------------
 // The formatter a case runs with
@@ -3625,6 +4003,43 @@ internal static class ErrorActions
 internal readonly record struct GoldenCase(
     string Id, string Template, string ArgsJson, CaseSettings? Settings = null,
     string Culture = "");
+
+/// <summary>
+/// A document handed to <c>--cases</c> is not one the harness can read. This is
+/// never a case's own failure — those are the case's <c>expected</c> error —
+/// so it ends the run with a message and a non-zero exit code.
+/// </summary>
+internal sealed class InputException(string message) : Exception(message);
+
+/// <summary>
+/// The leaked list index, put back. <c>ListFormatter.CollectionIndex</c> is
+/// internal to SmartFormat and private to write, and the two backing stores it
+/// picks between depend on the thread-safe mode, so its own accessors — reached
+/// by reflection — are the only reader and writer that stay right.
+/// </summary>
+internal static class ListCollectionIndex
+{
+    private static readonly PropertyInfo Property =
+        typeof(ListFormatter).GetProperty(
+            "CollectionIndex", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)
+        ?? throw new InvalidOperationException(
+            "SmartFormat's ListFormatter.CollectionIndex is gone; without it a case that leaks " +
+            "the list index poisons every later case of a --cases batch");
+
+    private static readonly MethodInfo Getter =
+        Property.GetGetMethod(nonPublic: true)
+        ?? throw new InvalidOperationException("ListFormatter.CollectionIndex cannot be read");
+
+    private static readonly MethodInfo Setter =
+        Property.GetSetMethod(nonPublic: true)
+        ?? throw new InvalidOperationException("ListFormatter.CollectionIndex cannot be written");
+
+    public static void Reset()
+    {
+        if ((int) Getter.Invoke(null, null)! == -1) return;
+        Setter.Invoke(null, [-1]);
+    }
+}
 
 /// <summary>
 /// The non-default <see cref="SmartSettings"/> a case runs with. A case without
