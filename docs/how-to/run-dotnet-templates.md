@@ -4,7 +4,7 @@ Take a corpus of templates written for SmartFormat.NET and render it from Rust, 
 
 Work through the five steps in order. Each one is a place where a .NET setup makes a decision that has to be carried across; skip one and the corpus renders *nearly* right, which is the failure mode this guide exists to prevent.
 
-Look up template syntax and the full settings list in the [reference](../reference/); read [why the port is shaped this way](../explanation/) if you want the reasoning rather than the recipe. The API itself is the rustdoc: `cargo doc -p smartformat --all-features --open`.
+Look up the grammar in [Template syntax](../reference/template-syntax.md) and every setting in [Settings and features](../reference/settings-and-features.md). Read [Why byte-identical output is the goal](../explanation/byte-compatibility.md) for the boundary a migration will hit, and [How compatibility is verified](../explanation/how-compatibility-is-verified.md) for what the goldens do and do not prove. The API itself is the rustdoc: `cargo doc -p smartformat --all-features --open`.
 
 ## 1. Mirror your .NET configuration
 
@@ -182,7 +182,7 @@ assert_eq!(
 assert!(smart.format_with_culture_name("{0:N2}", &args, "de-XX").is_err());
 ```
 
-The crate ships data for 35 locales, read out of a real .NET runtime rather than mapped from CLDR, so a listed culture matches by construction. A name outside the list fails with `Error::UnknownCulture` instead of falling back to the parent, because .NET would resolve it against the whole CLDR tree and this crate only has the table. To ship one more, see [Add a culture the crate does not have](add-a-culture.md).
+The crate ships data for 35 cultures, read out of a real .NET runtime rather than mapped from CLDR, so a listed culture matches by construction. [Cultures](../reference/cultures.md) lists them. A name outside the list fails with `Error::UnknownCulture` instead of falling back to the parent, because .NET would resolve it against the whole CLDR tree and this crate only has the table. To ship one more, see [Add a culture the crate does not ship](add-a-culture.md).
 
 If your corpus renders the same template many times, parse once: `smart.parse(template)` gives a `Format`, and `format_parsed_with_culture_name` renders it.
 
@@ -191,7 +191,7 @@ If your corpus renders the same template many times, parse once: `smart.parse(te
 Three checks, in increasing order of cost and confidence.
 
 1. **Parse every template.** `smart.parse(template)` catches syntax the parser reads differently from .NET's, and it costs one pass over the corpus.
-2. **Render every template against representative values.** This is what finds the specifiers outside the supported subset: a custom numeric or date pattern (`{0:#,##0.00}`, `{0:yyyy-MM-dd}`) parses fine and fails at format time with `Error::UnsupportedSpec`, deliberately, so a compatibility gap is loud rather than quietly wrong.
+2. **Render every template against representative values.** This is what finds the specifiers outside the supported subset: a custom numeric or date pattern (`{0:#,##0.00}`, `{0:yyyy-MM-dd}`) parses fine and fails at format time with `Error::UnsupportedSpec`, deliberately, so a compatibility gap is loud rather than quietly wrong. [Custom patterns](../reference/format-specifiers.md#custom-patterns) states the rule.
 3. **Render the corpus with real .NET and compare.** `tools/goldens` is the pattern: a small C# program renders the templates with SmartFormat.NET and writes JSON that a Rust test replays. That turns "should match" into "byte-identical, tested".
 
 [Test your templates](test-your-templates.md) walks all three, with the code.

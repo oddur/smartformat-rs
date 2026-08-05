@@ -39,7 +39,8 @@ inputs, and each pin is mirrored in the Rust runner:
   follows 3.6.1.
 - **Settings.** A case carries a `settings` object holding only the properties that differ
   from .NET's defaults, and the Rust runner reads the same keys. It covers `SmartSettings`
-  (error actions, case sensitivity, `string.Format` compatibility, alignment fill character,
+  ([error actions](../reference/settings-and-features.md#erroraction), case sensitivity,
+  `string.Format` compatibility, alignment fill character,
   parser knobs) and the per-extension knobs that are not settings at all: the regex options,
   the split characters, the substring out-of-range behavior.
 - **The culture.** Each case names the culture .NET rendered it with; `""` is the invariant

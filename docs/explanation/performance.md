@@ -23,7 +23,9 @@ eviction policy, and both belong to the host: a fixed set of templates loaded at
 wants a `HashMap` and no eviction, while templates arriving from user data want a bound and a
 strategy for exceeding it. The one place the crate does cache parsed formats is
 `LocalizationFormatter`, because translations only become strings during a render and no
-caller is in a position to key them.
+caller is in a position to key them. [Test your templates](../how-to/test-your-templates.md)
+builds that map as a side effect of its startup parse check, which is the shape this section
+argues for.
 
 ## What the split store buys, and what it trades
 

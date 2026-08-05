@@ -44,6 +44,10 @@ engine writes for a placeholder that failed to render.
 | `Ignore` | `Ignore` | erroneous placeholders are dropped | the placeholder writes nothing |
 | `MaintainTokens` | `MaintainTokens` | erroneous placeholders stay as literal text | the placeholder is rebuilt from its parsed parts and written verbatim |
 
+[Choose what happens when a template or a value is wrong](../how-to/choose-error-behavior.md)
+renders one broken template under all four actions, at parse time and at format
+time.
+
 Two errors escape `format_error_action`: an escape sequence in a literal of the
 top-level format, and formatter options whose escape sequences do not resolve.
 Both fail the call whatever the action is, as they do in .NET.
@@ -148,5 +152,7 @@ smartformat = { git = "https://github.com/…/smartformat-rs", default-features 
 
 - [template-syntax.md](template-syntax.md): what the parser settings change.
 - [formatters.md](formatters.md): which formatter each feature gates.
-- `DESIGN.md`: why the settings are split into two structs, and the policy
-  differences from .NET.
+- [how-to/choose-error-behavior.md](../how-to/choose-error-behavior.md): the four error actions with worked output.
+- [explanation/byte-compatibility.md](../explanation/byte-compatibility.md): why every default is .NET's rather than a better one.
+- [DESIGN.md](../../DESIGN.md): why the settings are split into two structs, and
+  the policy differences from .NET.

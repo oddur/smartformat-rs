@@ -2,6 +2,8 @@
 
 The .NET standard format specifiers this crate implements, and what each one
 renders. Custom patterns are rejected; see [Custom patterns](#custom-patterns).
+New here? [Get started with smartformat](../tutorials/getting-started.md) puts
+`N2` to work in a sentence.
 
 Source of truth: `crates/smartformat/src/fmt/number.rs`,
 `crates/smartformat/src/fmt/date.rs` and
@@ -188,8 +190,10 @@ Custom .NET patterns are **rejected**, not rendered. `{0:#,##0.00}`,
 
 This is deliberate: an unimplemented pattern that rendered *something* would be
 a silent compatibility gap, and the point of the crate is byte-identical
-output. `DESIGN.md` lists custom patterns under "Non-goals (for now)" and
-records the cases where a template that works in .NET therefore fails here.
+output. [DESIGN.md](../../DESIGN.md) lists custom patterns under "Non-goals (for
+now)" and records the cases where a template that works in .NET therefore fails
+here; [Why byte-identical output is the goal](../explanation/byte-compatibility.md)
+gives the reasoning.
 
 ```rust
 use smartformat::{Error, SmartFormatter, Value};
@@ -218,4 +222,5 @@ like any other formatting error.
 
 - [formatters.md](formatters.md): which placeholders reach the default formatter.
 - [cultures.md](cultures.md): the symbols and patterns each specifier reads.
-- `DESIGN.md`: the non-goals and the float-digit divergence the goldens pin.
+- [explanation/byte-compatibility.md](../explanation/byte-compatibility.md): why a gap is an error rather than an approximation.
+- [DESIGN.md](../../DESIGN.md): the non-goals and the float-digit divergence the goldens pin.

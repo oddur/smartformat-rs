@@ -4,9 +4,9 @@ Add behavior the built-in extensions do not cover, using the same two traits Sma
 
 A `Formatter` turns a value into text: it serves the `name(options)` and `format` parts of `{value:name(options):format}`. A `Source` resolves one selector: it serves the `Customer` and the `Name` of `{Customer.Name}`. Everything built in goes through these traits, so the modules under `extensions/` and `sources/` are working reference implementations for whatever this guide leaves out, and `cargo doc -p smartformat --all-features --open` has the full signatures.
 
-For why the extension model is a registry of ranked, declinable extensions rather than a map of names, see the [explanation](../explanation/).
+For why the extension model is a registry of ranked, declinable extensions rather than a map of names, see [How a render happens](../explanation/architecture.md), sections "The two registries" and "Where the extension points are". It explains the ordering rationale behind the `add`/`insert`/`push` choice this guide states as a rule.
 
-Before you write one, check whether a built-in already carries the hook you need: `register_template` for reusable named templates, `register_localization` with your own `LocalizationProvider` for translated strings ([Serve translated text](localize-text.md)), and `register_variables` / `register_global_variables` for values a template can name without them being passed as arguments.
+Before you write one, check whether a built-in already covers you. [Formatters](../reference/formatters.md) lists all ten with their options, and three of them take a hook of your own: `register_template` for reusable named templates, `register_localization` with your own `LocalizationProvider` for translated strings ([Serve translated text](localize-text.md)), and `register_variables` / `register_global_variables` for values a template can name without them being passed as arguments.
 
 ## A formatter
 

@@ -311,6 +311,10 @@ fn main() {
 }
 ```
 
+That is one of four things a render can do when something is wrong. You can
+choose which: see
+[Choose what happens when a template or a value is wrong](../how-to/choose-error-behavior.md).
+
 ## What you built
 
 A message that names your data, agrees with its own count, lists items with a
@@ -323,13 +327,18 @@ Rust struct. You used:
 - `{Total:N2}`, a .NET format specifier.
 - `{Packages:plural:is|are}` and `{Packages:list:{}|, |, and }`, two of the ten
   formatters.
-- `format_with_culture_name`, which swaps the locale under a fixed template.
+- `format_with_culture_name`, which swaps the culture under a fixed template.
 
 ## Where to go next
 
 - Bringing templates over from a .NET codebase:
   [Run .NET SmartFormat templates from Rust](../how-to/run-dotnet-templates.md).
 - Every formatter, its options and its output:
-  [Formatters](../reference/formatters.md).
+  [Formatters](../reference/formatters.md). The grammar behind the placeholders
+  you wrote: [Template syntax](../reference/template-syntax.md).
+- What happened under the hood between `format` and the string you printed:
+  [How a render happens](../explanation/architecture.md).
 - Why byte-identical output with SmartFormat.NET is the goal, and what it costs:
   [Byte compatibility](../explanation/byte-compatibility.md).
+
+[The documentation map](../index.md) lists every page.

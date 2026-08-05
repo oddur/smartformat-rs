@@ -4,7 +4,9 @@ Render a template whose words come from a translation table, keyed by culture, w
 
 The formatter is `L`. `{:L:Hello}` looks `Hello` up and renders what comes back. It is not in the default registry, because a formatter with no translations has nothing to translate with.
 
-The syntax and the option grammar are in the [reference](../reference/); this guide is the wiring.
+The option grammar is in the reference under [`L`](../reference/formatters.md#l); this guide is the wiring.
+
+Coming from [the tutorial](../tutorials/getting-started.md)? That lesson localizes numbers with `format_with_culture_name` and leaves the words in the template. This guide localizes the words.
 
 ## 1. Build a provider
 

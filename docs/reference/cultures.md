@@ -1,15 +1,16 @@
 # Cultures
 
-The locales this crate ships, how a name is looked up, and what the data
-covers.
+The cultures this crate ships, how a name is looked up, and what the data
+covers. New here? [Get started with smartformat](../tutorials/getting-started.md)
+renders one message under two of them.
 
 Source of truth: `crates/smartformat/src/fmt/culture/`.
 
-## Shipped locales
+## Shipped cultures
 
 35 entries, the invariant culture included. Nothing else resolves.
 
-| Name | Locale |
+| Name | Language |
 | --- | --- |
 | `""` | invariant |
 | `ar` | Arabic |
@@ -107,7 +108,7 @@ lowercased, is the language.
 
 A three-letter ISO 639-2 code with a two-letter equivalent is taken as written,
 where ICU would fold it: `{0:time(deu):weeks}` is German in .NET and English
-here. `DESIGN.md` records this under "A culture name is validated, not
+here. [DESIGN.md](../../DESIGN.md) records this under "A culture name is validated, not
 resolved".
 
 ## What the data covers
@@ -183,7 +184,8 @@ crate follows. There is nothing to reconcile: the data came from .NET.
 ## Related
 
 - [format-specifiers.md](format-specifiers.md): the specifiers that read this data.
-- [how-to/add-a-culture.md](../how-to/add-a-culture.md): adding a locale.
-- `tools/culturegen/README.md`: regenerating the table.
-- `DESIGN.md`: cultures outside the list as a non-goal, and the ICU
-  resolutions the name validation does not reproduce.
+- [how-to/add-a-culture.md](../how-to/add-a-culture.md): adding a culture.
+- [explanation/byte-compatibility.md](../explanation/byte-compatibility.md): why the list is fixed and why a miss is an error rather than a parent-culture guess.
+- [tools/culturegen/README.md](../../tools/culturegen/README.md): regenerating the table.
+- [DESIGN.md](../../DESIGN.md): cultures outside the list as a non-goal, and the
+  ICU resolutions the name validation does not reproduce.

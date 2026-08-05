@@ -173,7 +173,8 @@ The default order is .NET's `CreateDefaultSmartFormat` order, by the ranks
 `ismatch` 6000, `isnull` 7000, `L` 8000, `t` 9000, `choose` 10000, `substr` 11000, `d`
 (the default formatter) 12000. Three of them are not registered by default, exactly as .NET
 leaves them out, because each is useless until it is given something: `time` a language, `L`
-a provider, `t` a template.
+a provider, `t` a template. The reference carries the same table with the auto-detection
+rules beside it: [formatters, Selection](../reference/formatters.md#selection).
 
 Adding an extension has three doors, and picking the wrong one is the classic mistake, in
 .NET as much as here:

@@ -14,10 +14,10 @@ is what the old renderer produced. A port that gets 99% of them right moves the 
 1% into production, where the failures are quiet and unevenly distributed.
 
 They are quiet because the differences that survive a careless port are the ones nobody
-looks at. Which space character a French locale groups digits with (U+202F, where Russian
+looks at. Which space character a French culture groups digits with (U+202F, where Russian
 uses U+00A0). Whether Swedish negates with a hyphen or U+2212. Whether a Polish long date
 inflects the month next to the day number. Which of .NET's seventeen negative-currency
-patterns a locale lands on. Whether `{0:F}` on 2.675 rounds to `2.67` or `2.68`. No reviewer
+patterns a culture lands on. Whether `{0:F}` on 2.675 rounds to `2.67` or `2.68`. No reviewer
 catches those by eye, no user reports them precisely, and a diff against the old output is
 the only instrument that finds them at all. Byte equality is what makes that diff usable: a
 migration either produces an empty diff or produces a list of exact places to look.
@@ -152,5 +152,7 @@ explains why the ledger exists; the ledger itself is the authority on what is in
   and its limits.
 - [Run your .NET templates from Rust](../how-to/run-dotnet-templates.md): the practical
   migration path, including how to validate an existing corpus.
+- [Test your templates](../how-to/test-your-templates.md): the practical half of this
+  subject, building a compatibility net over your own corpus.
 - [Format specifiers](../reference/format-specifiers.md) and
   [cultures](../reference/cultures.md): what is supported, in a table.

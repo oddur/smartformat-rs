@@ -25,6 +25,7 @@ doc_files! {
     LocalizeText => "../../../docs/how-to/localize-text.md",
     ChooseErrorBehavior => "../../../docs/how-to/choose-error-behavior.md",
     TestYourTemplates => "../../../docs/how-to/test-your-templates.md",
+    AddACulture => "../../../docs/how-to/add-a-culture.md",
     ExtendWithYourOwn => "../../../docs/how-to/extend-with-your-own.md",
     TemplateSyntax => "../../../docs/reference/template-syntax.md",
     Formatters => "../../../docs/reference/formatters.md",

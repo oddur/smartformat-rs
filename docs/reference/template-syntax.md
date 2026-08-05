@@ -2,7 +2,8 @@
 
 The complete grammar smartformat-rs parses. It is SmartFormat.NET's grammar; a
 template that parses there parses here, with the same tree and the same error
-messages.
+messages. New here? [Get started with smartformat](../tutorials/getting-started.md)
+walks the syntax in use before this page states it in full.
 
 Source of truth: `crates/smartformat/src/parsing/`.
 
@@ -232,8 +233,8 @@ other sequence stays as written.
 
 Escape failures are **not** parse errors. The sequence is recorded on the item
 and raised as `Error::Escape` when the text is written or the options are read,
-so a format that never becomes text — `{0:0.00}`, whose format reaches the
-value as a specifier — never rejects its sequences. The one exception is an
+so a format that never becomes text never rejects its sequences: `{0:0.00}`,
+whose format reaches the value as a specifier, is one. The one exception is an
 escape character at the very end of the input, which fails the parse whatever
 the error action is.
 
@@ -315,5 +316,7 @@ erroneous placeholder back into literal text, `Ignore` drops it, and
 - [formatters.md](formatters.md): what each formatter does with the parts.
 - [format-specifiers.md](format-specifiers.md): the specifiers a format can be.
 - [settings-and-features.md](settings-and-features.md): every parser setting.
-- `DESIGN.md` in the repository root: the divergence ledger, including the
-  parser quirks reproduced on purpose.
+- [how-to/choose-error-behavior.md](../how-to/choose-error-behavior.md): each error action with the output it produces.
+- [explanation/byte-compatibility.md](../explanation/byte-compatibility.md): why the grammar and the error messages are .NET's to the byte.
+- [DESIGN.md](../../DESIGN.md): the divergence ledger, including the parser
+  quirks reproduced on purpose.

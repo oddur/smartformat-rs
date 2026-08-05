@@ -41,7 +41,7 @@ Leave `parse_error_action` at its default `Error` for this. Under any other acti
 
 ## 2. Render every template against representative values
 
-Parsing does not catch a format specifier outside the supported subset. `{0:#,##0.00}` and `{0:yyyy-MM-dd}` are valid .NET custom patterns, they parse fine, and they fail at format time with `Error::UnsupportedSpec` on purpose. Only a render finds them.
+Parsing does not catch a format specifier outside the supported subset. `{0:#,##0.00}` and `{0:yyyy-MM-dd}` are valid .NET custom patterns, they parse fine, and they fail at format time with `Error::UnsupportedSpec` on purpose. Only a render finds them. [Format specifiers](../reference/format-specifiers.md) lists what the subset does cover, and [Custom patterns](../reference/format-specifiers.md#custom-patterns) states the rule.
 
 ```rust
 use smartformat::{Error, SmartFormatter, Value};
@@ -114,7 +114,7 @@ assert_eq!(smart.format("{0:cond:overdue|due today|upcoming}", &due).unwrap(), "
 
 ## 4. Generate goldens from real .NET
 
-If your claim is "these templates render exactly as they do in .NET", only .NET can settle it. `tools/goldens` in this repository is the pattern to copy, and `tools/goldens/README.md` documents the JSON shape, the argument mapping and the pitfalls. Do not re-derive it; mirror it.
+If your claim is "these templates render exactly as they do in .NET", only .NET can settle it. `tools/goldens` in this repository is the pattern to copy, and [`tools/goldens/README.md`](../../tools/goldens/README.md) documents the JSON shape, the argument mapping and the pitfalls. Do not re-derive it; mirror it. [How compatibility is verified](../explanation/how-compatibility-is-verified.md) explains why the harness is built the way it is, and what a golden does and does not prove.
 
 The shape of the thing you are building:
 
@@ -129,7 +129,7 @@ Four things the in-repo harness does that a new one usually forgets:
 - **Turn `InvariantGlobalization` off explicitly.** With it on, every culture silently resolves to the invariant one and the culture cases pass while proving nothing.
 - **Fail on a culture the Rust table does not carry.** A missing culture must never look like a pass.
 
-Regenerate the goldens and the culture table together, with the same SDK on the same machine. .NET's culture data is ICU-backed and drifts between ICU releases, so a mismatched pair produces failures that look like port bugs. `tools/culturegen/README.md` explains why, and [Add a culture](add-a-culture.md) covers the case where your corpus needs a locale the crate does not ship.
+Regenerate the goldens and the culture table together, with the same SDK on the same machine. .NET's culture data is ICU-backed and drifts between ICU releases, so a mismatched pair produces failures that look like port bugs. [`tools/culturegen/README.md`](../../tools/culturegen/README.md) explains why, and [Add a culture](add-a-culture.md) covers the case where your corpus needs a culture the crate does not ship.
 
 ## 5. Keep a skip list, not a fudge
 

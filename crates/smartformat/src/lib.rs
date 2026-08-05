@@ -23,7 +23,7 @@ documentation."
 //! - [`sources`]: how a selector finds its value, and
 //!   [`variables`](sources::variables) for names a template can use without
 //!   them being passed as arguments.
-//! - [`fmt::culture`]: locale data, generated from .NET itself.
+//! - [`fmt::culture`]: culture data, generated from .NET itself.
 //! - [`settings`]: [`SmartSettings`], error actions, case sensitivity.
 //! - [`parsing`]: the template parser and [`Format`](parsing::Format) AST,
 //!   for parse-once/render-many workflows.
@@ -31,7 +31,7 @@ documentation."
 //! Compatibility scope and every known divergence from .NET live in
 //! `DESIGN.md` in the repository.
 
-// The guides under `docs/` are compiled and run as doctests. They use the
+// The documentation under `docs/` is compiled and run as doctests. It uses the
 // derive, plural and time features, so a build without them skips the module
 // rather than failing on examples it cannot compile.
 #[cfg(all(doctest, feature = "derive", feature = "plural", feature = "time"))]

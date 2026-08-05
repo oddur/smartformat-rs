@@ -2,7 +2,7 @@
 
 Pick the recovery behavior for a broken template, a missing selector, or a value a formatter cannot handle.
 
-There are two settings and one enum. `SmartSettings::parse_error_action` decides what happens to a template the parser cannot read; `SmartSettings::format_error_action` decides what happens to a placeholder that parsed fine but could not be rendered. Both take an `ErrorAction`, and .NET keeps them apart the same way.
+There are two settings and one enum. `SmartSettings::parse_error_action` decides what happens to a template the parser cannot read; `SmartSettings::format_error_action` decides what happens to a placeholder that parsed fine but could not be rendered. Both take an `ErrorAction`, and .NET keeps them apart the same way. Every field of both settings structs is in [Settings and features](../reference/settings-and-features.md#erroraction).
 
 ```rust
 use smartformat::{ErrorAction, SmartFormatter, SmartSettings};

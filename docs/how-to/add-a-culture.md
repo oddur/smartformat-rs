@@ -1,6 +1,6 @@
 # Add a culture the crate does not ship
 
-Ship a locale that is not in the 35 the crate carries, by regenerating the culture table from a real .NET runtime.
+Ship a culture that is not in the 35 the crate carries, by regenerating the culture table from a real .NET runtime. [Cultures](../reference/cultures.md) lists the 35, so check there first.
 
 You cannot hand-write one. Read [Why a culture cannot be hand-written](#why-a-culture-cannot-be-hand-written) first if you are tempted; the rest of this guide is the four steps.
 
@@ -16,7 +16,7 @@ assert!(culture::get("DE-de").is_some());   // case-insensitive
 assert!(culture::get("de-XX").is_none());   // no fallback to "de"
 ```
 
-So a template that needs `de-AT` needs `de-AT` in the table. If yours needs `nl-BE` and `nl` is close enough for the numbers and dates you render, use `nl` and skip this guide. If it is not close enough, the difference is exactly what the table exists to carry, and you need the real thing.
+That is deliberate: a guessed parent culture would render bytes .NET never produced. [Why byte-identical output is the goal](../explanation/byte-compatibility.md) has the reasoning. So a template that needs `de-AT` needs `de-AT` in the table. If yours needs `nl-BE` and `nl` is close enough for the numbers and dates you render, use `nl` and skip this guide. If it is not close enough, the difference is exactly what the table exists to carry, and you need the real thing.
 
 Two names resolve to something other than what they look like, as they do in .NET. A name with an alternate sort order after an `_` drops the sort order and the region: `en_US` is the language `en`, not `en-US`. Check what you got before you conclude a culture is missing.
 
@@ -32,13 +32,13 @@ string[] requested =
 ];
 ```
 
-Add your name to it. Keep the same list in the table at the bottom of `tools/culturegen/README.md`; the two are meant to agree, and nothing checks it for you.
+Add your name to it. Keep the same list in the table at the bottom of [`tools/culturegen/README.md`](../../tools/culturegen/README.md); the two are meant to agree, and nothing checks it for you.
 
 Order does not matter. The generator sorts by ASCII-lowercase name, because the Rust lookup binary-searches the emitted array.
 
 ## 2. Regenerate the culture table and the goldens together
 
-`tools/culturegen/README.md` has the commands. Run both of them, in one commit, with the same SDK on the same machine.
+[`tools/culturegen/README.md`](../../tools/culturegen/README.md) has the commands. Run both of them, in one commit, with the same SDK on the same machine.
 
 The reason is in that README and it is not optional: .NET's culture data is ICU-backed, so on Linux and macOS it comes from whatever ICU the machine carries. Group separators have moved from `U+00A0` to `U+202F`, month abbreviations have gained and lost trailing dots, and default decimal digits have changed, all between ICU releases with no change to any of this code. `crates/smartformat/src/fmt/culture/generated.rs` and `goldens/m1.json` are one artifact in two files. Regenerate one without the other and you get a port whose culture data and whose expected output come from different ICU versions; the failures look like port bugs and are not.
 
@@ -75,7 +75,7 @@ The golden harness generates these combinatorially: every culture in the table c
 
 ## Why a culture cannot be hand-written
 
-`CultureData` is not a description of a locale. It is a verbatim copy of .NET's `CultureInfo.NumberFormat` and `CultureInfo.DateTimeFormat`, field for field, read out of a running .NET process. The whole compatibility claim rests on that: for a listed culture the port matches .NET **by construction**, because it is formatting from .NET's own numbers.
+`CultureData` is not a description of a culture. It is a verbatim copy of .NET's `CultureInfo.NumberFormat` and `CultureInfo.DateTimeFormat`, field for field, read out of a running .NET process. The whole compatibility claim rests on that: for a listed culture the port matches .NET **by construction**, because it is formatting from .NET's own numbers.
 
 Typing the fields by hand replaces "by construction" with "by inspection", and inspection fails on this data. Three examples out of the table as it stands:
 
@@ -83,6 +83,6 @@ Typing the fields by hand replaces "by construction" with "by inspection", and i
 - `sv` and `fi` negate with `U+2212` MINUS SIGN, not a hyphen.
 - `ar-SA` hides `U+061C` ARABIC LETTER MARK inside its signs and `U+200F` inside its currency symbol.
 
-And the shape of the data is not obvious either. `ru`, `pl`, `cs`, `uk` and `fi` inflect the month name next to a day number (`март` alone, `5 марта`), and `de`, `da` and `nb` do it in the abbreviated form only. There are 17 currency-pattern arms. Getting a locale right means getting all of that right, and getting it wrong means a port that is subtly, permanently different from the library it claims to match.
+And the shape of the data is not obvious either. `ru`, `pl`, `cs`, `uk` and `fi` inflect the month name next to a day number (`март` alone, `5 марта`), and `de`, `da` and `nb` do it in the abbreviated form only. There are 17 currency-pattern arms. Getting a culture right means getting all of that right, and getting it wrong means a port that is subtly, permanently different from the library it claims to match.
 
 Adding a name to `Program.cs` and rerunning the generator is the whole cost, which is why that is the supported path.

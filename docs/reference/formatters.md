@@ -1,7 +1,8 @@
 # Formatters
 
 Every formatter extension, what selects it, what it reads, and what it fails
-with.
+with. New here? [Get started with smartformat](../tutorials/getting-started.md)
+teaches two of them by building a message.
 
 Source of truth: `crates/smartformat/src/extensions/` and
 `crates/smartformat/src/formatter.rs`.
@@ -31,7 +32,10 @@ them out: each is useless until it is given a language, a provider or a
 template. `FormatterRegistry::add` inserts a formatter at the rank above;
 `FormatterRegistry::insert` puts it at an index of your choosing. A formatter
 whose name is not in the rank table is appended, which places it after
-`DefaultFormatter`, where it never runs.
+`DefaultFormatter`, where it never runs. [How a render happens](../explanation/architecture.md)
+explains why the order is observable at all;
+[Write your own formatter or source](../how-to/extend-with-your-own.md) covers
+registering one.
 
 Every formatter but `d` can be renamed with `with_name`. Auto-detection is
 switchable with `set_can_auto_detect` on every formatter except `L`, `t` and
@@ -271,7 +275,7 @@ defaults to 1,000,000 steps.
 
 Divergences between the two regex engines are listed in the module
 documentation (`cargo doc --open`, `smartformat::extensions::ismatch`) and in
-`DESIGN.md`.
+[DESIGN.md](../../DESIGN.md).
 
 ```rust
 use smartformat::{SmartFormatter, Value};
@@ -590,11 +594,13 @@ specifier; see [format-specifiers.md](format-specifiers.md).
 The list, map and `unsupported format spec` rows are deliberate divergences.
 .NET renders a list or a map as a CLR type name and a custom pattern as text;
 this crate fails loudly instead, so a compatibility gap cannot pass unnoticed.
-See `DESIGN.md`.
+See [DESIGN.md](../../DESIGN.md).
 
 ## Related
 
 - [template-syntax.md](template-syntax.md): where each part of a placeholder comes from.
 - [format-specifiers.md](format-specifiers.md): what the default formatter accepts.
 - [settings-and-features.md](settings-and-features.md): the features that gate `plural`, `time` and `ismatch`.
-- `DESIGN.md`: per-formatter divergences and reproduced quirks.
+- [how-to/extend-with-your-own.md](../how-to/extend-with-your-own.md): writing a formatter or source of your own.
+- [explanation/architecture.md](../explanation/architecture.md): why the registry is ordered and why that order is observable.
+- [DESIGN.md](../../DESIGN.md): per-formatter divergences and reproduced quirks.
